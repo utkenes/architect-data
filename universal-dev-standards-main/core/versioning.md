@@ -1,0 +1,887 @@
+# Semantic Versioning Standard
+
+> **Language**: English | [繁體中文](../locales/zh-TW/core/versioning.md)
+
+**Version**: 1.5.0
+**Last Updated**: 2026-07-01
+**Applicability**: All software projects with versioned releases
+**Scope**: universal
+**Industry Standards**: Semantic Versioning 2.0.0
+**References**: [semver.org](https://semver.org/)
+
+---
+
+## Purpose
+
+This standard defines how to version software releases using Semantic Versioning (SemVer) to communicate changes clearly to users and maintainers.
+
+---
+
+## Semantic Versioning Format
+
+```
+MAJOR.MINOR.PATCH[-PRERELEASE][+BUILD]
+
+Examples:
+2.3.1
+1.0.0-alpha.1
+3.2.0-beta.2+20250112
+```
+
+### Components
+
+| Component | Purpose | When to Increment |
+|-----------|---------|-------------------|
+| **MAJOR** | Breaking changes | Incompatible API changes |
+| **MINOR** | New features | Backward-compatible functionality |
+| **PATCH** | Bug fixes | Backward-compatible bug fixes |
+| **PRERELEASE** | Pre-release identifier | Alpha, beta, rc versions |
+| **BUILD** | Build metadata | Build number, commit hash |
+
+---
+
+## Incrementing Rules
+
+### MAJOR Version (X.0.0)
+
+**Increment when**:
+- Breaking API changes
+- Removing deprecated features
+- Major architecture changes
+- Incompatible behavior changes
+
+**Examples**:
+```
+1.9.5 → 2.0.0  # Remove deprecated API
+3.2.1 → 4.0.0  # Change return type of public method
+```
+
+**Guidelines**:
+- Reset MINOR and PATCH to 0
+- Document migration guide
+- Provide deprecation warnings in previous MINOR versions
+
+---
+
+### MINOR Version (x.Y.0)
+
+**Increment when**:
+- Adding new features (backward-compatible)
+- Deprecating features (not removing)
+- Substantial internal improvements
+- New public APIs
+
+**Examples**:
+```
+2.3.5 → 2.4.0  # Add new API endpoint
+1.12.0 → 1.13.0  # Add optional parameter to existing function
+```
+
+**Guidelines**:
+- Reset PATCH to 0
+- Existing functionality unchanged
+- New features are opt-in
+
+---
+
+### PATCH Version (x.y.Z)
+
+**Increment when**:
+- Bug fixes (no new features)
+- Security patches
+- Documentation corrections
+- Internal refactoring (no API changes)
+
+**Examples**:
+```
+3.1.2 → 3.1.3  # Fix null pointer exception
+2.0.0 → 2.0.1  # Security vulnerability patch
+```
+
+**Guidelines**:
+- No new functionality
+- No API changes
+- Safe to update immediately
+
+---
+
+## Pre-release Versions
+
+Format: `MAJOR.MINOR.PATCH-PRERELEASE`
+
+### Pre-release Identifiers
+
+| Identifier | Purpose | Stability | Audience |
+|------------|---------|-----------|----------|
+| `alpha` | Early testing | Unstable | Internal team |
+| `beta` | Feature complete | Mostly stable | Early adopters |
+| `rc` (release candidate) | Final testing | Stable | Beta testers |
+
+### Examples
+
+```
+1.0.0-alpha.1       # First alpha release
+1.0.0-alpha.2       # Second alpha release
+1.0.0-beta.1        # First beta release
+1.0.0-beta.2        # Second beta release
+1.0.0-rc.1          # Release candidate 1
+1.0.0               # Stable release
+```
+
+### Ordering
+
+Pre-releases are ordered lexicographically:
+```
+1.0.0-alpha.1 < 1.0.0-alpha.2 < 1.0.0-beta.1 < 1.0.0-rc.1 < 1.0.0
+```
+
+---
+
+## Build Metadata
+
+Format: `MAJOR.MINOR.PATCH+BUILD`
+
+### Examples
+
+```
+1.0.0+20250112            # Date-based build
+2.3.1+001                 # Sequential build number
+3.0.0+sha.5114f85         # Git commit hash
+1.2.0-beta.1+exp.sha.5114f85  # Combined pre-release and build
+```
+
+### Guidelines
+
+- Build metadata SHOULD NOT affect version precedence
+- Use for CI/CD tracking
+- Include in artifacts but not in version comparison
+
+> **Critical: build metadata MUST NOT be used as a deployment discriminator.**
+> Because tooling ignores `+build` in precedence and comparison (above), two builds
+> differing only in build metadata (`1.2.3+abc` vs `1.2.3+def`) are **indistinguishable
+> to version-comparison tooling** — rollback targets and `semver` comparison treat them
+> as the same release. Using `+sha` to tell apart behaviorally-different deployed builds
+> is a governance bypass: the version stops being the join key for changelog / SBOM /
+> audit / rollback / SLA / CVE scope. A change that ships MUST get a real version bump or
+> a unique immutable artifact identity (see **Deployment Version Identity** below) —
+> `+sha` is **not** a substitute.
+
+---
+
+## Deployment Version Identity
+
+> Source: a recurring failure mode — multiple behaviorally-different hotfix builds
+> deployed under the same `X.Y.Z`, distinguishable only by `+sha`, so answering
+> "which build is in prod / is fix X actually deployed?" collapses into commit
+> archaeology.
+
+This section governs the identity of a **deployable unit** — whatever that unit is for the
+project (a container image, a tarball, a published package). It complements the
+[Release Process](#release-process) below, which describes one concrete single-host release
+flow; the identity rules here apply regardless of the deployment mechanism.
+
+### Core invariant
+
+**Every distinct deployable build artifact MUST carry a unique, immutable version
+identity (version proper + commit sha).** Deploying, *promoting*, or *rolling back*
+an **existing** artifact MUST NOT change its identity.
+
+- **Anchor on the artifact, not the deploy action.** A new build (different source or
+  dependencies) ⇒ new version. The *same* build moved between environments
+  (staging → prod, build-once-deploy-many), redeployed (blue-green / canary), or
+  rolled back is the **same** artifact and keeps its identity — it MUST NOT be
+  re-bumped. Re-bumping on promote/rollback makes the version number lie about what
+  is actually running. (When a rollback restores a previous artifact, it restores that
+  artifact's original identity — it does not mint a new one.)
+- **Never deploy two distinct builds under the same `X.Y.Z`.**
+
+### Enforce automatically, not by discipline
+
+The invariant SHOULD be enforced by an automatic mechanism rather than human discipline
+alone — the failure mode above *is* a forgotten manual bump. Any of these satisfies it:
+
+- **Commit-driven release automation** (`semantic-release` / `standard-version`, see
+  [Automation Tools](#automation-tools)): derives and bumps the version from commit
+  history in CI, so a human cannot forget to bump.
+- **Git-height–derived versioning** (MinVer / Nerdbank.GitVersioning / GitVersion):
+  the version is derived from git commit topology, so a collision is structurally
+  impossible. RECOMMENDED for polyglot / .NET / JVM projects (the Automation Tools
+  section is otherwise Node-centric) — see the git-height subsection under
+  [Automation Tools](#automation-tools). Note caveats for monorepos and squash-merge
+  workflows.
+- **A CI uniqueness gate**: fail the release if the computed version already exists
+  as a git tag or in the registry.
+
+### Immutable artifacts (cross-reference)
+
+A unique *number* is necessary but not sufficient — the *artifact* must also be immutable
+and content-addressed (e.g. a container image referenced by digest rather than a mutable
+tag). The concrete artifact-level requirements — pinning deployments to a content address
+and forbidding tag/version reuse — **belong with container-image-standards** and are to be
+specified there; this standard only requires that the version identity itself remain
+unique and immutable.
+
+### Build identity is observable (requirement)
+
+**A deployed service MUST expose its build identity — `version + commit sha + build time` —
+through a queryable endpoint** (a dedicated `/version`, or embedded in `/health`), so
+operators can determine exactly what is running without inspecting the binary or resorting to
+commit archaeology. Rationale: manual version numbers can collide (above), so ops needs the
+`sha` to tell apart two builds that ship under the same `X.Y.Z`.
+
+Requirements:
+
+- The exposed `sha` MUST match the deployed artifact's sha — it is **verifiable, not
+  self-reported** (derive it from the build, do not hand-type it).
+- The endpoint SHOULD be access-controlled; a public build-identity endpoint leaks internal
+  commit identity.
+- Post-release verification MUST assert the returned sha equals the deployed artifact's sha
+  (see [Phase 5: Post-release Verification](#phase-5-post-release-verification)), not merely
+  that the version number is correct.
+
+This is a deployment / observability concern: the concrete verification *mechanism* (how the
+endpoint is scraped and the assertion wired into a gate) **belongs with deployment-standards**
+(to be specified there), and **supply-chain-attestation** already provides provenance as
+the cryptographic backing for "this artifact came from this sha".
+
+---
+
+## Initial Development
+
+### Version 0.x.x
+
+```
+0.1.0  # Initial development release
+0.2.0  # Add features
+0.3.0  # Add more features
+...
+1.0.0  # First stable release
+```
+
+**Guidelines**:
+- Major version 0 indicates development phase
+- API may change frequently
+- Breaking changes allowed in MINOR versions
+- Move to 1.0.0 when API is stable
+
+---
+
+## Version Lifecycle
+
+### Example Release Cycle
+
+```
+Development Phase:
+0.1.0 → 0.2.0 → 0.9.0
+
+First Stable Release:
+1.0.0
+
+Feature Additions:
+1.0.0 → 1.1.0 → 1.2.0
+
+Bug Fixes:
+1.2.0 → 1.2.1 → 1.2.2
+
+Next Major Release:
+1.2.2 → 2.0.0-alpha.1 → 2.0.0-beta.1 → 2.0.0-rc.1 → 2.0.0
+```
+
+---
+
+## Changelog Integration
+
+> **See Also**: For comprehensive CHANGELOG writing guidelines, format templates, and examples, see [changelog-standards.md](changelog-standards.md).
+
+### CHANGELOG.md Quick Reference
+
+CHANGELOG files should follow the [Keep a Changelog](https://keepachangelog.com/) format with these categories:
+
+| Category | Use For |
+|----------|---------|
+| `Added` | New features |
+| `Changed` | Changes to existing functionality |
+| `Deprecated` | Features to be removed in future |
+| `Removed` | Removed features |
+| `Fixed` | Bug fixes |
+| `Security` | Security vulnerability patches |
+
+**Breaking Changes**: Prefix with `**BREAKING**:` to ensure visibility.
+
+For complete format templates and examples, refer to [changelog-standards.md](changelog-standards.md).
+
+### Exclusion Rules
+
+CHANGELOG should NOT record the following types of changes:
+
+#### 1. Directories Excluded by `.gitignore`
+
+Directories excluded from version control will not be committed, so they should not be recorded in CHANGELOG.
+
+**Principle**: Any directories or files listed in the project's `.gitignore` should not be recorded in CHANGELOG.
+
+**Common Exclusion Categories (Examples)**:
+
+| Category | Common Directories/Files | Reason |
+|----------|-------------------------|--------|
+| AI Collaboration Tools | `.claude/`, `.cursor/`, `.ai/` | Local development aids, not in version control |
+| Development Standards | `.standards/` | Local standard docs, not in version control |
+| Build Outputs | `dist/`, `build/`, `out/` | Build artifacts, not in version control |
+| Large Data | `data/`, `datasets/` | Data files, not in version control |
+
+**Verification Method**:
+
+**macOS / Linux:**
+```bash
+# Before generating CHANGELOG, check project's .gitignore exclusions
+cat .gitignore | grep -E "^[^#*]" | head -20
+```
+
+**Windows PowerShell:**
+```powershell
+# Before generating CHANGELOG, check project's .gitignore exclusions
+Get-Content .gitignore | Where-Object { $_ -match "^[^#*]" } | Select-Object -First 20
+```
+
+**Note**: Each project should determine exclusions based on its own `.gitignore` settings. The table above is just a common example.
+
+#### 2. Build Artifacts and Temporary Files
+
+The following types of changes should also not be recorded:
+
+- `bin/`, `obj/`, `Release/`, `Debug/` and other build outputs
+- `*.log`, `*.tmp` and other temporary files
+- `node_modules/`, `packages/` and other dependency directories
+
+#### 3. Environment and Configuration Files (Sensitive Data)
+
+Files containing sensitive data should not be recorded:
+
+- `*.env`, `.env.*` environment variable files
+- `*.local.json`, `*.local.yaml` local configuration files (e.g., .NET's `appsettings.*.local.json`)
+- `*.pem`, `*.key`, `*.p12` key and certificate files
+- `credentials.*`, `secrets.*` credential files
+
+### Best Practice
+
+When generating CHANGELOG, follow this process:
+
+1. **List changed commits**
+
+   **macOS / Linux / Windows (Git):**
+   ```bash
+   git log main..HEAD --oneline
+   ```
+
+2. **Exclude commits that don't need recording**
+   - Commits containing "gitignore", "version control", or "misc(version control)" types
+   - Commits that only modify excluded directories
+
+3. **Categorize records**
+   - Only record actual code or documentation changes that will be committed to the repository
+   - Ensure all recorded file paths exist in the repository
+
+4. **Verify records**
+
+   **macOS / Linux:**
+   ```bash
+   # Verify that recorded paths exist in the repository
+   git ls-files | grep -E "path/to/file"
+   ```
+
+   **Windows PowerShell:**
+   ```powershell
+   # Verify that recorded paths exist in the repository
+   git ls-files | Select-String -Pattern "path/to/file"
+   ```
+
+---
+
+## Release Process
+
+### Overview
+
+The complete Release process includes 5 phases:
+
+1. **Pre-release Diagnosis** - Mandatory
+2. **Environment Preparation**
+3. **Package Generation**
+4. **Deployment Execution**
+5. **Post-release Verification**
+
+### Phase 1: Pre-release Diagnosis - Mandatory
+
+**Purpose**: Assess the target server's environment status before generating the upgrade package
+
+**Check Items**:
+- System tool versions
+- Required drivers
+- Disk space
+- Database connectivity
+- Application version
+- Configuration completeness
+
+**Pass Conditions** (Quality Gate):
+- All required tools installed
+- Sufficient disk space (at least 500MB)
+- Database connection normal
+- No system-level errors
+
+**Failure Handling**:
+- If diagnosis fails, execute Environment Preparation (Phase 2)
+- Re-execute diagnosis after fixes
+- Must not skip diagnosis and proceed directly to packaging
+
+---
+
+### Phase 2: Environment Preparation
+
+**Purpose**: Install missing tools and drivers according to diagnosis report results
+
+**Verification Standards**:
+- All diagnosis items passed
+- Database connection test successful
+- Verification tools show no errors
+
+---
+
+### Phase 3: Package Generation
+
+**Purpose**: Generate upgrade package containing the latest version
+
+**Execution Steps**:
+```bash
+# 1. Confirm current branch and version
+git branch
+git describe --tags
+
+# 2. Generate upgrade package (using project-provided packaging script)
+./tools/generate-upgrade-package.sh -v v1.2.1 -o ./dist
+
+# 3. Verify upgrade package contents
+tar -tzf dist/upgrade-package-*.tar.gz | head -20
+```
+
+#### Upgrade Package Naming
+
+**Format**: `{PROJECT}-upgrade-v{VERSION}-{DATE}.tar.gz`
+
+| Element | Description | Examples |
+|---------|-------------|----------|
+| `{PROJECT}` | Project name (replace with actual project name) | `my-app`, `api-server` |
+| `{VERSION}` | Version number (consistent with Git tag) | `1.2.1`, `2.0.0-beta.1` |
+| `{DATE}` | Packaging date (YYYYMMDD) | `20251128` |
+
+**Examples** (replace `{PROJECT}` with your project name):
+```
+{PROJECT}-upgrade-v1.2.1-20251127.tar.gz
+{PROJECT}-upgrade-v2.0.0-beta.1-20251201.tar.gz
+```
+
+---
+
+### Phase 4: Deployment Execution
+
+**Purpose**: Execute upgrade on target server
+
+**Execution Steps**:
+```bash
+# 1. Upload upgrade package to target server
+scp upgrade-package-*.tar.gz user@target:/tmp/
+
+# 2. Extract upgrade package
+cd /tmp
+tar -xzf upgrade-package-*.tar.gz
+cd upgrade-package-*/
+
+# 3. Dry-run test (strongly recommended)
+sudo ./upgrade.sh --dry-run
+
+# 4. Actual upgrade
+sudo ./upgrade.sh
+```
+
+**Deployment Verification**:
+- Backup created
+- Service stopped successfully
+- Files deployed successfully
+- Schema migration successful (if applicable)
+- Service started successfully
+
+---
+
+### Phase 5: Post-release Verification
+
+**Purpose**: Confirm upgrade success and application running normally
+
+**Check Items**:
+```bash
+# 1. Check service status
+systemctl status your-service
+
+# 2. Check application build identity (version + commit sha + build time)
+#    Assert the returned sha matches the deployed artifact's sha — not just the version.
+curl http://localhost:PORT/version    # or /health, if build identity is embedded there
+# Expected: {"version": "1.2.1", "sha": "<deployed-artifact-sha>", "buildTime": "..."}
+
+# 3. Check logs for no errors
+tail -100 /path/to/app.log | grep -i error
+```
+
+**Success Criteria**:
+- Service running normally
+- `/version` (or `/health`) returns the correct version number **and** a commit sha that
+  matches the deployed artifact — a matching version alone is insufficient, since two builds
+  can share one `X.Y.Z` (see [Build identity is observable](#build-identity-is-observable-requirement))
+- No fatal errors in logs
+- Functionality verification passed
+
+---
+
+### Release Checklist
+
+**Pre-release (Diagnosis and Preparation)**:
+- [ ] Execute server diagnosis
+- [ ] Diagnosis report passes all check items
+- [ ] Environment preparation completed (if missing)
+- [ ] Environment verification tools passed
+
+**Release (Packaging and Deployment)**:
+- [ ] Upgrade package generated successfully
+- [ ] Upgrade package contents verified
+- [ ] Dry-run test no anomalies
+- [ ] Backup plan prepared
+- [ ] Rollback plan prepared
+
+**Post-release (Verification and Monitoring)**:
+- [ ] Service started successfully
+- [ ] Version number correct
+- [ ] Functionality verification passed
+- [ ] No anomalies in logs
+
+---
+
+### Quality Gates
+
+The following checkpoints **must pass**, otherwise cannot proceed to next phase:
+
+| Phase | Gate | Failure Handling |
+|-------|------|------------------|
+| **Diagnosis** | Diagnosis report no errors | Environment preparation |
+| **Preparation** | Verification tools passed | Fix and re-verify |
+| **Packaging** | Upgrade package structure complete | Re-package |
+| **Deployment** | Dry-run no anomalies | Analyze logs and fix |
+| **Verification** | Service running normally | Rollback |
+
+---
+
+### Rollback Plan
+
+If upgrade fails, execute the following rollback steps:
+
+```bash
+# 1. Stop service
+sudo systemctl stop your-service
+
+# 2. Restore backup
+BACKUP_PATH="/path/to/backup-$(date +%Y%m%d)"
+sudo rm -rf /path/to/app
+sudo mv "$BACKUP_PATH" /path/to/app
+
+# 3. Restart service
+sudo systemctl start your-service
+
+# 4. Verify rollback success
+sudo systemctl status your-service
+```
+
+---
+
+### Compliance
+
+**Mandatory Requirements**:
+- Must not skip diagnosis phase
+- Must not skip dry-run test
+- Must retain diagnosis report
+- Must prepare rollback plan
+
+**Audit Trail**:
+- All Release documentation retained for at least 12 months
+- Diagnosis report associated with Git Tag
+- Upgrade logs preserved completely
+
+---
+
+## Version Tagging in Git
+
+### Creating Tags
+
+```bash
+# Annotated tag (recommended)
+git tag -a v1.2.0 -m "Release version 1.2.0"
+
+# Tag with detailed message
+git tag -a v2.0.0 -m "Release version 2.0.0
+
+Major changes:
+- New authentication system
+- Redesigned API
+- Performance improvements"
+
+# Push tag to remote
+git push origin v1.2.0
+
+# Push all tags
+git push origin --tags
+```
+
+### Tag Naming Convention
+
+```
+v1.0.0          ✅ Recommended (with 'v' prefix)
+1.0.0           ✅ Acceptable (without 'v')
+version-1.0.0   ❌ Avoid (too verbose)
+1.0             ❌ Avoid (incomplete version)
+```
+
+---
+
+## Automation Tools
+
+### standard-version (Node.js)
+
+```bash
+# Install
+npm install --save-dev standard-version
+
+# Add to package.json
+{
+  "scripts": {
+    "release": "standard-version"
+  }
+}
+
+# Create release
+npm run release              # Auto-increment based on commits
+npm run release -- --release-as minor  # Force minor version
+npm run release -- --release-as 2.0.0  # Specific version
+```
+
+### semantic-release (Node.js)
+
+```bash
+# Install
+npm install --save-dev semantic-release
+
+# Configure in .releaserc.json
+{
+  "branches": ["main"],
+  "plugins": [
+    "@semantic-release/commit-analyzer",
+    "@semantic-release/release-notes-generator",
+    "@semantic-release/changelog",
+    "@semantic-release/npm",
+    "@semantic-release/git",
+    "@semantic-release/github"
+  ]
+}
+```
+
+### Git-height–derived versioning (polyglot: .NET / JVM / multi-language)
+
+The tools above are Node/npm-centric. For **.NET, JVM, or multi-language projects**, prefer
+**git-height–derived versioning**, where the version is computed automatically from the git
+tag graph plus the number of commits since the last tag ("commit height") rather than stored
+in a hand-edited file. Because the version is a deterministic function of git history,
+**two different builds cannot collide on the same version number** and no manual bump step
+can be forgotten — this is what makes it satisfy
+[Deployment Version Identity](#deployment-version-identity) structurally rather than by
+discipline.
+
+| Tool | Ecosystem | Notes |
+|------|-----------|-------|
+| **MinVer** | .NET / MSBuild | Derives the version from the nearest git tag plus commit height; no config file, no build server integration required |
+| **Nerdbank.GitVersioning** (nbgv) | .NET (also Node and others) | Reads a `version.json`; stamps version + git height + commit id into assemblies and packages |
+| **GitVersion** | Polyglot (.NET, plus a language-agnostic CLI) | Configurable versioning modes (e.g. Mainline, Continuous Delivery / Continuous Deployment) driven by branch and tag topology |
+
+**When to use which:**
+
+- **Node / npm projects** → commit-driven automation (`semantic-release` / `standard-version`, above): the bump is derived from Conventional Commits.
+- **Polyglot / .NET / JVM projects** → git-height–derived tools (MinVer / Nerdbank.GitVersioning / GitVersion): the version is derived from git tag + commit height.
+
+Both families remove the forgettable manual bump. **Caveats:** in a monorepo a single
+repo-wide commit height may not map cleanly onto per-package versions, and squash-merge
+workflows alter commit height — validate the derived version against your tagging convention.
+
+---
+
+## Dependency Version Ranges
+
+### npm (package.json)
+
+```json
+{
+  "dependencies": {
+    "exact": "1.2.3",           // Exact version
+    "patch": "~1.2.3",          // >=1.2.3 <1.3.0
+    "minor": "^1.2.3",          // >=1.2.3 <2.0.0
+    "range": ">=1.2.3 <2.0.0",  // Explicit range
+    "latest": "*"               // ❌ Avoid - any version
+  }
+}
+```
+
+**Recommendations**:
+- Use `^` for most dependencies (minor updates)
+- Use `~` for conservative updates (patch only)
+- Use exact versions for critical dependencies
+- Never use `*` in production
+
+---
+
+### .NET (csproj)
+
+```xml
+<ItemGroup>
+  <!-- Exact version -->
+  <PackageReference Include="Newtonsoft.Json" Version="13.0.1" />
+
+  <!-- Minimum version -->
+  <PackageReference Include="Microsoft.Extensions.Logging" Version="[8.0.0,)" />
+
+  <!-- Version range -->
+  <PackageReference Include="AutoMapper" Version="[12.0.0,13.0.0)" />
+</ItemGroup>
+```
+
+---
+
+## Breaking Changes & Deprecation
+
+Breaking changes drive the **MAJOR** version increment (see [Incrementing Rules](#incrementing-rules)) — that is how SemVer signals an incompatible change to consumers. The *contract-level* details of evolving and retiring an API are owned by the standards responsible for those concerns, so each rule has a single source of truth:
+
+- **API versioning strategies, the backward-compatibility checklist (what counts as a breaking change), deprecation annotations in code, and the migration-guide template** → [API Design Standards](api-design-standards.md#api-versioning-strategies)
+- **The deprecation lifecycle, minimum notice periods by API tier, `Sunset` / `Deprecation` headers, and consumer notification** → [Deprecation & Sunset Standards](deprecation-standards.md#api-deprecation)
+
+This standard keeps only the version-numbering rule: an incompatible change MUST ship as a MAJOR bump, and deprecation SHOULD be announced in a prior MINOR before the removing MAJOR (see [MAJOR Version](#major-version-x00) guidelines).
+
+---
+
+## Project Configuration
+
+### Document in README.md
+
+```markdown
+## Versioning
+
+This project follows [Semantic Versioning 2.0.0](https://semver.org/).
+
+### Version Format
+`MAJOR.MINOR.PATCH[-PRERELEASE][+BUILD]`
+
+### Release Cycle
+- **Major releases**: Annually (breaking changes)
+- **Minor releases**: Quarterly (new features)
+- **Patch releases**: As needed (bug fixes)
+
+### Support Policy
+- Latest major version: Full support
+- Previous major version: Security fixes only (1 year)
+- Older versions: No support
+
+### Changelog
+See [CHANGELOG.md](CHANGELOG.md) for release history.
+```
+
+---
+
+## Version Comparison
+
+### Precedence Rules
+
+```
+1.0.0 < 2.0.0 < 2.1.0 < 2.1.1
+
+1.0.0-alpha < 1.0.0-alpha.1 < 1.0.0-beta < 1.0.0-rc.1 < 1.0.0
+
+1.0.0 < 1.0.0+001 (build metadata ignored in precedence)
+```
+
+### Comparison in Code
+
+```javascript
+// JavaScript (using semver package)
+const semver = require('semver');
+
+semver.gt('1.2.3', '1.2.2');  // true
+semver.satisfies('1.2.3', '^1.0.0');  // true
+semver.major('2.3.1');  // 2
+```
+
+---
+
+## Common Questions
+
+### Q: When should I release 1.0.0?
+
+**A**: When your API is stable and you're ready to commit to backward compatibility.
+
+---
+
+### Q: Should I bump MAJOR for internal breaking changes?
+
+**A**: No, only for public API changes. Internal refactoring is PATCH or MINOR.
+
+---
+
+### Q: Can I skip versions?
+
+**A**: Yes, but not recommended. Use sequential versioning for clarity.
+
+---
+
+### Q: How do I version libraries vs applications?
+
+**A**:
+- **Libraries**: Strictly follow SemVer (API matters)
+- **Applications**: Can be more flexible (user experience matters)
+
+---
+
+## Related Standards
+
+- [Changelog Standards](changelog-standards.md)
+- [Git Workflow Standards](git-workflow.md)
+- [Commit Message Guide](commit-message-guide.md)
+- [API Design Standards](api-design-standards.md) — API versioning strategies, backward-compatibility rules, migration guides
+- [Deprecation & Sunset Standards](deprecation-standards.md) — deprecation lifecycle and minimum notice periods
+
+---
+
+## Version History
+
+| Version | Date | Changes |
+|---------|------|---------|
+| 1.5.0 | 2026-07-01 | Added: git-height–derived versioning tools (MinVer / Nerdbank.GitVersioning / GitVersion) for polyglot / .NET / JVM projects in Automation Tools (UDS #138 R2); elevated "Build identity is observable" to a requirement — deployed services MUST expose `version + commit sha + build time` via a queryable endpoint — and added a commit-sha + build-time assertion to Phase 5 Post-release Verification (UDS #138 R3) |
+| 1.4.0 | 2026-06-24 | Moved out (to single sources): API Versioning Strategies (de-duplicated), Deprecation Timeline + per-tier periods, Backward Compatibility Checklist, and the Migration Guide template — now owned by api-design-standards / deprecation-standards; versioning cross-references them (XSPEC-298 R8, UDS #126) |
+| 1.3.0 | 2026-06-23 | Added: Deployment Version Identity section; build-metadata-as-deployment-discriminator caveat (from UDS #138) |
+| 1.2.0 | 2025-12-30 | Added: API Versioning Strategies, Deprecation Timeline, Backward Compatibility Checklist |
+| 1.1.3 | 2025-12-24 | Added: Related Standards section |
+| 1.1.2 | 2025-12-11 | Improved: Upgrade package naming example to use generic placeholders instead of hardcoded project names |
+| 1.1.1 | 2025-12-04 | Refactored: CHANGELOG exclusion rules to be more generic (removed project-specific directories) |
+| 1.1.0 | 2025-12-04 | Added: CHANGELOG exclusion rules, Release Process section |
+| 1.0.0 | 2025-11-12 | Initial versioning standard |
+
+---
+
+## References
+
+- [Semantic Versioning 2.0.0](https://semver.org/)
+- [Keep a Changelog](https://keepachangelog.com/)
+- [Calendar Versioning](https://calver.org/) (alternative scheme)
+
+---
+
+## License
+
+This standard is released under [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/).

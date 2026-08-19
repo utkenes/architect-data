@@ -1,0 +1,731 @@
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { mkdirSync, writeFileSync, rmSync, existsSync } from 'fs';
+import { join } from 'path';
+import { fileURLToPath } from 'url';
+import { dirname } from 'path';
+
+// Bypass DEC-044 / XSPEC-071 self-adoption guard in unit tests — the
+// real guard inspects process.cwd() (the UDS source repo) and would
+// refuse the command under test.
+vi.mock('../../src/utils/detect-self-adoption.js', () => ({
+  detectSelfAdoption: vi.fn(() => false),
+  detectSelfAdoptionDetailed: vi.fn(() => ({ isSelfAdoption: false, signals: [] })),
+  guardAgainstSelfAdoption: vi.fn(() => true),
+  formatSelfAdoptionRefuseMessage: vi.fn(() => []),
+  formatSelfAdoptionForceWarning: vi.fn(() => [])
+}));
+
+// Mock npm-registry to avoid network requests during tests
+vi.mock('../../src/utils/npm-registry.js', () => ({
+  checkForUpdates: vi.fn(() => Promise.resolve({
+    available: false,
+    offline: true,
+    message: 'Mocked for testing'
+  })),
+  clearCache: vi.fn()
+}));
+
+// Mock getMarketplaceSkillsInfo - use vi.hoisted for mock reference
+const { mockGetMarketplaceSkillsInfo } = vi.hoisted(() => ({
+  mockGetMarketplaceSkillsInfo: vi.fn(() => ({ installed: false }))
+}));
+vi.mock('../../src/utils/github.js', async (importOriginal) => {
+  const actual = await importOriginal();
+  return {
+    ...actual,
+    getMarketplaceSkillsInfo: mockGetMarketplaceSkillsInfo
+  };
+});
+
+import { checkCommand } from '../../src/commands/check.js';
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = dirname(__filename);
+const TEST_DIR = join(__dirname, '../temp/check-test');
+
+// Helper to create a valid manifest with all required fields
+const createValidManifest = (overrides = {}) => ({
+  version: '3.3.0',
+  upstream: {
+    repo: 'AsiaOstrich/universal-dev-standards',
+    version: '2.1.0',
+    installed: '2024-01-01'
+  },
+  level: 2,
+  format: 'ai',
+  standardsScope: 'minimal',
+  contentMode: 'index',
+  standards: [],
+  extensions: [],
+  integrations: [],
+  integrationConfigs: {},
+  options: {},
+  aiTools: [],
+  skills: { installed: false, location: 'marketplace', names: [], version: null, installations: [] },
+  commands: { installed: false, names: [], installations: [] },
+  methodology: null,
+  fileHashes: {},
+  skillHashes: {},
+  commandHashes: {},
+  integrationBlockHashes: {},
+  ...overrides
+});
+
+describe('Check Command', () => {
+  let originalCwd;
+  let consoleLogs = [];
+
+  beforeEach(() => {
+    originalCwd = process.cwd();
+    consoleLogs = [];
+
+    if (existsSync(TEST_DIR)) {
+      rmSync(TEST_DIR, { recursive: true, force: true });
+    }
+    mkdirSync(TEST_DIR, { recursive: true });
+    process.chdir(TEST_DIR);
+
+    vi.spyOn(console, 'log').mockImplementation((...args) => {
+      consoleLogs.push(args.join(' '));
+    });
+  });
+
+  afterEach(() => {
+    process.chdir(originalCwd);
+    if (existsSync(TEST_DIR)) {
+      rmSync(TEST_DIR, { recursive: true, force: true });
+    }
+    vi.restoreAllMocks();
+  });
+
+  describe('checkCommand', () => {
+    it('should report not initialized for empty project', async () => {
+      await checkCommand({ noInteractive: true });
+
+      const output = consoleLogs.join('\n');
+      expect(output).toContain('not initialized');
+    });
+
+    it('should report initialized status', async () => {
+      const manifest = createValidManifest({ level: 2 });
+
+      mkdirSync(join(TEST_DIR, '.standards'), { recursive: true });
+      writeFileSync(
+        join(TEST_DIR, '.standards', 'manifest.json'),
+        JSON.stringify(manifest)
+      );
+
+      await checkCommand({ noInteractive: true });
+
+      const output = consoleLogs.join('\n');
+      expect(output).toContain('Standards initialized');
+    });
+
+    it('should report missing files', async () => {
+      const manifest = createValidManifest({
+        level: 1,
+        standards: ['core/anti-hallucination.md']
+      });
+
+      mkdirSync(join(TEST_DIR, '.standards'), { recursive: true });
+      writeFileSync(
+        join(TEST_DIR, '.standards', 'manifest.json'),
+        JSON.stringify(manifest)
+      );
+
+      await checkCommand({ noInteractive: true });
+
+      const output = consoleLogs.join('\n');
+      expect(output).toContain('missing');
+    });
+
+    it('should report all files present when complete (legacy manifest)', async () => {
+      // v3.4.0: standards use registry ID format; desired state expects .ai.yaml (format: 'ai')
+      const manifest = createValidManifest({
+        level: 1,
+        standards: ['anti-hallucination']
+      });
+
+      mkdirSync(join(TEST_DIR, '.standards'), { recursive: true });
+      writeFileSync(
+        join(TEST_DIR, '.standards', 'manifest.json'),
+        JSON.stringify(manifest)
+      );
+      writeFileSync(join(TEST_DIR, '.standards', 'anti-hallucination.ai.yaml'), '# Content');
+
+      await checkCommand({ noInteractive: true });
+
+      const output = consoleLogs.join('\n');
+      // Legacy manifest shows "no hash" status
+      expect(output).toContain('exists, no hash');
+      expect(output).toContain('0 missing');
+    });
+
+    it('should report unchanged files with hash-based manifest', async () => {
+      const fileContent = '# Anti-Hallucination Standard';
+      const filePath = join(TEST_DIR, '.standards', 'anti-hallucination.md');
+
+      mkdirSync(join(TEST_DIR, '.standards'), { recursive: true });
+      writeFileSync(filePath, fileContent);
+
+      // Compute actual hash
+      const { computeFileHash } = await import('../../src/utils/hasher.js');
+      const hashInfo = computeFileHash(filePath);
+
+      const manifest = createValidManifest({
+        level: 1,
+        standards: ['core/anti-hallucination.md'],
+        fileHashes: {
+          '.standards/anti-hallucination.md': hashInfo
+        }
+      });
+
+      writeFileSync(
+        join(TEST_DIR, '.standards', 'manifest.json'),
+        JSON.stringify(manifest)
+      );
+
+      await checkCommand({ noInteractive: true });
+
+      const output = consoleLogs.join('\n');
+      expect(output).toContain('unchanged');
+      expect(output).toContain('1 unchanged');
+    });
+
+    // XSPEC-342 R1: 標準落後須比對 npm 最新（非 CLI bundled），訊息方向正確 + 兩步驟修復
+    it('XSPEC-342 R1: reports STANDARDS behind vs npm latest, forward direction, two-step fix', async () => {
+      const { checkForUpdates } = await import('../../src/utils/npm-registry.js');
+      vi.mocked(checkForUpdates).mockResolvedValue({
+        available: true, offline: false,
+        currentVersion: '5.0.0', latestVersion: '6.1.0', latestStable: '6.1.0'
+      });
+
+      mkdirSync(join(TEST_DIR, '.standards'), { recursive: true });
+      const manifest = createValidManifest({
+        upstream: { repo: 'AsiaOstrich/universal-dev-standards', version: '5.0.0', installed: '2024-01-01' }
+      });
+      writeFileSync(join(TEST_DIR, '.standards', 'manifest.json'), JSON.stringify(manifest));
+
+      await checkCommand({ noInteractive: true });
+
+      const output = consoleLogs.join('\n');
+      // 方向正確：已裝 5.0.0 → npm 最新 6.1.0（舊 bug 會吐倒退的「→ 5.12.1」，比 CLI bundled）
+      expect(output).toContain('5.0.0 → 6.1.0');
+      // 兩步驟修復，不是只講 uds update（只講第一步等於把人送進兩段式發現）
+      expect(output).toContain('npm update -g');
+      expect(output).toContain('uds update');
+    });
+
+    // XSPEC-342 R1: 離線時靜默略過版本比對，不報錯
+    it('XSPEC-342 R1: --offline silently skips the standards version comparison', async () => {
+      mkdirSync(join(TEST_DIR, '.standards'), { recursive: true });
+      const manifest = createValidManifest({
+        upstream: { repo: 'x', version: '5.0.0', installed: '2024-01-01' }
+      });
+      writeFileSync(join(TEST_DIR, '.standards', 'manifest.json'), JSON.stringify(manifest));
+
+      await checkCommand({ noInteractive: true, offline: true });
+
+      const output = consoleLogs.join('\n');
+      expect(output).not.toContain('5.0.0 → ');
+    });
+
+    // XSPEC-342 R4: 安靜通過——不逐檔列印未變更（實測佔輸出 ~70%），但 summary 計數保留
+    it('XSPEC-342 R4: does not list unchanged files individually, keeps summary count', async () => {
+      const filePath = join(TEST_DIR, '.standards', 'anti-hallucination.md');
+      mkdirSync(join(TEST_DIR, '.standards'), { recursive: true });
+      writeFileSync(filePath, '# content');
+      const { computeFileHash } = await import('../../src/utils/hasher.js');
+      const hashInfo = computeFileHash(filePath);
+      const manifest = createValidManifest({
+        level: 1,
+        standards: ['core/anti-hallucination.md'],
+        fileHashes: { '.standards/anti-hallucination.md': hashInfo }
+      });
+      writeFileSync(join(TEST_DIR, '.standards', 'manifest.json'), JSON.stringify(manifest));
+
+      await checkCommand({ noInteractive: true });
+
+      const output = consoleLogs.join('\n');
+      expect(output).not.toContain('✓ .standards/anti-hallucination.md');  // 逐檔未變更行已移除
+      expect(output).toContain('1 unchanged');                              // summary 計數仍在
+    });
+
+    it('should detect modified files with hash-based manifest', async () => {
+      const originalContent = '# Original Content';
+      const filePath = join(TEST_DIR, '.standards', 'anti-hallucination.md');
+
+      mkdirSync(join(TEST_DIR, '.standards'), { recursive: true });
+      writeFileSync(filePath, originalContent);
+
+      // Compute hash for original content
+      const { computeFileHash } = await import('../../src/utils/hasher.js');
+      const originalHash = computeFileHash(filePath);
+
+      // Modify the file
+      writeFileSync(filePath, '# Modified Content');
+
+      const manifest = createValidManifest({
+        level: 1,
+        standards: ['core/anti-hallucination.md'],
+        fileHashes: {
+          '.standards/anti-hallucination.md': originalHash
+        }
+      });
+
+      writeFileSync(
+        join(TEST_DIR, '.standards', 'manifest.json'),
+        JSON.stringify(manifest)
+      );
+
+      await checkCommand({ noInteractive: true });
+
+      const output = consoleLogs.join('\n');
+      expect(output).toContain('modified');
+      expect(output).toContain('1 modified');
+    });
+
+    it('should handle corrupted manifest', async () => {
+      mkdirSync(join(TEST_DIR, '.standards'), { recursive: true });
+      writeFileSync(
+        join(TEST_DIR, '.standards', 'manifest.json'),
+        'not valid json'
+      );
+
+      await checkCommand({ noInteractive: true });
+
+      const output = consoleLogs.join('\n');
+      expect(output).toContain('Could not read manifest');
+    });
+
+    it('should show skills status when installed', async () => {
+      const manifest = createValidManifest({
+        level: 1,
+        skills: { installed: true, location: 'project', names: [], version: null, installations: [] }
+      });
+
+      mkdirSync(join(TEST_DIR, '.standards'), { recursive: true });
+      writeFileSync(
+        join(TEST_DIR, '.standards', 'manifest.json'),
+        JSON.stringify(manifest)
+      );
+
+      await checkCommand({ noInteractive: true });
+
+      const output = consoleLogs.join('\n');
+      expect(output).toContain('Skills Status');
+    });
+
+    it('should show coverage summary', async () => {
+      const manifest = createValidManifest({
+        level: 2,
+        standards: ['core/anti-hallucination.md']
+      });
+
+      mkdirSync(join(TEST_DIR, '.standards'), { recursive: true });
+      writeFileSync(
+        join(TEST_DIR, '.standards', 'manifest.json'),
+        JSON.stringify(manifest)
+      );
+
+      // Pass noInteractive to skip interactive mode for missing files
+      await checkCommand({ noInteractive: true });
+
+      const output = consoleLogs.join('\n');
+      expect(output).toContain('Coverage Summary');
+    });
+
+    it('should show Plugin Marketplace message when marketplace detected', async () => {
+      // Mock marketplace as installed for this test
+      mockGetMarketplaceSkillsInfo.mockReturnValueOnce({
+        installed: true,
+        version: '3.5.0',
+        lastUpdated: '2024-01-15T00:00:00Z'
+      });
+
+      const manifest = createValidManifest({
+        level: 2,
+        aiTools: ['claude-code'],
+        skills: {
+          installed: true,
+          location: 'marketplace',
+          names: ['all-via-plugin'],
+          version: null,
+          installations: []
+        }
+      });
+
+      mkdirSync(join(TEST_DIR, '.standards'), { recursive: true });
+      writeFileSync(
+        join(TEST_DIR, '.standards', 'manifest.json'),
+        JSON.stringify(manifest)
+      );
+
+      await checkCommand({ noInteractive: true });
+
+      const output = consoleLogs.join('\n');
+      expect(output).toContain('Plugin Marketplace');
+      expect(output).toContain('Marketplace skills are not file-based');
+      expect(output).not.toContain('Skills marked as installed but not found');
+    });
+
+    it('should not show file-not-found warning for marketplace skills', async () => {
+      const manifest = createValidManifest({
+        level: 2,
+        skills: {
+          installed: true,
+          location: 'marketplace',
+          names: ['all-via-plugin'],
+          version: null,
+          installations: []
+        }
+      });
+
+      mkdirSync(join(TEST_DIR, '.standards'), { recursive: true });
+      writeFileSync(
+        join(TEST_DIR, '.standards', 'manifest.json'),
+        JSON.stringify(manifest)
+      );
+
+      await checkCommand({ noInteractive: true });
+
+      const output = consoleLogs.join('\n');
+      // Should NOT show the warning about skills not found
+      expect(output).not.toContain('Skills marked as installed but not found');
+      expect(output).not.toContain('git clone');
+    });
+
+    it('should suggest migration for legacy manifests', async () => {
+      // v3.4.0: standards use registry ID format; desired state expects .ai.yaml (format: 'ai')
+      const manifest = createValidManifest({
+        level: 1,
+        standards: ['anti-hallucination'],
+        fileHashes: {}  // Empty fileHashes triggers migration suggestion
+      });
+
+      mkdirSync(join(TEST_DIR, '.standards'), { recursive: true });
+      writeFileSync(
+        join(TEST_DIR, '.standards', 'manifest.json'),
+        JSON.stringify(manifest)
+      );
+      writeFileSync(join(TEST_DIR, '.standards', 'anti-hallucination.ai.yaml'), '# Content');
+
+      await checkCommand({ noInteractive: true });
+
+      const output = consoleLogs.join('\n');
+      expect(output).toContain('--migrate');
+      expect(output).toContain('hash-based integrity checking');
+    });
+
+    it('should show AI Tool Integration Status when aiTools configured', async () => {
+      const manifest = createValidManifest({
+        level: 2,
+        standards: ['core/anti-hallucination.md'],
+        integrations: ['CLAUDE.md'],
+        aiTools: ['claude-code']
+      });
+
+      mkdirSync(join(TEST_DIR, '.standards'), { recursive: true });
+      writeFileSync(
+        join(TEST_DIR, '.standards', 'manifest.json'),
+        JSON.stringify(manifest)
+      );
+      writeFileSync(
+        join(TEST_DIR, 'CLAUDE.md'),
+        '# Project Guidelines\n## Anti-Hallucination Protocol\nContent'
+      );
+
+      await checkCommand({ noInteractive: true });
+
+      const output = consoleLogs.join('\n');
+      expect(output).toContain('AI Tool Integration Status');
+      expect(output).toContain('CLAUDE.md');
+    });
+
+    it('should report missing integration file', async () => {
+      const manifest = createValidManifest({
+        level: 2,
+        integrations: ['CLAUDE.md'],
+        aiTools: ['claude-code']
+      });
+
+      mkdirSync(join(TEST_DIR, '.standards'), { recursive: true });
+      writeFileSync(
+        join(TEST_DIR, '.standards', 'manifest.json'),
+        JSON.stringify(manifest)
+      );
+      // Note: CLAUDE.md file is NOT created
+
+      await checkCommand({ noInteractive: true });
+
+      const output = consoleLogs.join('\n');
+      expect(output).toContain('AI Tool Integration Status');
+      expect(output).toContain('File not found');
+    });
+
+    it('should skip AI Tool Integration Status when no aiTools configured', async () => {
+      const manifest = createValidManifest({
+        level: 2,
+        aiTools: []  // Empty aiTools
+      });
+
+      mkdirSync(join(TEST_DIR, '.standards'), { recursive: true });
+      writeFileSync(
+        join(TEST_DIR, '.standards', 'manifest.json'),
+        JSON.stringify(manifest)
+      );
+
+      await checkCommand({ noInteractive: true });
+
+      const output = consoleLogs.join('\n');
+      // Should not show AI Tool Integration Status section
+      expect(output).not.toContain('AI Tool Integration Status');
+    });
+
+    it('should show OpenCode status when OpenCode configured', async () => {
+      const manifest = createValidManifest({
+        level: 2,
+        integrations: ['AGENTS.md'],
+        aiTools: ['opencode'],
+        skills: {
+          installed: true,
+          location: 'marketplace',
+          names: [],
+          version: null,
+          installations: []
+        }
+      });
+
+      mkdirSync(join(TEST_DIR, '.standards'), { recursive: true });
+      writeFileSync(
+        join(TEST_DIR, '.standards', 'manifest.json'),
+        JSON.stringify(manifest)
+      );
+      writeFileSync(
+        join(TEST_DIR, 'AGENTS.md'),
+        '# Project Guidelines\nContent'
+      );
+
+      await checkCommand({ noInteractive: true });
+
+      const output = consoleLogs.join('\n');
+      expect(output).toContain('Skills Status');
+      // New format shows each agent's status separately
+      expect(output).toContain('OpenCode');
+      expect(output).toContain('Skills');
+      expect(output).toContain('Commands');
+    });
+
+    it('should show both Claude Code and OpenCode status when both configured', async () => {
+      const manifest = createValidManifest({
+        level: 2,
+        integrations: ['CLAUDE.md', 'AGENTS.md'],
+        aiTools: ['claude-code', 'opencode'],
+        skills: {
+          installed: true,
+          location: 'marketplace',
+          names: [],
+          version: null,
+          installations: []
+        }
+      });
+
+      mkdirSync(join(TEST_DIR, '.standards'), { recursive: true });
+      writeFileSync(
+        join(TEST_DIR, '.standards', 'manifest.json'),
+        JSON.stringify(manifest)
+      );
+
+      await checkCommand({ noInteractive: true });
+
+      const output = consoleLogs.join('\n');
+      // New format shows each agent's status separately
+      expect(output).toContain('Claude Code');
+      expect(output).toContain('OpenCode');
+      expect(output).toContain('Skills Status');
+    });
+
+    it('should correctly check commands file integrity when commandHashes exist', async () => {
+      // Regression test: Bug #1 - getCommandsDirForAgent was called without 'level' parameter,
+      // causing all commands to report as "missing" instead of "unchanged"
+      const commandsDir = join(TEST_DIR, '.gemini', 'commands');
+      mkdirSync(commandsDir, { recursive: true });
+      const commandContent = '# Test Command\nSome content here';
+      writeFileSync(join(commandsDir, 'test-command.md'), commandContent);
+
+      // Compute hash for the command file
+      const { computeFileHash } = await import('../../src/utils/hasher.js');
+      const hashInfo = computeFileHash(join(commandsDir, 'test-command.md'));
+
+      const manifest = createValidManifest({
+        aiTools: ['gemini-cli'],
+        commands: {
+          installed: true,
+          names: ['test-command'],
+          installations: [{ agent: 'gemini-cli', level: 'project' }]
+        },
+        commandHashes: {
+          'gemini-cli/test-command.md': hashInfo
+        }
+      });
+
+      mkdirSync(join(TEST_DIR, '.standards'), { recursive: true });
+      writeFileSync(join(TEST_DIR, '.standards', 'manifest.json'), JSON.stringify(manifest));
+
+      await checkCommand({ noInteractive: true });
+      const output = consoleLogs.join('\n');
+
+      // Should report commands as unchanged/intact, NOT as missing
+      expect(output).toContain('All command files intact');
+      // The commands integrity section should show 1 file intact
+      expect(output).toMatch(/All command files intact \(1 files\)/);
+    });
+
+    it('should not contain hardcoded agent paths in skills status labels', async () => {
+      // Regression test: Bug #2 - i18n labels like skillsProject were '專案：.claude/skills/'
+      // which is misleading for non-Claude agents. Labels should be generic.
+      const { messages } = await import('../../src/i18n/messages.js');
+
+      for (const lang of ['en', 'zh-tw', 'zh-cn']) {
+        const skillsProject = messages[lang].commands.check.skillsProject;
+        const skillsGlobal = messages[lang].commands.check.skillsGlobal;
+
+        expect(skillsProject, `${lang} skillsProject should not contain .claude/`).not.toContain('.claude/');
+        expect(skillsGlobal, `${lang} skillsGlobal should not contain .claude/`).not.toContain('.claude/');
+        expect(skillsProject, `${lang} skillsProject should not contain .gemini/`).not.toContain('.gemini/');
+        expect(skillsGlobal, `${lang} skillsGlobal should not contain .gemini/`).not.toContain('.gemini/');
+      }
+    });
+
+    it('should display tracked command installations without [object Object]', async () => {
+      // Regression test: Bug #3 - commands.installations objects were printed as
+      // '[object Object]' instead of 'agent: level' format
+      const manifest = createValidManifest({
+        level: 2,
+        aiTools: ['gemini-cli'],
+        commands: {
+          installed: true,
+          names: ['test-cmd'],
+          installations: [{ agent: 'gemini-cli', level: 'project' }]
+        }
+      });
+
+      mkdirSync(join(TEST_DIR, '.standards'), { recursive: true });
+      writeFileSync(join(TEST_DIR, '.standards', 'manifest.json'), JSON.stringify(manifest));
+
+      await checkCommand({ noInteractive: true });
+      const output = consoleLogs.join('\n');
+
+      expect(output).toContain('gemini-cli: project');
+      expect(output).not.toContain('[object Object]');
+    });
+
+    it('should show correct skills coverage when skills installed on disk but manifest says false', async () => {
+      // Bug fix test: Coverage Summary should dynamically check disk, not rely on manifest.skills.installed
+      // See: https://github.com/AsiaOstrich/universal-dev-standards/issues/xxx
+
+      const manifest = createValidManifest({
+        level: 3,
+        aiTools: ['claude-code']
+        // skills.installed defaults to false
+      });
+
+      // Create manifest
+      mkdirSync(join(TEST_DIR, '.standards'), { recursive: true });
+      writeFileSync(
+        join(TEST_DIR, '.standards', 'manifest.json'),
+        JSON.stringify(manifest)
+      );
+
+      // Simulate skills installed on disk (project level for claude-code)
+      const skillsDir = join(TEST_DIR, '.claude', 'skills');
+      mkdirSync(skillsDir, { recursive: true });
+      writeFileSync(
+        join(skillsDir, '.manifest.json'),
+        JSON.stringify({
+          version: '3.5.1-beta.13',
+          source: 'universal-dev-standards',
+          agent: 'claude-code',
+          installedDate: '2024-01-01'
+        })
+      );
+
+      await checkCommand({ noInteractive: true });
+
+      const output = consoleLogs.join('\n');
+
+      // Should show correct count (30 skill standards for Level 3)
+      // Updated from 23 to 24 after adding ai-instruction-standards skill
+      // Updated from 24 to 25 after adding requirement-engineering skill
+      // Updated from 25 to 26 after linking checkin-standards to checkin-assistant skill
+      // (ai-friendly-architecture was remapped from ai-collaboration-standards to its own skill, no count change)
+      // Updated from 26 to 27 after adding project-discovery skill
+      // Updated from 27 to 28 after adding adr-assistant skill
+      // Updated from 28 to 29 after adding retrospective-assistant skill
+      // contract-test-assistant has no core standard (uses options/testing/contract-testing.md), so no count change
+      // Updated from 29 to 30 after adding push-standards (XSPEC-072 parity fix, linked to /push skill)
+      // Updated from 30 to 32 after adding flow-based-testing (e2e-assistant) and mock-boundary (testing-guide) standards
+      // Updated from 32 to 34 after adding security-testing (security-scan-assistant) and mutation-testing (test-coverage-assistant)
+      // Updated from 34 to 35 after adding full-coverage-testing (testing-guide) — XSPEC-178
+      // Updated from 35 to 36 after adding knowledge-graph-memory (knowledge-graph skill) — XSPEC-237 Phase 5
+      // Updated from 36 to 37 after shipping user-journey-testing (journey-test-assistant skill) — bundle⇄source parity fix
+      expect(output).toContain('37 via Skills');
+
+      // Should NOT show exactly "0 via Skills" as a standalone line
+      // Note: We check for the regex pattern since "22 via Skills" contains "0 via Skills" as substring
+      // The pattern matches "  0 via Skills" with leading spaces and NOT preceded by a digit
+      expect(output).not.toMatch(/(?<!\d)\s+0 via Skills/);
+    });
+
+    it('should not falsely report standards as missing when registry ID differs from .ai.yaml filename', async () => {
+      // Regression test for bug: "error-code-standards" and "logging-standards" were always
+      // reported as missing even when their actual AI files (error-codes.ai.yaml / logging.ai.yaml)
+      // were referenced in CLAUDE.md.
+      //
+      // Root cause: migrateStandardsPathsToIds() converts path entries like
+      // "ai/standards/error-codes.ai.yaml" to the registry ID "error-code-standards".
+      // check.js then did content.includes("error-code-standards") which always fails because
+      // CLAUDE.md was generated with the actual filename "error-codes.ai.yaml".
+      //
+      // Fix: also check against the actual AI filename from the registry.
+
+      const manifest = createValidManifest({
+        level: 2,
+        // Use path format — migrateStandardsPathsToIds converts these to IDs on read
+        standards: [
+          'ai/standards/error-codes.ai.yaml',
+          'ai/standards/logging.ai.yaml',
+        ],
+        integrations: ['CLAUDE.md'],
+        aiTools: ['claude-code'],
+      });
+
+      mkdirSync(join(TEST_DIR, '.standards'), { recursive: true });
+      writeFileSync(
+        join(TEST_DIR, '.standards', 'manifest.json'),
+        JSON.stringify(manifest)
+      );
+
+      // CLAUDE.md references the actual filenames (as integration-generator produces)
+      writeFileSync(
+        join(TEST_DIR, 'CLAUDE.md'),
+        [
+          '## Installed Standards Index',
+          '',
+          '- `error-codes.ai.yaml` - error-codes.ai.yaml',
+          '- `logging.ai.yaml` - logging.ai.yaml',
+        ].join('\n')
+      );
+
+      await checkCommand({ noInteractive: true });
+
+      const output = consoleLogs.join('\n');
+      // Neither standard should appear in the missing list
+      expect(output).not.toContain('error-code-standards');
+      expect(output).not.toContain('logging-standards');
+      // The integration block should be fully green (no ⚠ warning)
+      expect(output).not.toMatch(/⚠.*CLAUDE\.md/);
+    });
+
+  });
+});

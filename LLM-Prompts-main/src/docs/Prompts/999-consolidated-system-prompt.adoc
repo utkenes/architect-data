@@ -1,0 +1,134 @@
+== Consolidated System Prompt for Architecture Documentation
+:toc: left
+:toclevels: 2
+:sectanchors:
+:sectlinks:
+:sectnums:
+:icons: font
+
+ifndef::projectRootDir[:projectRootDir: ../../..]
+
+This document provides a single, comprehensive system prompt that combines all architecture documentation capabilities into one mega-prompt for creating specialized AI assistants focused on software architecture documentation using arc42, docToolchain, and related methodologies.
+
+=== Complete Architecture Documentation Assistant
+
+This consolidated prompt transforms LLMs into expert architecture assistants that can handle all aspects of software architecture documentation, from high-level strategic communication to detailed operational implementation.
+
+[source, markdown]
+----
+include::{projectRootDir}/prompts/Architecture-Communication-Canvas.md[]
+
+---
+
+include::{projectRootDir}/prompts/arc42-Chapter-Generator.md[]
+
+---
+
+include::{projectRootDir}/prompts/Context-Diagram-Generator.md[]
+
+---
+
+include::{projectRootDir}/prompts/Solution-Strategy-Planner.md[]
+
+---
+
+include::{projectRootDir}/prompts/Architecture-Decision-Record.md[]
+
+---
+
+include::{projectRootDir}/prompts/Quality-Scenarios-Builder.md[]
+
+---
+
+include::{projectRootDir}/prompts/Risk-Assessment-Matrix.md[]
+
+---
+
+include::{projectRootDir}/prompts/Technical-Debt-Tracker.md[]
+
+---
+
+include::{projectRootDir}/prompts/Stakeholder-Analysis.md[]
+
+---
+
+include::{projectRootDir}/prompts/Deployment-View-Creator.md[]
+----
+
+=== Usage Instructions
+
+==== For LLM Platforms
+
+1. **Copy the complete prompt** from the source block above
+2. **Paste into your LLM interface** as a system prompt or initial message
+3. **Begin your architecture work** - the AI will guide you through structured processes for any architecture documentation need
+
+==== For AI Assistant Creation
+
+1. **Use as system prompt** in platforms like:
+   - Claude Projects (Anthropic)
+   - GPTs (OpenAI)
+   - Custom AI assistants
+   - API implementations
+
+2. **The AI will have comprehensive capabilities** for:
+   - Architecture Communication Canvas creation
+   - Architecture Decision Record documentation
+   - Complete arc42 documentation generation
+   - Quality scenarios and requirements definition
+   - Risk assessment and mitigation planning
+   - Technical debt identification and management
+   - Stakeholder analysis and communication planning
+   - System context diagram creation
+   - Solution strategy development
+   - Deployment architecture design
+
+==== Integration with docToolchain
+
+All generated outputs are designed to work seamlessly with docToolchain:
+
+```bash
+# Process generated AsciiDoc files
+./dtcw generateHTML
+./dtcw generatePDF
+./dtcw publishToConfluence
+```
+
+=== Capabilities Overview
+
+The consolidated assistant provides:
+
+* **Systematic approaches**: Each capability follows structured, step-by-step processes
+* **Quality focus**: All decisions tied to measurable quality goals  
+* **Visual integration**: PlantUML/C4 diagrams embedded throughout
+* **arc42 alignment**: Direct support for arc42 methodology and chapter structure
+* **AsciiDoc output**: Compatible with docToolchain workflows
+* **Comprehensive templates**: Ready-to-use documentation structures
+* **Decision traceability**: Clear rationale linking requirements to architectural choices
+* **Implementation guidance**: Actionable next steps and validation approaches
+
+=== Workflow Integration
+
+The assistant supports complete architecture documentation workflows:
+
+```
+Stakeholder Analysis → Context Diagrams → Quality Scenarios 
+        ↓
+Solution Strategy → Architecture Decisions → Deployment View
+        ↓  
+Risk Assessment → Technical Debt Tracking → Documentation
+```
+
+All outputs integrate seamlessly into comprehensive arc42 documentation covering:
+
+* **Chapter 1**: Introduction and Goals (Architecture Communication Canvas)
+* **Chapter 3**: System Scope and Context (Context Diagram Generator)  
+* **Chapter 4**: Solution Strategy (Solution Strategy Planner)
+* **Chapter 7**: Deployment View (Deployment View Creator)
+* **Chapter 9**: Architecture Decisions (Architecture Decision Record)
+* **Chapter 10**: Quality Requirements (Quality Scenarios Builder)
+* **Chapter 11**: Risk and Technical Debt (Risk Assessment, Technical Debt Tracker)
+
+---
+
+*This consolidated prompt provides a comprehensive toolkit for AI-assisted architecture documentation following arc42 methodology and docToolchain workflows.*

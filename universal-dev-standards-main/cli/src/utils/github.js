@@ -1,0 +1,722 @@
+import { mkdirSync, writeFileSync, existsSync, readFileSync, readdirSync, copyFileSync } from 'fs';
+import { dirname, join, basename } from 'path';
+import { homedir } from 'os';
+import { fileURLToPath } from 'url';
+import https from 'https';
+import { setTimeout as delay } from 'timers/promises';
+import { getSkillsSourceDir } from './skills-source.js';
+
+// Re-export agent-specific functions from ai-agent-paths for unified API
+export {
+  AI_AGENT_PATHS,
+  getAgentConfig,
+  getSkillsDirForAgent,
+  getCommandsDirForAgent,
+  getSkillsSupportedAgents,
+  getCommandsSupportedAgents,
+  supportsMarketplace,
+  getFallbackSkillsPath,
+  getAgentDisplayName,
+  AVAILABLE_COMMANDS
+} from '../config/ai-agent-paths.js';
+
+const GITHUB_RAW_BASE = 'https://raw.githubusercontent.com/AsiaOstrich/universal-dev-standards/main';
+const SKILLS_RAW_BASE = 'https://raw.githubusercontent.com/AsiaOstrich/universal-dev-standards/main/skills';
+
+// Get the CLI package root directory
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = dirname(__filename);
+const CLI_ROOT = join(__dirname, '..', '..');
+
+// Resolved centrally — this file used to hardcode `<CLI_ROOT>/../skills/claude-code`, a
+// layout that no longer exists in either a checkout or an npm install. See skills-source.js.
+const SKILLS_LOCAL_DIR = getSkillsSourceDir();
+
+/**
+ * Status codes that are safe to retry (transient errors)
+ */
+const RETRYABLE_STATUS_CODES = [429, 502, 503, 504];
+
+/**
+ * Retry configuration
+ */
+const RETRY_CONFIG = {
+  maxRetries: 3,
+  baseDelayMs: 1000,
+};
+
+/**
+ * Network error codes that are safe to retry
+ */
+const RETRYABLE_NETWORK_ERRORS = ['ECONNRESET', 'ENOTFOUND', 'ECONNREFUSED', 'ETIMEDOUT', 'EPIPE'];
+
+/**
+ * Calculate delay for a retry attempt
+ * @param {number} attempt - Current attempt (0-indexed)
+ * @param {Object} headers - Response headers (may contain Retry-After or X-RateLimit-Reset)
+ * @returns {number} Delay in milliseconds
+ */
+function calculateRetryDelay(attempt, headers = {}) {
+  const retryAfter = headers['retry-after'];
+  if (retryAfter) {
+    const seconds = parseInt(retryAfter, 10);
+    if (!isNaN(seconds) && seconds > 0 && seconds <= 120) {
+      return seconds * 1000;
+    }
+  }
+
+  const resetTimestamp = headers['x-ratelimit-reset'];
+  if (resetTimestamp) {
+    const resetMs = parseInt(resetTimestamp, 10) * 1000;
+    const waitMs = resetMs - Date.now();
+    if (waitMs > 0 && waitMs <= 120000) {
+      return waitMs;
+    }
+  }
+
+  return RETRY_CONFIG.baseDelayMs * Math.pow(2, attempt);
+}
+
+/**
+ * Perform a single HTTPS GET request
+ * @param {string} url - URL to fetch
+ * @returns {Promise<{data: string, statusCode: number, headers: Object}>}
+ */
+function httpGet(url) {
+  return new Promise((resolve, reject) => {
+    https.get(url, (res) => {
+      if (res.statusCode === 301 || res.statusCode === 302) {
+        httpGet(res.headers.location).then(resolve, reject);
+        return;
+      }
+
+      // Collect Buffers and decode once at the end. `data += chunk` decoded each
+      // chunk on its own, so any character whose bytes straddled a chunk boundary
+      // became U+FFFD on both sides of the split. Latin text survived because its
+      // characters are one byte; Chinese standards are three bytes each and did
+      // not. `uds update --force` on one project downloaded four files and wrote
+      // 30 replacement characters into them — `日期` → `日�期`, `結構` → `結�構`
+      // — and reported every action as succeeded, because as far as the CLI was
+      // concerned the transfer completed and the file was written. (XSPEC-343)
+      const chunks = [];
+      res.on('data', chunk => chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk)));
+      res.on('end', () => {
+        // try/catch because a throw inside an event handler does not reject the
+        // enclosing promise — it escapes, and the caller's await hangs forever.
+        // The first draft of this fix passed strings to Buffer.concat and the
+        // test run simply stopped, with no error to read. A hang is a worse
+        // failure than an exception: there is nothing to grep for.
+        try {
+          resolve({
+            data: Buffer.concat(chunks).toString('utf8'),
+            statusCode: res.statusCode,
+            headers: res.headers
+          });
+        } catch (err) {
+          reject(err);
+        }
+      });
+      res.on('error', reject);
+    }).on('error', reject);
+  });
+}
+
+/**
+ * Download with retry and exponential backoff
+ * @param {string} url - Full URL to download
+ * @param {string} label - Label for error messages (e.g., filePath)
+ * @returns {Promise<string>} File content
+ */
+async function downloadWithRetry(url, label) {
+  let lastError = null;
+
+  for (let attempt = 0; attempt <= RETRY_CONFIG.maxRetries; attempt++) {
+    try {
+      const result = await httpGet(url);
+
+      if (result.statusCode === 200) {
+        return result.data;
+      }
+
+      if (RETRYABLE_STATUS_CODES.includes(result.statusCode) && attempt < RETRY_CONFIG.maxRetries) {
+        const delayMs = calculateRetryDelay(attempt, result.headers);
+        await delay(delayMs);
+        lastError = new Error(`GitHub returned ${result.statusCode} for ${label}`);
+        continue;
+      }
+
+      throw new Error(`GitHub returned ${result.statusCode} for ${label}`);
+    } catch (err) {
+      if (RETRYABLE_NETWORK_ERRORS.includes(err.code) && attempt < RETRY_CONFIG.maxRetries) {
+        const delayMs = RETRY_CONFIG.baseDelayMs * Math.pow(2, attempt);
+        await delay(delayMs);
+        lastError = err;
+        continue;
+      }
+
+      throw err;
+    }
+  }
+
+  throw lastError || new Error(`Download failed after ${RETRY_CONFIG.maxRetries} retries: ${label}`);
+}
+
+/**
+ * Download a file from GitHub raw content
+ * @param {string} filePath - Path relative to repo root (e.g., 'core/checkin-standards.md')
+ * @returns {Promise<string>} File content
+ */
+export function downloadFromGitHub(filePath) {
+  const url = `${GITHUB_RAW_BASE}/${filePath}`;
+  return downloadWithRetry(url, filePath);
+}
+
+/**
+ * Download and save a standard file to the target project
+ * @param {string} sourcePath - Relative path from repo root (e.g., 'core/checkin-standards.md')
+ * @param {string} targetDir - Target directory (usually '.standards')
+ * @param {string} projectPath - Project root path
+ * @returns {Promise<Object>} Result with success status and copied path
+ */
+export async function downloadStandard(sourcePath, targetDir, projectPath) {
+  const targetFolder = join(projectPath, targetDir);
+  const targetFile = join(targetFolder, basename(sourcePath));
+
+  // Ensure target directory exists
+  if (!existsSync(targetFolder)) {
+    mkdirSync(targetFolder, { recursive: true });
+  }
+
+  try {
+    const content = await downloadFromGitHub(sourcePath);
+    writeFileSync(targetFile, content);
+    return {
+      success: true,
+      error: null,
+      path: targetFile
+    };
+  } catch (error) {
+    return {
+      success: false,
+      error: error.message,
+      path: null
+    };
+  }
+}
+
+/**
+ * Download and save an integration file to its target location
+ * @param {string} sourcePath - Source path relative to repo root
+ * @param {string} targetPath - Target path relative to project root
+ * @param {string} projectPath - Project root path
+ * @returns {Promise<Object>} Result
+ */
+export async function downloadIntegration(sourcePath, targetPath, projectPath) {
+  const target = join(projectPath, targetPath);
+
+  // Ensure target directory exists
+  const targetDir = dirname(target);
+  if (!existsSync(targetDir)) {
+    mkdirSync(targetDir, { recursive: true });
+  }
+
+  try {
+    const content = await downloadFromGitHub(sourcePath);
+    writeFileSync(target, content);
+    return {
+      success: true,
+      error: null,
+      path: target
+    };
+  } catch (error) {
+    return {
+      success: false,
+      error: error.message,
+      path: null
+    };
+  }
+}
+
+/**
+ * Download a file from Skills repository
+ * @param {string} filePath - Path relative to skills repo root
+ * @returns {Promise<string>} File content
+ */
+export function downloadFromSkillsRepo(filePath) {
+  const url = `${SKILLS_RAW_BASE}/${filePath}`;
+  return downloadWithRetry(url, filePath);
+}
+
+/**
+ * Get the Skills installation directory
+ * @returns {string} Path to ~/.claude/skills/
+ */
+export function getSkillsDir() {
+  return join(homedir(), '.claude', 'skills');
+}
+
+/**
+ * Check if local skills directory exists
+ * @returns {boolean} True if local skills are available
+ */
+export function hasLocalSkills() {
+  return existsSync(SKILLS_LOCAL_DIR);
+}
+
+/**
+ * Get local skills directory path
+ * @returns {string} Path to local skills directory
+ */
+export function getLocalSkillsDir() {
+  return SKILLS_LOCAL_DIR;
+}
+
+/**
+ * Install a single Skill from local directory
+ * @param {string} skillName - Skill name (e.g., 'ai-collaboration-standards')
+ * @returns {Object} Result with success status
+ */
+export function installSkillFromLocal(skillName) {
+  const sourceDir = join(SKILLS_LOCAL_DIR, skillName);
+  const skillsDir = getSkillsDir();
+  const targetDir = join(skillsDir, skillName);
+
+  if (!existsSync(sourceDir)) {
+    return {
+      success: false,
+      skillName,
+      files: [],
+      error: `Skill directory not found: ${sourceDir}`,
+      path: null
+    };
+  }
+
+  // Ensure target directory exists
+  if (!existsSync(targetDir)) {
+    mkdirSync(targetDir, { recursive: true });
+  }
+
+  const results = [];
+  try {
+    const files = readdirSync(sourceDir);
+    for (const fileName of files) {
+      const sourceFile = join(sourceDir, fileName);
+      const targetFile = join(targetDir, fileName);
+
+      try {
+        copyFileSync(sourceFile, targetFile);
+        results.push({ file: fileName, success: true });
+      } catch (error) {
+        results.push({ file: fileName, success: false, error: error.message });
+      }
+    }
+  } catch (error) {
+    return {
+      success: false,
+      skillName,
+      files: results,
+      error: error.message,
+      path: null
+    };
+  }
+
+  const allSuccess = results.every(r => r.success);
+  return {
+    success: allSuccess,
+    skillName,
+    files: results,
+    path: targetDir
+  };
+}
+
+/**
+ * Download and install a single Skill from remote repository
+ * @param {string} skillName - Skill name (e.g., 'ai-collaboration-standards')
+ * @param {string[]} skillFiles - Array of file paths relative to skills repo
+ * @returns {Promise<Object>} Result with success status
+ */
+export async function downloadSkill(skillName, skillFiles) {
+  // Prefer local installation if available
+  if (hasLocalSkills()) {
+    return installSkillFromLocal(skillName);
+  }
+
+  // Fall back to remote download
+  const skillsDir = getSkillsDir();
+  const targetDir = join(skillsDir, skillName);
+
+  // Ensure target directory exists
+  if (!existsSync(targetDir)) {
+    mkdirSync(targetDir, { recursive: true });
+  }
+
+  const results = [];
+  for (const filePath of skillFiles) {
+    const fileName = basename(filePath);
+    const targetFile = join(targetDir, fileName);
+
+    try {
+      const content = await downloadFromSkillsRepo(filePath);
+      writeFileSync(targetFile, content);
+      results.push({ file: fileName, success: true });
+    } catch (error) {
+      results.push({ file: fileName, success: false, error: error.message });
+    }
+  }
+
+  const allSuccess = results.every(r => r.success);
+  return {
+    success: allSuccess,
+    skillName,
+    files: results,
+    path: targetDir
+  };
+}
+
+/**
+ * Check if Skills are already installed and get version info
+ * @returns {Object|null} Installed skills info or null
+ */
+export function getInstalledSkillsInfo() {
+  const skillsDir = getSkillsDir();
+  const manifestPath = join(skillsDir, '.manifest.json');
+
+  if (!existsSync(manifestPath)) {
+    // Check if any skill directories exist
+    if (!existsSync(skillsDir)) {
+      return null;
+    }
+
+    // Skills exist but no manifest - likely manually installed
+    return {
+      installed: true,
+      version: null,
+      source: 'unknown'
+    };
+  }
+
+  try {
+    const manifest = JSON.parse(readFileSync(manifestPath, 'utf-8'));
+    return {
+      installed: true,
+      version: manifest.version || null,
+      source: manifest.source || 'universal-dev-standards',
+      installedDate: manifest.installedDate || null
+    };
+  } catch {
+    return {
+      installed: true,
+      version: null,
+      source: 'unknown'
+    };
+  }
+}
+
+/**
+ * Write Skills manifest file
+ * @param {string} version - Version of skills installed
+ * @param {string} targetDir - Optional target directory (defaults to user-level)
+ */
+export function writeSkillsManifest(version, targetDir = null) {
+  const skillsDir = targetDir || getSkillsDir();
+  const manifestPath = join(skillsDir, '.manifest.json');
+
+  if (!existsSync(skillsDir)) {
+    mkdirSync(skillsDir, { recursive: true });
+  }
+
+  const manifest = {
+    version,
+    source: 'universal-dev-standards',
+    installedDate: new Date().toISOString().split('T')[0]
+  };
+
+  writeFileSync(manifestPath, JSON.stringify(manifest, null, 2));
+}
+
+/**
+ * Get the project-level Skills installation directory
+ * @param {string} projectPath - Project root path
+ * @returns {string} Path to project/.claude/skills/
+ */
+export function getProjectSkillsDir(projectPath) {
+  return join(projectPath, '.claude', 'skills');
+}
+
+/**
+ * Check if project-level Skills are installed and get version info
+ * @param {string} projectPath - Project root path
+ * @returns {Object|null} Installed skills info or null
+ */
+export function getProjectInstalledSkillsInfo(projectPath) {
+  const skillsDir = getProjectSkillsDir(projectPath);
+  const manifestPath = join(skillsDir, '.manifest.json');
+
+  if (!existsSync(manifestPath)) {
+    // Check if any skill directories exist
+    if (!existsSync(skillsDir)) {
+      return null;
+    }
+
+    // Skills exist but no manifest - likely manually installed
+    return {
+      installed: true,
+      version: null,
+      source: 'unknown',
+      location: 'project'
+    };
+  }
+
+  try {
+    const manifest = JSON.parse(readFileSync(manifestPath, 'utf-8'));
+    return {
+      installed: true,
+      version: manifest.version || null,
+      source: manifest.source || 'universal-dev-standards',
+      installedDate: manifest.installedDate || null,
+      location: 'project'
+    };
+  } catch {
+    return {
+      installed: true,
+      version: null,
+      source: 'unknown',
+      location: 'project'
+    };
+  }
+}
+
+/**
+ * Install a single Skill to a specific target directory
+ * @param {string} skillName - Skill name (e.g., 'ai-collaboration-standards')
+ * @param {string} targetBaseDir - Target base directory for skills
+ * @returns {Object} Result with success status
+ */
+export function installSkillToDir(skillName, targetBaseDir) {
+  const sourceDir = join(SKILLS_LOCAL_DIR, skillName);
+  const targetDir = join(targetBaseDir, skillName);
+
+  if (!existsSync(sourceDir)) {
+    return {
+      success: false,
+      skillName,
+      files: [],
+      error: `Skill directory not found: ${sourceDir}`,
+      path: null
+    };
+  }
+
+  // Ensure target directory exists
+  if (!existsSync(targetDir)) {
+    mkdirSync(targetDir, { recursive: true });
+  }
+
+  const results = [];
+  try {
+    const files = readdirSync(sourceDir);
+    for (const fileName of files) {
+      const sourceFile = join(sourceDir, fileName);
+      const targetFile = join(targetDir, fileName);
+
+      try {
+        copyFileSync(sourceFile, targetFile);
+        results.push({ file: fileName, success: true });
+      } catch (error) {
+        results.push({ file: fileName, success: false, error: error.message });
+      }
+    }
+  } catch (error) {
+    return {
+      success: false,
+      skillName,
+      files: results,
+      error: error.message,
+      path: null
+    };
+  }
+
+  const allSuccess = results.every(r => r.success);
+  return {
+    success: allSuccess,
+    skillName,
+    files: results,
+    path: targetDir
+  };
+}
+
+/**
+ * Compare two semantic versions for sorting
+ * @param {string} a - First version
+ * @param {string} b - Second version
+ * @returns {number} -1, 0, or 1
+ */
+function compareVersionsForSort(a, b) {
+  const parseVersion = (v) => {
+    const [main, prerelease] = v.split('-');
+    const [major, minor, patch] = main.split('.').map(Number);
+    return { major, minor, patch, prerelease: prerelease || null };
+  };
+
+  const pa = parseVersion(a);
+  const pb = parseVersion(b);
+
+  if (pa.major !== pb.major) return pa.major - pb.major;
+  if (pa.minor !== pb.minor) return pa.minor - pb.minor;
+  if (pa.patch !== pb.patch) return pa.patch - pb.patch;
+
+  // No prerelease > prerelease
+  if (!pa.prerelease && pb.prerelease) return 1;
+  if (pa.prerelease && !pb.prerelease) return -1;
+  if (!pa.prerelease && !pb.prerelease) return 0;
+
+  // Compare prerelease (beta.1 < beta.2)
+  const parsePrerelease = (pr) => {
+    const match = pr.match(/^(alpha|beta|rc)\.?(\d+)?$/);
+    if (match) {
+      const order = { alpha: 1, beta: 2, rc: 3 };
+      return { type: order[match[1]] || 0, num: parseInt(match[2] || '0', 10) };
+    }
+    return { type: 0, num: 0 };
+  };
+
+  const pra = parsePrerelease(pa.prerelease);
+  const prb = parsePrerelease(pb.prerelease);
+
+  if (pra.type !== prb.type) return pra.type - prb.type;
+  return pra.num - prb.num;
+}
+
+/**
+ * Get Plugin Marketplace installed skills info
+ * Reads from ~/.claude/plugins/installed_plugins.json and cache directory
+ * @returns {Object|null} Marketplace skills info or null
+ */
+export function getMarketplaceSkillsInfo() {
+  const pluginsFile = join(homedir(), '.claude', 'plugins', 'installed_plugins.json');
+
+  if (!existsSync(pluginsFile)) {
+    return null;
+  }
+
+  try {
+    const data = JSON.parse(readFileSync(pluginsFile, 'utf-8'));
+    const plugins = data.plugins || {};
+
+    // Look for universal-dev-standards plugin (various marketplace keys)
+    const udsKeys = Object.keys(plugins).filter(key =>
+      key.includes('universal-dev-standards')
+    );
+
+    if (udsKeys.length === 0) {
+      return null;
+    }
+
+    // Get the first matching plugin info
+    const pluginKey = udsKeys[0];
+    const pluginInfo = plugins[pluginKey];
+
+    if (!pluginInfo || pluginInfo.length === 0) {
+      return null;
+    }
+
+    const info = pluginInfo[0];
+    let version = info.version || 'unknown';
+
+    // installed_plugins.json may have stale records - plugin may be uninstalled
+    // but JSON record not cleaned up. Verify cache directory actually exists.
+    // pluginKey format: "universal-dev-standards@asia-ostrich"
+    const parts = pluginKey.split('@');
+    if (parts.length === 2) {
+      const [pluginName, marketplace] = parts;
+      const cacheDir = join(homedir(), '.claude', 'plugins', 'cache', marketplace, pluginName);
+
+      // Fix: If cache directory doesn't exist, plugin was uninstalled but record remains
+      // Return null to indicate plugin is not actually installed
+      if (!existsSync(cacheDir)) {
+        return null;
+      }
+
+      try {
+        const versions = readdirSync(cacheDir)
+          .filter(name => name.match(/^\d+\.\d+\.\d+/));
+
+        if (versions.length > 0) {
+          // Sort versions and get the latest
+          versions.sort(compareVersionsForSort);
+          const latestVersion = versions[versions.length - 1];
+          if (latestVersion && latestVersion !== version) {
+            version = latestVersion;
+          }
+        }
+      } catch {
+        // Ignore errors reading cache directory
+      }
+    }
+
+    return {
+      installed: true,
+      version,
+      installPath: info.installPath || null,
+      installedAt: info.installedAt || null,
+      lastUpdated: info.lastUpdated || null,
+      source: 'marketplace',
+      pluginKey
+    };
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Download and install a single Skill to a specific target directory
+ * @param {string} skillName - Skill name
+ * @param {string[]} skillFiles - Array of file paths relative to skills repo
+ * @param {string} targetLocation - 'user' or 'project'
+ * @param {string} projectPath - Project path (required if targetLocation is 'project')
+ * @returns {Promise<Object>} Result with success status
+ */
+export async function downloadSkillToLocation(skillName, skillFiles, targetLocation = 'user', projectPath = null) {
+  // Determine target directory
+  const targetBaseDir = targetLocation === 'project' && projectPath
+    ? getProjectSkillsDir(projectPath)
+    : getSkillsDir();
+
+  // Prefer local installation if available
+  if (hasLocalSkills()) {
+    return installSkillToDir(skillName, targetBaseDir);
+  }
+
+  // Fall back to remote download
+  const targetDir = join(targetBaseDir, skillName);
+
+  // Ensure target directory exists
+  if (!existsSync(targetDir)) {
+    mkdirSync(targetDir, { recursive: true });
+  }
+
+  const results = [];
+  for (const filePath of skillFiles) {
+    const fileName = basename(filePath);
+    const targetFile = join(targetDir, fileName);
+
+    try {
+      // For remote download, we need to extract just the skill-relative path
+      // skillFiles paths are like: skills/ai-collaboration-standards/SKILL.md
+      // We need just: ai-collaboration-standards/SKILL.md
+      const relativePath = filePath.replace(/^skills\/claude-code\//, '');
+      const content = await downloadFromSkillsRepo(relativePath);
+      writeFileSync(targetFile, content);
+      results.push({ file: fileName, success: true });
+    } catch (error) {
+      results.push({ file: fileName, success: false, error: error.message });
+    }
+  }
+
+  const allSuccess = results.every(r => r.success);
+  return {
+    success: allSuccess,
+    skillName,
+    files: results,
+    path: targetDir
+  };
+}

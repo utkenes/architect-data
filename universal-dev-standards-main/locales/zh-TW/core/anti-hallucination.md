@@ -1,0 +1,88 @@
+---
+source: ../../../core/anti-hallucination.md
+source_version: 1.5.1
+translation_version: 1.5.1
+last_synced: 2026-04-22
+status: current
+---
+
+# 防幻覺規範 (Anti-Hallucination Standards)
+
+> **語言**: [English](../../../core/anti-hallucination.md) | 繁體中文
+
+**版本**: 1.5.0
+**最後更新**: 2026-02-10
+**適用性**: 所有 AI 輔助開發工作
+**範圍**: 通用 (Universal)
+
+---
+
+## 目的
+
+本標準定義 AI 代理在協作過程中必須遵守的防幻覺協議。關於詳細的對話範例、幻覺類型分析與案例研究，請參閱 **[防幻覺指南](guides/anti-hallucination-guide.md)**。
+
+---
+
+## 核心鐵律 (The Iron Rules)
+
+1. **證據基礎 (Evidence-Based Analysis)**
+   - 嚴禁在未讀取檔案前猜測程式碼內容。
+   - 不要假設 API、類別名稱或函式庫版本。
+   - 如果未看過程式碼，必須明確說明：「我需要讀取 [檔案] 來確認」。
+
+2. **來源標註 (Source Attribution)**
+   - 每個關於程式碼的事實陳述都必須標註來源。
+   - 格式：`[來源: 程式碼] 路徑/檔案:行號`
+   - 外部文件：`[來源: 外部] http://網址 (存取日期: 日期)`
+
+3. **確定性分類 (Certainty Classification)**
+   - 使用標籤表示信心程度：
+     - `[已確認]` (Confirmed) - 已從來源驗證
+     - `[推論]` (Inferred) - 邏輯推論
+     - `[假設]` (Assumption) - 合理假設（需驗證）
+     - `[未知]` (Unknown) - 無法確定
+
+4. **推薦選項 (Recommendations)**
+   - 當提供多個選項時，必須明確說明「推薦」的選擇及其理由。
+
+---
+
+## 驗證流程
+
+在回答使用者問題或修改程式碼前，執行以下檢查：
+
+1. **我讀過相關檔案了嗎？** (使用 `read_file` 或 `search`)
+2. **我引用的變數/函式真的存在嗎？** (再次確認)
+3. **我是否使用了過時的知識？** (檢查專案中的版本設定，如 `package.json`)
+4. **我的推論有證據支持嗎？** (如果沒有，標註為 `[假設]`)
+
+---
+
+## 禁止事項
+
+- ❌ 編造不存在的 API 或參數。
+- ❌ 假裝執行了沒有執行的指令。
+- ❌ 在沒有根據的情況下聲稱「已修復」。
+- ❌ 引用不存在的檔案路徑。
+
+---
+
+## 相關標準
+
+- [防幻覺指南](guides/anti-hallucination-guide.md) - 詳細範例與案例
+- [AI 指令檔案規範](ai-instruction-standards.md)
+
+---
+
+## 版本歷史
+
+| 版本 | 日期 | 變更 |
+|------|------|------|
+| 1.3.1 | 2026-01-29 | **重大重構**：拆分為規則（本文件）和指南（anti-hallucination-guide.md）。 |
+| 1.3.0 | 2026-01-24 | 新增統一標籤系統 |
+
+---
+
+## 授權
+
+本標準以 [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/) 授權發布。

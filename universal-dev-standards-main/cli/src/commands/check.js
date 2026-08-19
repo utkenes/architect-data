@@ -1,0 +1,2000 @@
+import chalk from 'chalk';
+import { select } from '@inquirer/prompts';
+import ora from 'ora';
+import { existsSync, readFileSync } from 'fs';
+import { join, basename } from 'path';
+import { execSync } from 'child_process';
+import { readManifest, writeManifest, isInitialized, copyStandard, copyIntegration } from '../utils/copier.js';
+import {
+  getAllStandards,
+  getRepositoryInfo, resolveStandardFilename, resolveStandardSourcePath } from '../utils/registry.js';
+import {
+  computeFileHash,
+  compareFileHash,
+  hasFileHashes,
+  compareIntegrationBlockHash
+} from '../utils/hasher.js';
+import { downloadFromGitHub, getMarketplaceSkillsInfo } from '../utils/github.js';
+import {
+  getInstalledSkillsInfoForAgent,
+  getInstalledCommandsForAgent
+} from '../utils/skills-installer.js';
+import {
+  getAgentConfig,
+  getAgentDisplayName,
+  getSkillsDirForAgent,
+  getCommandsDirForAgent
+} from '../config/ai-agent-paths.js';
+import {
+  parseReferences,
+  compareStandardsWithReferences
+} from '../utils/reference-sync.js';
+import { extractMarkedContent, getToolFilePath, parseStandardsIndexCount } from '../utils/integration-generator.js';
+import { getToolFormat } from '../core/constants.js';
+import { checkForUpdates } from '../utils/npm-registry.js';
+import { writeUpdateCache } from '../utils/update-checker.js';
+import { StandardValidator } from '../utils/standard-validator.js';
+import { WorkflowGate } from '../utils/workflow-gate.js';
+import { t, setLanguage, isLanguageExplicitlySet } from '../i18n/messages.js';
+import { guardAgainstSelfAdoption } from '../utils/detect-self-adoption.js';
+import { lintAll as lintI18nAll, partitionFindings as partitionI18nFindings } from '../lint/i18n.js';
+import { resolveIntegrationFile } from '../core/constants.js';
+
+/**
+ * Display the summary of file integrity status
+ */
+function displayFileIntegritySummary(fileStatus, msg) {
+  // XSPEC-342 R4（安靜通過）：不再逐檔列印「✓ 未變更」——實測佔 `uds check` 輸出約 70%
+  // （121 行中 85 行），把真正該讀的訊息（如標準落後）淹沒，也讓輸出大到被 agent 截斷。
+  // 未變更數仍保留在下方 summary 一行；此處只列印「需要注意」的檔（modified/missing/noHash）。
+  if (fileStatus.modified.length > 0) {
+    for (const file of fileStatus.modified) {
+      console.log(chalk.yellow(`  ⚠ ${file} (${msg.modified})`));
+    }
+  }
+
+  if (fileStatus.missing.length > 0) {
+    for (const file of fileStatus.missing) {
+      console.log(chalk.red(`  ✗ ${file} (${msg.missing})`));
+    }
+  }
+
+  if (fileStatus.noHash.length > 0) {
+    for (const file of fileStatus.noHash) {
+      console.log(chalk.gray(`  ? ${file} (${msg.existsNoHash})`));
+    }
+  }
+
+  console.log();
+  console.log(chalk.gray(`  ${msg.summary
+    .replace('{unchanged}', fileStatus.unchanged.length)
+    .replace('{modified}', fileStatus.modified.length)
+    .replace('{missing}', fileStatus.missing.length)}` +
+    (fileStatus.noHash.length > 0 ? `, ${fileStatus.noHash.length} no hash` : '')));
+  console.log();
+}
+
+/**
+ * Perform integrity check for standards and integration files
+ * @returns {Object} File status object
+ */
+function performFileIntegrityCheck(projectPath, manifest, msg) {
+  const fileStatus = {
+    unchanged: [],
+    modified: [],
+    missing: [],
+    noHash: []
+  };
+
+  if (hasFileHashes(manifest)) {
+    // Hash-based integrity check
+    for (const [relativePath, hashInfo] of Object.entries(manifest.fileHashes)) {
+      const fullPath = join(projectPath, relativePath);
+      const status = compareFileHash(fullPath, hashInfo);
+
+      switch (status) {
+        case 'unchanged':
+          fileStatus.unchanged.push(relativePath);
+          break;
+        case 'modified':
+          fileStatus.modified.push(relativePath);
+          break;
+        case 'missing':
+          fileStatus.missing.push(relativePath);
+          break;
+      }
+    }
+  } else {
+    // Legacy manifest - existence check only
+    console.log(chalk.gray(`  ${msg.hashNotAvailable}`));
+    console.log(chalk.gray(`    ${msg.checkingExistence}`));
+    console.log();
+
+    // Check standards — support both legacy path format and current ID format
+    const allStdsLegacy = getAllStandards();
+    const legacyFormat = manifest.format || 'ai';
+    for (const std of manifest.standards) {
+      // Option file paths (ai/options/...) use a subdirectory; handle separately
+      if (std.includes('/options/') || std.startsWith('options/')) {
+        const fileName = std.split('/').pop();
+        const filePath = join(projectPath, '.standards', 'options', fileName);
+        if (existsSync(filePath)) {
+          fileStatus.noHash.push(`.standards/options/${fileName}`);
+        } else {
+          fileStatus.missing.push(`.standards/options/${fileName}`);
+        }
+        continue;
+      }
+      // ID format (no '/' or '.'): resolve via registry to get actual filename
+      let fileName;
+      if (!std.includes('/') && !std.includes('.')) {
+        const entry = allStdsLegacy.find(s => s.id === std);
+        if (entry) {
+          const src = entry.source;
+          const sourcePath = typeof src === 'string'
+            ? src
+            : (src?.[legacyFormat] || src?.ai || src?.human || std);
+          fileName = basename(sourcePath);
+        } else {
+          fileName = std;
+        }
+      } else {
+        fileName = std.split('/').pop();
+      }
+      const filePath = join(projectPath, '.standards', fileName);
+      if (existsSync(filePath)) {
+        fileStatus.noHash.push(`.standards/${fileName}`);
+      } else {
+        fileStatus.missing.push(`.standards/${fileName}`);
+      }
+    }
+
+    // Check extensions (skip non-string entries like custom-domain objects)
+    for (const ext of manifest.extensions) {
+      if (typeof ext !== 'string') continue;
+      const filePath = join(projectPath, '.standards', ext.split('/').pop());
+      if (existsSync(filePath)) {
+        fileStatus.noHash.push(`.standards/${ext.split('/').pop()}`);
+      } else {
+        fileStatus.missing.push(`.standards/${ext.split('/').pop()}`);
+      }
+    }
+
+    // Check integrations
+    for (const intEntry of manifest.integrations) {
+      // 兩種形狀都要能解出路徑（XSPEC-343 R1）
+      const int = resolveIntegrationFile(intEntry) || intEntry;
+      const filePath = join(projectPath, int);
+      if (existsSync(filePath)) {
+        fileStatus.noHash.push(int);
+      } else {
+        fileStatus.missing.push(int);
+      }
+    }
+  }
+
+  return fileStatus;
+}
+
+/**
+ * Initialize context for the check command (manifest, language, messages)
+ * @returns {Object|null} Context object or null if initialization failed
+ */
+function initializeCheckContext(projectPath) {
+  // Get initial messages (before language is set from manifest)
+  let common = t().commands.common;
+
+  // Check if initialized
+  if (!isInitialized(projectPath)) {
+    console.log(chalk.red(common.notInitialized));
+    console.log(chalk.gray(`  ${common.runInit}`));
+    console.log();
+    return null;
+  }
+
+  // Read manifest
+  const manifest = readManifest(projectPath);
+  if (!manifest) {
+    console.log(chalk.red(common.couldNotReadManifest));
+    console.log(chalk.gray('  The .standards/manifest.json may be corrupted.'));
+    console.log();
+    return null;
+  }
+
+  // Set UI language based on display_language setting
+  // Only override if user didn't explicitly set --ui-lang flag
+  if (!isLanguageExplicitlySet()) {
+    const uiLang = manifest.options?.display_language || 'en';
+    setLanguage(uiLang);
+  }
+
+  // Re-get localized messages with correct language
+  return {
+    manifest,
+    repoInfo: getRepositoryInfo(),
+    msg: t().commands.check,
+    common: t().commands.common
+  };
+}
+
+/**
+ * Display standards adoption status and update information
+ */
+function displayAdoptionStatus(manifest, msg, common, repoInfo, standardsUpdate) {
+  console.log(chalk.green(msg.standardsInitialized));
+  console.log();
+  console.log(chalk.cyan(msg.adoptionStatus));
+  console.log(chalk.gray(`  ${msg.installed}: ${manifest.upstream.installed}`));
+  console.log(chalk.gray(`  ${common.version}: ${manifest.upstream.version}`));
+  console.log();
+
+  // XSPEC-342 R1：判斷「已裝標準」是否落後 **npm 最新版**，而非 CLI 自己 bundled 的副本。
+  //   舊 bug：拿 manifest.upstream.version 比 repoInfo.standards.version（＝跑這支 CLI 帶的
+  //   標準副本）。CLI 一舊，bundled < npm 最新，就會吐出「6.1.0 → 5.12.1」這種倒退訊息，
+  //   且永遠說不出「你的標準過期了」。standardsUpdate = checkForUpdates(已裝標準版本)：
+  //   available ＝ 已裝 < npm 最新。離線時為 null → 靜默略過（不誤用 bundled 版本比對）。
+  if (standardsUpdate && !standardsUpdate.offline && standardsUpdate.available) {
+    console.log(chalk.yellow(msg.updateAvailable
+      .replace('{current}', manifest.upstream.version)
+      .replace('{latest}', standardsUpdate.latestVersion)));
+    console.log(chalk.gray(`  ${msg.runUpdate}`));
+    console.log();
+  }
+}
+
+/**
+ * Check command - verify adoption status
+ * @param {Object} options - Command options
+ */
+export async function checkCommand(options = {}) {
+  const projectPath = process.cwd();
+
+  // Handle --i18n option early — i18n lint is meant to be runnable both
+  // inside UDS source (lint canonical + locale variants) and inside
+  // adopter projects (lint installed locale variants). It does not require
+  // adoption-drift checks, so we short-circuit before guardAgainstSelfAdoption.
+  if (options.i18n) {
+    await runI18nLint(projectPath, options);
+    return;
+  }
+
+  // Refuse to run inside the UDS source repo itself.
+  // See DEC-044 / XSPEC-071 — adoption-drift check makes no sense for the
+  // source repo. `--force` bypasses (e.g. private forks of UDS).
+  guardAgainstSelfAdoption('check', options, projectPath);
+
+  // Handle --standard option (validate specific standard physical spec)
+  if (options.standard) {
+    const validator = new StandardValidator(projectPath);
+    const result = await validator.validate(options.standard);
+    
+    if (options.json) {
+      console.log(JSON.stringify(result, null, 2));
+      // Optionally exit with 1 if failed, but ensure JSON is printed first
+      if (!result.success) process.exitCode = 1;
+      return;
+    }
+
+    console.log();
+    console.log(chalk.bold(`Checking compliance with standard: ${options.standard}`));
+    console.log(chalk.gray('─'.repeat(50)));
+    
+    if (result.success) {
+      if (result.skipped) {
+        console.log(chalk.yellow(`⚠  ${result.message}`));
+      } else {
+        console.log(chalk.green('✓  Validation Passed'));
+        console.log(chalk.gray(`   ${result.message}`));
+        if (result.details) console.log(chalk.gray(`   ${result.details}`));
+      }
+    } else {
+      console.log(chalk.red('✗  Validation Failed'));
+      console.log(chalk.red(`   ${result.message}`));
+      if (result.details) console.log(chalk.gray(`   ${result.details}`));
+      process.exitCode = 1;
+    }
+    console.log();
+    return;
+  }
+
+  // Handle --summary option (compact status for other commands)
+  if (options.summary) {
+    await displaySummary(projectPath, options);
+    return;
+  }
+
+  // Phase 0: Initialization
+  const context = initializeCheckContext(projectPath);
+  if (!context) return;
+
+  const { manifest, msg, common, repoInfo } = context;
+
+  console.log();
+  console.log(chalk.bold(msg.title));
+  console.log(chalk.gray('─'.repeat(50)));
+
+  // XSPEC-342 R1：先問 npm 最新，判斷「已裝標準」是否落後（離線則跳過，不誤用 CLI bundled 版本）。
+  // fetchLatestVersion 有 60s 模組級快取，故此處與下方 checkCliVersion 共兩次呼叫只打一次網路。
+  let standardsUpdate = null;
+  if (!options.offline) {
+    standardsUpdate = await checkForUpdates(manifest.upstream.version, {
+      checkBeta: manifest.upstream.version.includes('-')
+    });
+  }
+
+  // Display adoption info
+  displayAdoptionStatus(manifest, msg, common, repoInfo, standardsUpdate);
+
+  // Check for CLI updates from npm registry (unless --offline)
+  if (!options.offline) {
+    await checkCliVersion(repoInfo.standards.version);
+  }
+
+  // Handle --migrate option
+  if (options.migrate) {
+    await migrateToHashBasedTracking(projectPath, manifest);
+    return;
+  }
+
+  // Check file integrity
+  console.log(chalk.cyan(msg.fileIntegrity));
+  const fileStatus = performFileIntegrityCheck(projectPath, manifest, msg);
+
+  // Display file status
+  displayFileIntegritySummary(fileStatus, msg);
+
+  // === Enhanced Integrity Checks (v3.3.0+) ===
+
+  // === Enhanced Integrity Checks (v3.3.0+) ===
+
+  // Check Skills integrity if skillHashes exist
+  checkSkillsIntegrity(manifest, projectPath, msg);
+
+  // Check Commands integrity if commandHashes exist
+  checkCommandsIntegrity(manifest, projectPath, msg);
+
+  // Check Integration blocks integrity if integrationBlockHashes exist
+  checkIntegrationBlocksIntegrity(manifest, projectPath, msg);
+
+  // Handle --restore option
+  if (options.restore) {
+    await restoreFiles(projectPath, manifest, [...fileStatus.modified, ...fileStatus.missing]);
+    return;
+  }
+
+  // Handle --restore-missing option
+  if (options.restoreMissing) {
+    await restoreFiles(projectPath, manifest, fileStatus.missing);
+    return;
+  }
+
+  // Handle --diff option
+  if (options.diff && fileStatus.modified.length > 0) {
+    await showDiff(projectPath, manifest, fileStatus.modified);
+    return;
+  }
+
+  // Interactive mode (default when issues detected, only in TTY)
+  const hasIssues = fileStatus.modified.length > 0 ||
+                    fileStatus.missing.length > 0;
+  const isTTY = process.stdin.isTTY && process.stdout.isTTY;
+  if (hasIssues && !options.noInteractive && !options.ci && isTTY) {
+    await interactiveMode(projectPath, manifest, fileStatus, msg);
+  } else if (hasIssues) {
+    // Non-interactive mode - just show suggestions
+    console.log(chalk.yellow(msg.actionsAvailable));
+    console.log(chalk.gray(`  ${msg.restoreOption}`));
+    console.log(chalk.gray(`  ${msg.diffOption}`));
+    console.log(chalk.gray(`  ${msg.interactiveOption}`));
+    console.log();
+  }
+
+  // Suggest migration for legacy manifests
+  if (fileStatus.noHash.length > 0 && !hasFileHashes(manifest)) {
+    console.log(chalk.cyan(msg.tip));
+    console.log(chalk.gray(`  ${msg.migrateTip}`));
+    console.log(chalk.gray(`  ${msg.migrateTip2}`));
+    console.log();
+  }
+
+  // Reference sync check
+  checkReferenceSync(manifest, projectPath, msg);
+
+  // Integration files check
+  checkIntegrationFiles(manifest, projectPath, msg);
+
+  // Universal AGENTS.md sync check
+  checkAgentsMdSync(manifest, projectPath, msg);
+
+  // Skills status
+  const { missingSkills, missingCommands } = displaySkillsStatus(manifest, projectPath, msg);
+
+  // Coverage report
+  displayCoverageReport(manifest, msg, common, projectPath);
+
+  // XSPEC-178: Full coverage compliance check
+  checkFullCoverageCompliance(manifest, projectPath);
+
+  // Workflow status
+  displayWorkflowStatus(projectPath);
+
+  // Final status
+  const allGood = fileStatus.missing.length === 0 &&
+                  fileStatus.modified.length === 0;
+  if (allGood) {
+    console.log(chalk.green(msg.projectCompliant));
+  } else {
+    console.log(chalk.yellow(msg.issuesDetected));
+    // Set non-zero exit code in CI mode so pipelines detect failures
+    if (options.ci) {
+      process.exitCode = 1;
+    }
+  }
+
+  // Show hint if Skills/Commands are missing (check is read-only, no installation)
+  if (missingSkills.length > 0 || missingCommands.length > 0) {
+    console.log();
+    console.log(chalk.cyan(msg.missingSkillsHint || 'Tip: Run `uds update` to install missing Skills/Commands'));
+  }
+
+  console.log();
+}
+
+/**
+ * Interactive mode for handling modified/missing files
+ */
+async function interactiveMode(projectPath, manifest, fileStatus, msg) {
+  const allIssues = [
+    ...fileStatus.modified.map(f => ({ file: f, status: 'modified' })),
+    ...fileStatus.missing.map(f => ({ file: f, status: 'missing' }))
+  ];
+
+  console.log(chalk.cyan(msg.interactiveMode));
+  console.log(chalk.gray(`  ${msg.filesNeedAttention.replace('{count}', allIssues.length)}`));
+  console.log();
+
+  let manifestUpdated = false;
+
+  for (const issue of allIssues) {
+    console.log(chalk.gray('─'.repeat(50)));
+    if (issue.status === 'modified') {
+      console.log(chalk.yellow(`⚠ ${msg.modifiedLabel}: ${issue.file}`));
+    } else if (issue.status === 'missing') {
+      console.log(chalk.red(`✗ ${msg.missingLabel}: ${issue.file}`));
+    }
+
+    let choices;
+    if (issue.status === 'modified') {
+      choices = [
+        { name: msg.actionView, value: 'view' },
+        { name: msg.actionRestore, value: 'restore' },
+        { name: msg.actionKeep, value: 'keep' },
+        { name: msg.actionSkip, value: 'skip' }
+      ];
+    } else {
+      // missing
+      choices = [
+        { name: msg.actionRestoreMissing, value: 'restore' },
+        { name: msg.actionRemove, value: 'remove' },
+        { name: msg.actionSkip, value: 'skip' }
+      ];
+    }
+
+    const action = await select({
+      message: msg.actionPrompt,
+      choices
+    });
+
+    switch (action) {
+      case 'view': {
+        await showSingleFileDiff(projectPath, manifest, issue.file, msg);
+        // After viewing, ask again
+        const followUp = await select({
+          message: msg.followUpPrompt,
+          choices: [
+            { name: msg.actionRestore, value: 'restore' },
+            { name: msg.actionKeep, value: 'keep' },
+            { name: msg.actionSkip, value: 'skip' }
+          ]
+        });
+        if (followUp === 'restore') {
+          await restoreSingleFile(projectPath, manifest, issue.file, msg);
+          manifestUpdated = true;
+        } else if (followUp === 'keep') {
+          updateFileHash(projectPath, manifest, issue.file);
+          manifestUpdated = true;
+          console.log(chalk.green(msg.keepingCurrent));
+        }
+        break;
+      }
+
+      case 'restore':
+        await restoreSingleFile(projectPath, manifest, issue.file, msg);
+        manifestUpdated = true;
+        break;
+
+      case 'keep':
+        updateFileHash(projectPath, manifest, issue.file);
+        manifestUpdated = true;
+        console.log(chalk.green(msg.keepingCurrent));
+        break;
+
+      case 'remove':
+        removeFromManifest(manifest, issue.file);
+        manifestUpdated = true;
+        console.log(chalk.green(msg.removedFromManifest));
+        break;
+
+      case 'skip':
+        console.log(chalk.gray(msg.skipped));
+        break;
+    }
+    console.log();
+  }
+
+  if (manifestUpdated) {
+    writeManifest(manifest, projectPath);
+    console.log(chalk.green(msg.manifestUpdated));
+    console.log();
+  }
+}
+
+/**
+ * Show diff for a single file
+ */
+async function showSingleFileDiff(projectPath, manifest, relativePath, msg) {
+  const { readFileSync } = await import('fs');
+  const fullPath = join(projectPath, relativePath);
+
+  // Get current content
+  let currentContent;
+  try {
+    currentContent = readFileSync(fullPath, 'utf-8');
+  } catch {
+    console.log(chalk.red(msg.couldNotReadFile));
+    return;
+  }
+
+  // Get original content from GitHub
+  const sourcePath = getSourcePathFromRelative(manifest, relativePath);
+  if (!sourcePath) {
+    console.log(chalk.red(msg.couldNotDetermineSource2));
+    return;
+  }
+
+  console.log(chalk.gray(msg.fetchingOriginal));
+  let originalContent;
+  try {
+    originalContent = await downloadFromGitHub(sourcePath);
+  } catch (error) {
+    if (error.message.includes('429')) {
+      console.log(chalk.red(msg.rateLimited || 'GitHub API rate limit exceeded. Please wait a few minutes and try again.'));
+    } else {
+      console.log(chalk.red(`${msg.couldNotFetchOriginal} (${error.message})`));
+    }
+    return;
+  }
+  if (!originalContent) {
+    console.log(chalk.red(msg.couldNotFetchOriginal));
+    return;
+  }
+
+  // Simple diff display
+  console.log();
+  console.log(chalk.cyan(msg.diffOriginal));
+  console.log(chalk.yellow(msg.diffCurrent));
+  console.log();
+
+  const originalLines = originalContent.split('\n');
+  const currentLines = currentContent.split('\n');
+
+  // Simple line-by-line comparison
+  const maxLines = Math.max(originalLines.length, currentLines.length);
+  let diffCount = 0;
+
+  for (let i = 0; i < maxLines; i++) {
+    const orig = originalLines[i];
+    const curr = currentLines[i];
+
+    if (orig !== curr) {
+      if (orig !== undefined) {
+        console.log(chalk.red(`-${i + 1}: ${orig}`));
+      }
+      if (curr !== undefined) {
+        console.log(chalk.green(`+${i + 1}: ${curr}`));
+      }
+      diffCount++;
+      if (diffCount > 20) {
+        console.log(chalk.gray(msg.diffTruncated));
+        break;
+      }
+    }
+  }
+  console.log();
+}
+
+/**
+ * Show diff for multiple files
+ */
+async function showDiff(projectPath, manifest, modifiedFiles) {
+  const msg = t().commands.check;
+  for (const file of modifiedFiles) {
+    console.log(chalk.cyan(`\n${msg.diffFor.replace('{file}', file)}`));
+    console.log(chalk.gray('─'.repeat(50)));
+    await showSingleFileDiff(projectPath, manifest, file, msg);
+  }
+}
+
+/**
+ * Restore files from upstream
+ */
+async function restoreFiles(projectPath, manifest, files) {
+  const msg = t().commands.check;
+  console.log(chalk.cyan(msg.restoringFiles));
+  let successCount = 0;
+  let errorCount = 0;
+
+  for (const file of files) {
+    const success = await restoreSingleFile(projectPath, manifest, file, msg);
+    if (success) {
+      successCount++;
+    } else {
+      errorCount++;
+    }
+  }
+
+  console.log();
+  console.log(chalk.green(msg.restoredCount.replace('{count}', successCount)));
+  if (errorCount > 0) {
+    console.log(chalk.red(msg.restoreFailedCount.replace('{count}', errorCount)));
+  }
+
+  // Update manifest
+  writeManifest(manifest, projectPath);
+  console.log(chalk.gray(`  ${msg.manifestUpdatedShort}`));
+  console.log();
+}
+
+/**
+ * Restore a single file
+ */
+export async function restoreSingleFile(projectPath, manifest, relativePath, msg) {
+  // Get msg if not passed (for backward compatibility)
+  if (!msg) {
+    msg = t().commands.check;
+  }
+
+  const sourcePath = getSourcePathFromRelative(manifest, relativePath);
+  if (!sourcePath) {
+    console.log(chalk.red(`  ✗ ${relativePath}: ${msg.couldNotDetermineSource}`));
+    return false;
+  }
+
+  // Determine target directory
+  let targetDir = '.standards';
+  if (relativePath.includes('options/')) {
+    targetDir = '.standards/options';
+  } else if (!relativePath.startsWith('.standards')) {
+    // Integration file - copy to root
+    const result = await copyIntegration(sourcePath, relativePath, projectPath);
+    if (result.success) {
+      updateFileHash(projectPath, manifest, relativePath);
+      console.log(chalk.green(`  ✓ ${relativePath}: ${msg.restored}`));
+      return true;
+    } else {
+      console.log(chalk.red(`  ✗ ${relativePath}: ${result.error}`));
+      return false;
+    }
+  }
+
+  const result = await copyStandard(sourcePath, targetDir, projectPath);
+  if (result.success) {
+    updateFileHash(projectPath, manifest, relativePath);
+    console.log(chalk.green(`  ✓ ${relativePath}: ${msg.restored}`));
+    return true;
+  } else {
+    console.log(chalk.red(`  ✗ ${relativePath}: ${result.error}`));
+    return false;
+  }
+}
+
+/**
+ * Update file hash in manifest
+ */
+export function updateFileHash(projectPath, manifest, relativePath) {
+  const normalizedPath = relativePath.replace(/\\/g, '/');
+  const fullPath = join(projectPath, normalizedPath);
+  const hashInfo = computeFileHash(fullPath);
+  if (hashInfo) {
+    if (!manifest.fileHashes) {
+      manifest.fileHashes = {};
+    }
+    manifest.fileHashes[normalizedPath] = {
+      ...hashInfo,
+      installedAt: new Date().toISOString()
+    };
+  }
+}
+
+/**
+ * Remove file from manifest tracking
+ */
+function removeFromManifest(manifest, relativePath) {
+  // Remove from fileHashes
+  if (manifest.fileHashes && manifest.fileHashes[relativePath]) {
+    delete manifest.fileHashes[relativePath];
+  }
+
+  // Remove from standards/extensions/integrations arrays
+  const fileName = basename(relativePath);
+  manifest.standards = manifest.standards.filter(s => !s.endsWith(fileName));
+  manifest.extensions = manifest.extensions.filter(e => typeof e !== 'string' || !e.endsWith(fileName));
+  manifest.integrations = manifest.integrations.filter(
+    i => (resolveIntegrationFile(i) || i) !== relativePath
+  );
+
+  // Remove from integrationBlockHashes
+  if (manifest.integrationBlockHashes && manifest.integrationBlockHashes[relativePath]) {
+    delete manifest.integrationBlockHashes[relativePath];
+  }
+
+  // Remove from integrationConfigs
+  if (manifest.integrationConfigs && manifest.integrationConfigs[relativePath]) {
+    delete manifest.integrationConfigs[relativePath];
+  }
+}
+
+/**
+ * Get source path from relative path
+ */
+export function getSourcePathFromRelative(manifest, relativePath) {
+  const fileName = basename(relativePath);
+  const format = manifest.format || 'ai';
+
+  // Check standards.
+  //
+  // Compare the RESOLVED filename, not the raw entry. Manifests have stored IDs
+  // (`commit-message`) rather than paths since 3.4.0, and `'commit-message'
+  // .endsWith('commit-message.ai.yaml')` is false for every one of them —
+  // so this returned null for 64 of 72 tracked standards and `uds check
+  // --restore` reported "Could not determine source" for all of them. The eight
+  // that worked were the `options/` entries, still stored as paths, which is
+  // why the failure never looked total. (XSPEC-382 R6)
+  for (const std of manifest.standards) {
+    if (resolveStandardFilename(std, format) === fileName) {
+      return resolveStandardSourcePath(std, format);
+    }
+  }
+
+  // Check extensions
+  for (const ext of manifest.extensions) {
+    if (typeof ext === 'string' && ext.endsWith(fileName)) {
+      return ext;
+    }
+  }
+
+  // Check integrations - these might need special handling
+  if (manifest.integrations.some(i => (resolveIntegrationFile(i) || i) === relativePath)) {
+    // Integration files have different source paths
+    const integrationMappings = {
+      '.cursorrules': 'integrations/cursor/.cursorrules',
+      '.windsurfrules': 'integrations/windsurf/.windsurfrules',
+      '.clinerules': 'integrations/cline/.clinerules',
+      '.github/copilot-instructions.md': 'integrations/github-copilot/copilot-instructions.md',
+      'CLAUDE.md': 'integrations/claude-code/CLAUDE.md'
+    };
+    return integrationMappings[relativePath] || null;
+  }
+
+  return null;
+}
+
+/**
+ * Migrate legacy manifest to hash-based tracking
+ */
+async function migrateToHashBasedTracking(projectPath, manifest) {
+  const msg = t().commands.check;
+  console.log(chalk.cyan(msg.migratingToHash));
+  console.log();
+
+  const fileHashes = {};
+  const now = new Date().toISOString();
+  let count = 0;
+
+  // Process standards — support both legacy path format and current ID format
+  const format = manifest.format || 'ai';
+  const allStds = getAllStandards();
+  for (const std of manifest.standards) {
+    // Resolve path: ID format → look up source path from registry
+    let resolvedPath = std;
+    if (!std.includes('/') && !std.includes('.')) {
+      const entry = allStds.find(s => s.id === std);
+      if (entry) {
+        const src = entry.source;
+        resolvedPath = typeof src === 'string'
+          ? src
+          : (src?.[format] || src?.ai || src?.human || std);
+      }
+    }
+    const fileName = basename(resolvedPath);
+    const relativePath = (resolvedPath.includes('options/')
+      ? join('.standards', 'options', fileName)
+      : join('.standards', fileName)).replace(/\\/g, '/');
+    const fullPath = join(projectPath, relativePath);
+
+    const hashInfo = computeFileHash(fullPath);
+    if (hashInfo) {
+      fileHashes[relativePath] = { ...hashInfo, installedAt: now };
+      count++;
+    }
+  }
+
+  // Process extensions
+  for (const ext of manifest.extensions) {
+    if (typeof ext !== 'string') continue;
+    const fileName = basename(ext);
+    const relativePath = join('.standards', fileName).replace(/\\/g, '/');
+    const fullPath = join(projectPath, relativePath);
+
+    const hashInfo = computeFileHash(fullPath);
+    if (hashInfo) {
+      fileHashes[relativePath] = { ...hashInfo, installedAt: now };
+      count++;
+    }
+  }
+
+  // Process integrations
+  for (const intEntry of manifest.integrations) {
+    const int = resolveIntegrationFile(intEntry) || intEntry;
+    const fullPath = join(projectPath, int);
+
+    const hashInfo = computeFileHash(fullPath);
+    if (hashInfo) {
+      fileHashes[int] = { ...hashInfo, installedAt: now };
+      count++;
+    }
+  }
+
+  // Update manifest
+  manifest.fileHashes = fileHashes;
+  manifest.version = '3.1.0';
+  writeManifest(manifest, projectPath);
+
+  console.log(chalk.green(msg.migratedCount.replace('{count}', count)));
+  console.log(chalk.gray(`  ${msg.manifestUpgraded}`));
+  console.log();
+}
+
+/**
+ * Display skills status and return missing Skills/Commands info
+ * @returns {{missingSkills: Array, missingCommands: Array}}
+ */
+function displaySkillsStatus(manifest, projectPath, msg) {
+  console.log(chalk.cyan(msg.skillsStatus));
+
+  const aiTools = manifest.aiTools || [];
+  const missingSkills = [];
+  const missingCommands = [];
+
+  // If no AI tools configured, show basic info
+  if (aiTools.length === 0) {
+    console.log(chalk.gray(`  ${msg.noAiToolsConfigured || 'No AI tools configured'}`));
+    console.log();
+    return { missingSkills, missingCommands };
+  }
+
+  // Check for Marketplace installation (Claude Code specific)
+  // Dynamically detect marketplace installation regardless of manifest
+  const hasClaudeCode = aiTools.includes('claude-code');
+  const marketplaceInfo = getMarketplaceSkillsInfo();
+  const hasMarketplaceSkills = marketplaceInfo?.installed;
+
+  const location = manifest.skills?.location || '';
+  const isMarketplaceInManifest = location === 'marketplace' ||
+    location.includes('plugins/cache') ||
+    location.includes('plugins\\cache');
+
+  // Show marketplace status if actually installed (not just manifest)
+  if (hasMarketplaceSkills && hasClaudeCode) {
+    console.log(chalk.green(`  ${msg.skillsViaMarketplace}`));
+
+    if (marketplaceInfo.version && marketplaceInfo.version !== 'unknown') {
+      console.log(chalk.gray(`    ${t().commands.common.version}: ${marketplaceInfo.version}`));
+      if (marketplaceInfo.lastUpdated) {
+        const updateDate = marketplaceInfo.lastUpdated.split('T')[0];
+        console.log(chalk.gray(`    ${msg.lastUpdated}: ${updateDate}`));
+      }
+    } else {
+      console.log(chalk.gray(`    ${t().commands.common.version}: (run /plugin list to check)`));
+    }
+
+    console.log(chalk.gray(`    ${msg.skillsManaged}`));
+    console.log(chalk.gray(`    ${msg.skillsNotFileBased}`));
+    console.log();
+  }
+
+  // Check each AI agent's Skills and Commands status
+  for (const tool of aiTools) {
+    const config = getAgentConfig(tool);
+    if (!config) continue;
+
+    const displayName = getAgentDisplayName(tool);
+    console.log(chalk.cyan(`  ${displayName}:`));
+
+    // Check Skills installation for this agent (both user and project level)
+    const projectSkillsInfo = getInstalledSkillsInfoForAgent(tool, 'project', projectPath);
+    const userSkillsInfo = getInstalledSkillsInfoForAgent(tool, 'user', projectPath);
+
+    // Check if using marketplace for Claude Code
+    const usingMarketplace = (hasMarketplaceSkills || isMarketplaceInManifest) && tool === 'claude-code';
+
+    if (projectSkillsInfo?.installed || userSkillsInfo?.installed || usingMarketplace) {
+      console.log(chalk.green(`    ✓ Skills ${msg.installed || 'installed'}:`));
+      if (userSkillsInfo?.installed) {
+        console.log(chalk.gray(`      - ${msg.skillsGlobal || 'User level'}: ${userSkillsInfo.path}`));
+        if (userSkillsInfo.version) {
+          console.log(chalk.gray(`        ${t().commands.common.version}: ${userSkillsInfo.version}`));
+        }
+      }
+      if (projectSkillsInfo?.installed) {
+        console.log(chalk.gray(`      - ${msg.skillsProject || 'Project level'}: ${projectSkillsInfo.path}`));
+        if (projectSkillsInfo.version) {
+          console.log(chalk.gray(`        ${t().commands.common.version}: ${projectSkillsInfo.version}`));
+        }
+      }
+    } else if (config.supportsSkills) {
+      console.log(chalk.gray(`    ○ Skills: ${msg.notInstalled || 'Not installed'}`));
+      if (config.fallbackSkillsPath) {
+        // Check if can use fallback (Claude skills path)
+        const fallbackPath = join(projectPath, config.fallbackSkillsPath);
+        if (existsSync(fallbackPath)) {
+          console.log(chalk.gray(`      ${msg.canUseFallback || 'Can use fallback'}: ${config.fallbackSkillsPath}`));
+        }
+      }
+      // Track missing Skills
+      missingSkills.push({
+        agent: tool,
+        displayName,
+        paths: config.skills
+      });
+    }
+
+    // Check Commands installation for this agent (check both project and user levels)
+    if (config.commands) {
+      const projectCmdInfo = getInstalledCommandsForAgent(tool, 'project', projectPath);
+      const userCmdInfo = getInstalledCommandsForAgent(tool, 'user');
+      const commandsInfo = projectCmdInfo || userCmdInfo;
+      if (commandsInfo?.installed) {
+        console.log(chalk.green(`    ✓ Commands: ${commandsInfo.count} ${msg.commandsInstalled || 'installed'}`));
+        console.log(chalk.gray(`      ${msg.path || 'Path'}: ${commandsInfo.path}`));
+        if (commandsInfo.version) {
+          console.log(chalk.gray(`      ${t().commands.common.version}: ${commandsInfo.version}`));
+        }
+      } else {
+        console.log(chalk.gray(`    ○ Commands: ${msg.notInstalled || 'Not installed'}`));
+        // Track missing Commands
+        missingCommands.push({
+          agent: tool,
+          displayName,
+          path: config.commands.project
+        });
+      }
+    }
+  }
+
+  // Show installations tracking from manifest (if using new format)
+  if (manifest.skills?.installations?.length > 0) {
+    console.log();
+    console.log(chalk.gray(`  ${msg.trackedInstallations || 'Tracked installations'}:`));
+    for (const inst of manifest.skills.installations) {
+      console.log(chalk.gray(`    - ${inst.agent}: ${inst.level}`));
+    }
+  }
+
+  if (manifest.commands?.installations?.length > 0) {
+    console.log(chalk.gray(`  ${msg.trackedCommandInstallations || 'Tracked command installations'}:`));
+    for (const inst of manifest.commands.installations) {
+      console.log(chalk.gray(`    - ${inst.agent}: ${inst.level}`));
+    }
+  }
+
+  console.log();
+
+  return { missingSkills, missingCommands };
+}
+
+/**
+ * XSPEC-178: Check full-coverage-testing standard presence and STUB markers
+ */
+function checkFullCoverageCompliance(manifest, projectPath) {
+  // Check 1: full-coverage-testing.ai.yaml presence
+  const fullCoveragePath = join(projectPath, '.standards', 'full-coverage-testing.ai.yaml');
+  const hasFullCoverage = existsSync(fullCoveragePath);
+
+  if (!hasFullCoverage) {
+    try {
+      const semver = manifest?.upstream?.version || '0.0.0';
+      const parts = semver.split('.').map(Number);
+      const isV5_5plus = parts[0] > 5 || (parts[0] === 5 && (parts[1] || 0) >= 5);
+      if (isV5_5plus) {
+        console.log(chalk.yellow('  ⚠ [XSPEC-178] full-coverage-testing.ai.yaml not found.'));
+        console.log(chalk.gray('    Run `uds update` to install the full-coverage testing standard.'));
+        console.log();
+      }
+    } catch { /* ignore semver parse errors */ }
+  }
+
+  // Check 2: STUB marker count (advisory)
+  const srcDir = join(projectPath, 'src');
+  if (existsSync(srcDir)) {
+    try {
+      const result = execSync(
+        `grep -rn "WARNING: STUB" "${srcDir}" --include="*.ts" --include="*.js" 2>/dev/null | wc -l`,
+        { encoding: 'utf-8', stdio: ['pipe', 'pipe', 'ignore'] }
+      ).trim();
+      const stubCount = parseInt(result, 10) || 0;
+      if (stubCount > 0) {
+        console.log(chalk.yellow(`  ⚠ [STUB] ${stubCount} STUB marker(s) found in src/.`));
+        console.log(chalk.gray('    Must be removed before UAT/production deployment (XSPEC-178).'));
+        console.log();
+      }
+    } catch { /* grep not available or src not scannable */ }
+  }
+}
+
+/**
+ * Display coverage report
+ */
+function displayCoverageReport(manifest, msg, _common, projectPath) {
+  console.log(chalk.cyan(msg.coverageSummary));
+  const expectedStandards = getAllStandards();
+  const skillStandards = expectedStandards.filter(s => s.skillName);
+  const refStandards = expectedStandards.filter(s => !s.skillName);
+
+  console.log(chalk.gray(`  ${(msg.totalStandards || 'Total: {count} standards').replace('{count}', expectedStandards.length)}`));
+  console.log(chalk.gray(`    ${msg.withSkills.replace('{count}', skillStandards.length)}`));
+  console.log(chalk.gray(`    ${msg.referenceDocs.replace('{count}', refStandards.length)}`));
+
+  // Dynamically check if any AI tool has skills installed
+  let hasInstalledSkills = false;
+  if (manifest.aiTools && manifest.aiTools.length > 0) {
+    for (const tool of manifest.aiTools) {
+      const projectSkillsInfo = getInstalledSkillsInfoForAgent(tool, 'project', projectPath);
+      const userSkillsInfo = getInstalledSkillsInfoForAgent(tool, 'user', projectPath);
+      if (projectSkillsInfo?.installed || userSkillsInfo?.installed) {
+        hasInstalledSkills = true;
+        break;
+      }
+    }
+  }
+  const coveredBySkills = hasInstalledSkills ? skillStandards.length : 0;
+  const coveredByDocs = manifest.standards.length;
+
+  console.log(chalk.gray(`  ${msg.yourCoverage}`));
+  console.log(chalk.gray(`    ${msg.viaSkills.replace('{count}', coveredBySkills)}`));
+  console.log(chalk.gray(`    ${msg.viaDocs.replace('{count}', coveredByDocs)}`));
+  console.log();
+}
+
+/**
+ * Check AI tool integration files for standards coverage
+ */
+function checkIntegrationFiles(manifest, projectPath, msg) {
+  // Skip if no AI tools configured
+  if (!manifest.aiTools || manifest.aiTools.length === 0) {
+    return;
+  }
+
+  console.log(chalk.cyan(msg.aiToolIntegration));
+
+  const standardsFiles = manifest.standards?.map(s => basename(s)) || [];
+
+  // Build a lookup map: registry ID → actual AI filename
+  // Needed because some standards have IDs that differ from their .ai.yaml basename
+  // (e.g. ID "error-code-standards" → file "error-codes.ai.yaml").
+  // After migrateStandardsPathsToIds(), manifest.standards contains IDs, so a plain
+  // content.includes(id) check would fail for these mismatched entries.
+  const allRegistryStds = getAllStandards();
+  const idToAiFilename = new Map(
+    allRegistryStds
+      .filter(s => s.source?.ai)
+      .map(s => [s.id, basename(s.source.ai)])
+  );
+
+  let hasIssues = false;
+  let checkedCount = 0;
+
+  for (const tool of manifest.aiTools) {
+    const toolFile = getToolFilePath(tool);
+    if (!toolFile) continue;
+
+    const fullPath = join(projectPath, toolFile);
+
+    // Check if file exists
+    if (!existsSync(fullPath)) {
+      console.log(chalk.red(`  ✗ ${toolFile}: ${msg.fileNotFound}`));
+      hasIssues = true;
+      continue;
+    }
+
+    checkedCount++;
+
+    // Read file content
+    let content;
+    try {
+      content = readFileSync(fullPath, 'utf-8');
+    } catch {
+      console.log(chalk.yellow(`  ⚠ ${toolFile}: ${msg.couldNotRead}`));
+      continue;
+    }
+
+    // Check for standards index marker
+    const format = getToolFormat(tool);
+    const { content: markedContent } = extractMarkedContent(content, format);
+    const hasStandardsIndex = markedContent.length > 0 ||
+      content.includes('Standards Index') ||
+      content.includes('Standards Compliance');
+
+    // Count referenced standards
+    const referencedStandards = [];
+    const missingStandards = [];
+
+    for (const stdFile of standardsFiles) {
+      // Check if standard is referenced in the file.
+      // stdFile is a registry ID (e.g. "error-code-standards") after manifest
+      // migration. For standards where the ID doesn't match the .ai.yaml basename
+      // (e.g. ID "error-code-standards" → file "error-codes.ai.yaml"), we must
+      // also check the actual filename so those aren't falsely reported as missing.
+      const aiFilename = idToAiFilename.get(stdFile);
+      const isReferenced = content.includes(stdFile) ||
+        (aiFilename !== undefined && aiFilename !== stdFile && content.includes(aiFilename)) ||
+        content.includes(`.standards/${stdFile}`) ||
+        content.includes(`standards/${stdFile}`);
+
+      if (isReferenced) {
+        referencedStandards.push(stdFile);
+      } else {
+        // Track all installed standards from manifest
+        missingStandards.push(stdFile);
+      }
+    }
+
+    // Report status - use all installed standards as the total
+    const totalTrackable = standardsFiles.length;
+
+    // Index-mode blocks deliberately do NOT enumerate standards (XSPEC-358 R1);
+    // grepping for each name reports a false failure and points at `uds update`,
+    // which regenerates the identical block. Assert the declared count instead.
+    const declaredCount = parseStandardsIndexCount(content);
+    if (declaredCount !== null) {
+      if (declaredCount === totalTrackable) {
+        console.log(chalk.green(`  ✓ ${toolFile}:`));
+        console.log(chalk.gray(`    ${msg.standardsIndexPresent}`));
+        console.log(chalk.gray(`    ${msg.standardsIndexCount
+          ? msg.standardsIndexCount.replace('{count}', declaredCount)
+          : `Index declares ${declaredCount} standards (matches manifest)`}`));
+      } else {
+        console.log(chalk.yellow(`  ⚠ ${toolFile}:`));
+        console.log(chalk.yellow(`    ${msg.standardsIndexCountMismatch
+          ? msg.standardsIndexCountMismatch.replace('{declared}', declaredCount).replace('{actual}', totalTrackable)
+          : `Index declares ${declaredCount} standards but the manifest has ${totalTrackable}`}`));
+        hasIssues = true;
+      }
+      continue;
+    }
+
+    if (hasStandardsIndex && missingStandards.length === 0) {
+      console.log(chalk.green(`  ✓ ${toolFile}:`));
+      console.log(chalk.gray(`    ${msg.standardsIndexPresent}`));
+      console.log(chalk.gray(`    ${msg.standardsReferenced.replace('{count}', referencedStandards.length).replace('{total}', totalTrackable)}`));
+    } else if (hasStandardsIndex) {
+      console.log(chalk.yellow(`  ⚠ ${toolFile}:`));
+      console.log(chalk.gray(`    ${msg.standardsIndexPresent}`));
+      console.log(chalk.yellow(`    ${msg.standardsReferenced.replace('{count}', referencedStandards.length).replace('{total}', totalTrackable)}`));
+      if (missingStandards.length > 0 && missingStandards.length <= 5) {
+        console.log(chalk.yellow(`    ${msg.missingStandardsList.replace('{list}', missingStandards.join(', '))}`));
+      } else if (missingStandards.length > 5) {
+        console.log(chalk.yellow(`    ${msg.missingStandardsList.replace('{list}', missingStandards.slice(0, 5).join(', ') + '...')}`));
+      }
+      hasIssues = true;
+    } else {
+      // No standards index - using minimal mode
+      console.log(chalk.gray(`  ℹ ${toolFile}:`));
+      console.log(chalk.gray(`    ${msg.usingMinimalMode}`));
+      const coreRules = content.includes('Anti-Hallucination') ||
+        content.includes('Commit') ||
+        content.includes('Code Review');
+      if (coreRules) {
+        console.log(chalk.gray(`    ${msg.coreRulesEmbedded}`));
+      }
+    }
+  }
+
+  if (checkedCount === 0) {
+    console.log(chalk.gray(`  ${msg.noAiToolFiles}`));
+  }
+
+  if (hasIssues) {
+    console.log();
+    console.log(chalk.yellow(`  ${msg.toFixIntegration}`));
+    console.log(chalk.gray(`    ${msg.runUpdateToSync}`));
+    console.log(chalk.gray(`    ${msg.runConfigureTools}`));
+  }
+
+  console.log();
+}
+
+/**
+ * Check universal AGENTS.md sync with installed standards
+ * Verifies the standards listed in AGENTS.md match the manifest
+ */
+function checkAgentsMdSync(manifest, projectPath, msg) {
+  // Skip if generateAgentsMd is not enabled
+  if (!manifest.generateAgentsMd) {
+    return;
+  }
+
+  // Skip if codex/opencode already handles AGENTS.md
+  const hasAgentsMdTool = (manifest.aiTools || []).some(t => t === 'codex' || t === 'opencode');
+  if (hasAgentsMdTool) {
+    return;
+  }
+
+  const agentsMdPath = join(projectPath, 'AGENTS.md');
+
+  console.log(chalk.cyan(msg.agentsMdSyncCheck || 'AGENTS.md Standards Sync'));
+
+  if (!existsSync(agentsMdPath)) {
+    console.log(chalk.red(`  ✗ AGENTS.md ${msg.missing || 'missing'}`));
+    console.log(chalk.gray(`    ${msg.runUpdateToRestore || 'Run "uds update" to restore'}`));
+    console.log();
+    return;
+  }
+
+  const content = readFileSync(agentsMdPath, 'utf-8');
+  // Resolved through the registry, not basename()d.
+  //
+  // This check reported "standards synced (7/7)" for a project with seventy
+  // standards in its manifest. basename() leaves a registry ID unchanged, the
+  // `.ai.yaml` filter below then drops every ID, and only the seven option
+  // entries — which are stored as paths — survived to become the denominator.
+  // Seven of seven were present, so it ticked, both before the AGENTS.md block
+  // listed the other sixty-three and after, when seven of its paths pointed at
+  // nothing. A drift check blind to ninety percent of the content.
+  //
+  // The AI-tool integration check ~170 lines above already builds this exact
+  // mapping and its comment names the exact case (`error-code-standards` ->
+  // `error-codes.ai.yaml`). The knowledge was in the file; it had not reached
+  // its sibling.
+  const installedStandards = (manifest.standards || [])
+    .map(entry => resolveStandardFilename(entry, manifest.format || 'ai'))
+    .filter(Boolean);
+
+  // Same as the AI-tool integration check above: an index-mode block declares a
+  // count instead of listing names, so the name grep below cannot apply to it.
+  const declaredCount = parseStandardsIndexCount(content);
+  if (declaredCount !== null) {
+    const actual = installedStandards.length;
+    if (declaredCount === actual) {
+      console.log(chalk.green(`  ✓ AGENTS.md ${msg.standardsSynced || 'standards synced'} (${declaredCount})`));
+    } else {
+      console.log(chalk.yellow(`  ⚠ AGENTS.md ${msg.standardsOutOfSync || 'standards out of sync'} (${declaredCount} != ${actual})`));
+      console.log(chalk.gray(`    ${msg.runUpdateToSync || 'Run "uds update" to sync'}`));
+    }
+    const idxLineCount = content.split('\n').length;
+    if (idxLineCount > 150) {
+      console.log(chalk.yellow(`  ⚠ AGENTS.md ${msg.exceedsLineLimit || 'exceeds 150 line limit'} (${idxLineCount} lines)`));
+    }
+    console.log();
+    return;
+  }
+
+  // Check standards listed in AGENTS.md vs manifest
+  const aiYamlStandards = installedStandards.filter(s => s.endsWith('.ai.yaml'));
+  let listedCount = 0;
+  let missingFromAgentsMd = [];
+
+  for (const std of aiYamlStandards) {
+    if (content.includes(std)) {
+      listedCount++;
+    } else {
+      missingFromAgentsMd.push(std);
+    }
+  }
+
+  if (missingFromAgentsMd.length === 0) {
+    console.log(chalk.green(`  ✓ AGENTS.md ${msg.standardsSynced || 'standards synced'} (${listedCount}/${aiYamlStandards.length})`));
+  } else {
+    console.log(chalk.yellow(`  ⚠ AGENTS.md ${msg.standardsOutOfSync || 'standards out of sync'} (${listedCount}/${aiYamlStandards.length})`));
+    if (missingFromAgentsMd.length <= 5) {
+      console.log(chalk.gray(`    ${msg.missingInAgentsMd || 'Missing'}: ${missingFromAgentsMd.join(', ')}`));
+    } else {
+      console.log(chalk.gray(`    ${msg.missingInAgentsMd || 'Missing'}: ${missingFromAgentsMd.slice(0, 5).join(', ')}... (+${missingFromAgentsMd.length - 5})`));
+    }
+    console.log(chalk.gray(`    ${msg.runUpdateToSync || 'Run "uds update" to sync'}`));
+  }
+
+  // Check line count
+  const lineCount = content.split('\n').length;
+  if (lineCount > 150) {
+    console.log(chalk.yellow(`  ⚠ AGENTS.md ${msg.exceedsLineLimit || 'exceeds 150 line limit'} (${lineCount} lines)`));
+  }
+
+  console.log();
+}
+
+/**
+ * Check reference sync status between manifest standards and integration files
+ */
+function checkReferenceSync(manifest, projectPath, msg) {
+  // Skip if no integrations
+  if (!manifest.integrations || manifest.integrations.length === 0) {
+    return;
+  }
+
+  // Pre-scan: collect results for files that have references
+  const results = [];
+  for (const integrationEntry of manifest.integrations) {
+    const integrationPath = resolveIntegrationFile(integrationEntry) || integrationEntry;
+    const fullPath = join(projectPath, integrationPath);
+
+    if (!existsSync(fullPath)) continue;
+
+    let content;
+    try {
+      content = readFileSync(fullPath, 'utf-8');
+    } catch {
+      continue;
+    }
+
+    const references = parseReferences(content);
+    if (references.length === 0) continue;
+
+    results.push({ integrationPath, references });
+  }
+
+  // Skip entire section if no files have references
+  if (results.length === 0) return;
+
+  console.log(chalk.cyan(msg.refSyncStatus));
+
+  let hasIssues = false;
+
+  for (const { integrationPath, references } of results) {
+    // Compare with manifest standards
+    const { orphanedRefs, missingRefs, syncedRefs } = compareStandardsWithReferences(
+      manifest.standards,
+      references
+    );
+
+    // Report results
+    if (orphanedRefs.length > 0) {
+      hasIssues = true;
+      console.log(chalk.yellow(`  ⚠ ${integrationPath}:`));
+      console.log(chalk.yellow(`    ${msg.refsNotInManifest}`));
+      for (const ref of orphanedRefs) {
+        console.log(chalk.yellow(`      - ${ref}`));
+      }
+    }
+
+    if (missingRefs.length > 0) {
+      // This is informational, not an error
+      console.log(chalk.gray(`  ℹ ${integrationPath}:`));
+      console.log(chalk.gray(`    ${msg.standardsNotReferenced}`));
+      for (const ref of missingRefs) {
+        console.log(chalk.gray(`      - ${ref}`));
+      }
+    }
+
+    if (orphanedRefs.length === 0 && missingRefs.length === 0) {
+      console.log(chalk.green(`  ✓ ${msg.refsInSync.replace('{path}', integrationPath).replace('{count}', syncedRefs.length)}`));
+    }
+  }
+
+  if (hasIssues) {
+    console.log();
+    console.log(chalk.yellow(`  ${msg.runSyncRefs}`));
+  }
+
+  console.log();
+}
+
+/**
+ * Check CLI version against npm registry and display update info
+ * @param {string} bundledVersion - Version bundled with current CLI
+ */
+async function checkCliVersion(bundledVersion) {
+  const msg = t().commands.check;
+  const spinner = ora({ text: msg.checkingCliUpdates, spinner: 'dots' }).start();
+
+  try {
+    const result = await checkForUpdates(bundledVersion, {
+      includeBeta: bundledVersion.includes('-')
+    });
+    spinner.stop();
+
+    // Update cache for throttled checks in postAction hook
+    if (!result.offline) {
+      writeUpdateCache({
+        lastChecked: new Date().toISOString(),
+        latestVersion: result.latestStable || null,
+        latestBeta: result.latestBeta || null
+      });
+    }
+
+    if (result.offline) {
+      console.log(chalk.gray(`  ${msg.couldNotCheckUpdates}`));
+      console.log();
+      return;
+    }
+
+    if (result.available) {
+      console.log(chalk.cyan(msg.cliUpdateAvailable));
+      console.log(chalk.gray(`  ${msg.currentCli}: ${result.currentVersion}`));
+      console.log(chalk.gray(`  ${msg.latestOnNpm}: ${result.latestVersion}`));
+      if (result.isCurrentBeta && result.latestStable) {
+        console.log(chalk.gray(`  ${msg.latestStable}: ${result.latestStable}`));
+      }
+      console.log(chalk.yellow(`  ${msg.runNpmUpdate}`));
+      console.log();
+    }
+  } catch {
+    spinner.stop();
+    // Silent failure - don't disrupt main functionality
+  }
+}
+
+// ============================================================
+// Enhanced Integrity Check Functions (v3.3.0+)
+// ============================================================
+
+/**
+ * Check Skills files integrity against stored hashes
+ * @param {Object} manifest - Manifest object
+ * @param {string} projectPath - Project root path
+ * @param {Object} msg - Localized messages
+ * @returns {Object} Status { unchanged: [], modified: [], missing: [] }
+ */
+function checkSkillsIntegrity(manifest, projectPath, msg) {
+  const skillHashes = manifest.skillHashes;
+
+  // Skip if no skill hashes tracked
+  if (!skillHashes || Object.keys(skillHashes).length === 0) {
+    return { unchanged: [], modified: [], missing: [], tracked: false };
+  }
+
+  console.log(chalk.cyan(msg.skillsIntegrityCheck || 'Skills File Integrity'));
+
+  const status = { unchanged: [], modified: [], missing: [], tracked: true };
+
+  for (const [hashKey, hashInfo] of Object.entries(skillHashes)) {
+    // Parse key format: agent/level/skillName/filename
+    const keyParts = hashKey.split('/');
+    if (keyParts.length < 3) continue;
+
+    const [agent, level] = keyParts;
+    const relativePath = keyParts.slice(2).join('/');
+
+    // Get actual file path
+    const skillsDir = getSkillsDirForAgent(agent, level, projectPath);
+    if (!skillsDir) {
+      status.missing.push(hashKey);
+      continue;
+    }
+
+    const fullPath = join(skillsDir, relativePath);
+
+    if (!existsSync(fullPath)) {
+      status.missing.push(hashKey);
+      console.log(chalk.red(`  ✗ ${hashKey} (${msg.missing || 'missing'})`));
+      continue;
+    }
+
+    // Compare hash
+    const currentHash = computeFileHash(fullPath);
+    if (!currentHash) {
+      status.missing.push(hashKey);
+      continue;
+    }
+
+    if (currentHash.hash === hashInfo.hash && currentHash.size === hashInfo.size) {
+      status.unchanged.push(hashKey);
+    } else {
+      status.modified.push(hashKey);
+      console.log(chalk.yellow(`  ⚠ ${hashKey} (${msg.modified || 'modified'})`));
+    }
+  }
+
+  // Summary
+  if (status.modified.length === 0 && status.missing.length === 0) {
+    console.log(chalk.green(`  ✓ ${msg.allSkillsIntact || 'All skill files intact'} (${status.unchanged.length} files)`));
+  } else {
+    console.log(chalk.gray(`  ${(msg.skillsIntegritySummary || '{unchanged} unchanged, {modified} modified, {missing} missing')
+      .replace('{unchanged}', status.unchanged.length)
+      .replace('{modified}', status.modified.length)
+      .replace('{missing}', status.missing.length)}`));
+  }
+
+  console.log();
+  return status;
+}
+
+/**
+ * Check Commands files integrity against stored hashes
+ * @param {Object} manifest - Manifest object
+ * @param {string} projectPath - Project root path
+ * @param {Object} msg - Localized messages
+ * @returns {Object} Status { unchanged: [], modified: [], missing: [] }
+ */
+function checkCommandsIntegrity(manifest, projectPath, msg) {
+  const commandHashes = manifest.commandHashes;
+
+  // Skip if no command hashes tracked
+  if (!commandHashes || Object.keys(commandHashes).length === 0) {
+    return { unchanged: [], modified: [], missing: [], tracked: false };
+  }
+
+  console.log(chalk.cyan(msg.commandsIntegrityCheck || 'Commands File Integrity'));
+
+  const status = { unchanged: [], modified: [], missing: [], tracked: true };
+
+  for (const [hashKey, hashInfo] of Object.entries(commandHashes)) {
+    // Parse key format: agent/filename.md
+    const keyParts = hashKey.split('/');
+    if (keyParts.length < 2) continue;
+
+    const agent = keyParts[0];
+    const filename = keyParts.slice(1).join('/');
+
+    // Get actual file path
+    const commandsDir = getCommandsDirForAgent(agent, 'project', projectPath);
+    if (!commandsDir) {
+      status.missing.push(hashKey);
+      continue;
+    }
+
+    const fullPath = join(commandsDir, filename);
+
+    if (!existsSync(fullPath)) {
+      status.missing.push(hashKey);
+      console.log(chalk.red(`  ✗ ${hashKey} (${msg.missing || 'missing'})`));
+      continue;
+    }
+
+    // Compare hash
+    const currentHash = computeFileHash(fullPath);
+    if (!currentHash) {
+      status.missing.push(hashKey);
+      continue;
+    }
+
+    if (currentHash.hash === hashInfo.hash && currentHash.size === hashInfo.size) {
+      status.unchanged.push(hashKey);
+    } else {
+      status.modified.push(hashKey);
+      console.log(chalk.yellow(`  ⚠ ${hashKey} (${msg.modified || 'modified'})`));
+    }
+  }
+
+  // Summary
+  if (status.modified.length === 0 && status.missing.length === 0) {
+    console.log(chalk.green(`  ✓ ${msg.allCommandsIntact || 'All command files intact'} (${status.unchanged.length} files)`));
+  } else {
+    console.log(chalk.gray(`  ${(msg.commandsIntegritySummary || '{unchanged} unchanged, {modified} modified, {missing} missing')
+      .replace('{unchanged}', status.unchanged.length)
+      .replace('{modified}', status.modified.length)
+      .replace('{missing}', status.missing.length)}`));
+  }
+
+  console.log();
+  return status;
+}
+
+/**
+ * Check Integration files' UDS block integrity against stored hashes
+ * Only checks the UDS marker block content, not user customizations outside the block
+ * @param {Object} manifest - Manifest object
+ * @param {string} projectPath - Project root path
+ * @param {Object} msg - Localized messages
+ * @returns {Object} Status { unchanged: [], modified: [], missing: [], noMarkers: [] }
+ */
+function checkIntegrationBlocksIntegrity(manifest, projectPath, msg) {
+  const blockHashes = manifest.integrationBlockHashes;
+
+  // Skip if no block hashes tracked
+  if (!blockHashes || Object.keys(blockHashes).length === 0) {
+    return { unchanged: [], modified: [], missing: [], noMarkers: [], tracked: false };
+  }
+
+  console.log(chalk.cyan(msg.integrationBlocksCheck || 'Integration UDS Block Integrity'));
+
+  const status = { unchanged: [], modified: [], missing: [], noMarkers: [], tracked: true };
+
+  for (const [filePath, hashInfo] of Object.entries(blockHashes)) {
+    const fullPath = join(projectPath, filePath);
+
+    if (!existsSync(fullPath)) {
+      status.missing.push(filePath);
+      console.log(chalk.red(`  ✗ ${filePath} (${msg.missing || 'missing'})`));
+      continue;
+    }
+
+    // Compare block hash
+    const blockStatus = compareIntegrationBlockHash(fullPath, hashInfo);
+
+    switch (blockStatus) {
+      case 'unchanged':
+        status.unchanged.push(filePath);
+        break;
+      case 'modified':
+        status.modified.push(filePath);
+        console.log(chalk.yellow(`  ⚠ ${filePath} (${msg.udsBlockModified || 'UDS block modified'})`));
+        break;
+      case 'no_markers':
+        status.noMarkers.push(filePath);
+        console.log(chalk.red(`  ✗ ${filePath} (${msg.udsMarkersRemoved || 'UDS markers removed'})`));
+        break;
+      case 'missing':
+        status.missing.push(filePath);
+        console.log(chalk.red(`  ✗ ${filePath} (${msg.missing || 'missing'})`));
+        break;
+    }
+  }
+
+  // Summary
+  if (status.modified.length === 0 && status.missing.length === 0 && status.noMarkers.length === 0) {
+    console.log(chalk.green(`  ✓ ${msg.allBlocksIntact || 'All UDS blocks intact'} (${status.unchanged.length} files)`));
+    console.log(chalk.gray(`    ${msg.userContentPreserved || 'User customizations outside UDS blocks are preserved'}`));
+  } else {
+    console.log(chalk.gray(`  ${(msg.blocksIntegritySummary || '{unchanged} intact, {modified} modified, {missing} missing')
+      .replace('{unchanged}', status.unchanged.length)
+      .replace('{modified}', status.modified.length)
+      .replace('{missing}', status.missing.length + status.noMarkers.length)}`));
+
+    if (status.modified.length > 0 || status.noMarkers.length > 0) {
+      console.log(chalk.yellow(`    ${msg.runUpdateIntegrations || 'Run "uds update --integrations-only" to restore UDS content'}`));
+    }
+  }
+
+  console.log();
+  return status;
+}
+
+// ============================================================
+// Summary Mode (--summary)
+// ============================================================
+
+/**
+ * Display compact status summary for use by other commands
+ * @param {string} projectPath - Project root path
+ * @param {Object} options - Command options
+ */
+async function displaySummary(projectPath, _options = {}) {
+  const msg = t().commands.check;
+  const common = t().commands.common;
+  const summaryMsg = msg.summary_mode || {};
+
+  console.log();
+  console.log(chalk.bold(summaryMsg.title || 'UDS Status Summary'));
+  console.log(chalk.gray('─'.repeat(50)));
+
+  // Check if initialized
+  if (!isInitialized(projectPath)) {
+    console.log(chalk.red(`  ${summaryMsg.notInitialized || 'Not initialized'}`));
+    console.log(chalk.gray(`  ${common.runInit}`));
+    console.log(chalk.gray('─'.repeat(50)));
+    console.log();
+    return;
+  }
+
+  // Read manifest
+  const manifest = readManifest(projectPath);
+  if (!manifest) {
+    console.log(chalk.red(`  ${summaryMsg.manifestError || 'Manifest error'}`));
+    console.log(chalk.gray('─'.repeat(50)));
+    console.log();
+    return;
+  }
+
+  const repoInfo = getRepositoryInfo();
+
+  // === Row 1: Version ===
+  const currentVersion = manifest.upstream.version;
+  const latestVersion = repoInfo.standards.version;
+  const hasUpdate = currentVersion !== latestVersion;
+
+  if (hasUpdate) {
+    console.log(chalk.yellow(`  ${summaryMsg.version || 'Version'}: ${currentVersion} → ${latestVersion} ⚠`));
+  } else {
+    console.log(chalk.green(`  ${summaryMsg.version || 'Version'}: ${currentVersion} ✓`));
+  }
+
+  // === Row 2: Files Status ===
+  const fileStatus = getFileStatusCounts(manifest, projectPath);
+  const filesOk = fileStatus.modified === 0 && fileStatus.missing === 0;
+  const filesDisplay = filesOk
+    ? chalk.green(`${fileStatus.unchanged} ✓`)
+    : `${chalk.green(fileStatus.unchanged + ' ✓')} ${chalk.yellow('| ' + fileStatus.modified + ' modified')} ${chalk.red('| ' + fileStatus.missing + ' missing')}`;
+  console.log(`  ${summaryMsg.files || 'Files'}: ${filesDisplay}`);
+
+  // === Row 3: Skills Status ===
+  const aiTools = manifest.aiTools || [];
+  if (aiTools.length > 0) {
+    const skillsStatus = getSkillsStatusSummary(manifest, projectPath);
+    console.log(`  ${summaryMsg.skills || 'Skills'}: ${skillsStatus}`);
+  }
+
+  // === Row 5: Commands Status (if applicable) ===
+  const commandsStatus = getCommandsStatusSummary(manifest, projectPath);
+  if (commandsStatus) {
+    console.log(`  ${summaryMsg.commands || 'Commands'}: ${commandsStatus}`);
+  }
+
+  // === Row 6: Workflow Status ===
+  const workflowStatus = getWorkflowStatusSummary(projectPath);
+  if (workflowStatus) {
+    console.log(`  ${summaryMsg.workflow || 'Workflow'}: ${workflowStatus}`);
+  }
+
+  console.log(chalk.gray('─'.repeat(50)));
+  console.log();
+}
+
+/**
+ * Get file status counts without logging
+ * @param {Object} manifest - Manifest object
+ * @param {string} projectPath - Project root path
+ * @returns {{unchanged: number, modified: number, missing: number}}
+ */
+function getFileStatusCounts(manifest, projectPath) {
+  const counts = { unchanged: 0, modified: 0, missing: 0 };
+
+  if (hasFileHashes(manifest)) {
+    for (const [relativePath, hashInfo] of Object.entries(manifest.fileHashes)) {
+      const fullPath = join(projectPath, relativePath);
+      const status = compareFileHash(fullPath, hashInfo);
+
+      switch (status) {
+        case 'unchanged':
+          counts.unchanged++;
+          break;
+        case 'modified':
+          counts.modified++;
+          break;
+        case 'missing':
+          counts.missing++;
+          break;
+      }
+    }
+  } else {
+    // Legacy manifest - existence check only
+    const allFiles = [
+      ...manifest.standards.map(s => `.standards/${basename(s)}`),
+      ...manifest.extensions.filter(e => typeof e === 'string').map(e => `.standards/${basename(e)}`),
+      ...manifest.integrations.map(i => resolveIntegrationFile(i) || i)
+    ];
+    for (const relativePath of allFiles) {
+      const fullPath = join(projectPath, relativePath);
+      if (existsSync(fullPath)) {
+        counts.unchanged++;
+      } else {
+        counts.missing++;
+      }
+    }
+  }
+
+  return counts;
+}
+
+/**
+ * Get skills status summary string
+ * @param {Object} manifest - Manifest object
+ * @param {string} projectPath - Project root path
+ * @returns {string} Formatted skills status
+ */
+function getSkillsStatusSummary(manifest, projectPath) {
+  const aiTools = manifest.aiTools || [];
+  const parts = [];
+
+  // Check for Marketplace installation (Claude Code specific)
+  // Dynamically detect marketplace installation regardless of manifest
+  const marketplaceInfo = getMarketplaceSkillsInfo();
+  const hasMarketplaceSkills = marketplaceInfo?.installed;
+
+  const location = manifest.skills?.location || '';
+  const isMarketplaceInManifest = location === 'marketplace' ||
+    location.includes('plugins/cache') ||
+    location.includes('plugins\\cache');
+
+  for (const tool of aiTools) {
+    const config = getAgentConfig(tool);
+    if (!config || !config.supportsSkills) continue;
+
+    const displayName = getAgentDisplayName(tool);
+    const usingMarketplace = (hasMarketplaceSkills || isMarketplaceInManifest) && tool === 'claude-code';
+
+    if (usingMarketplace) {
+      parts.push(chalk.green(`${displayName} ✓`));
+      continue;
+    }
+
+    const projectSkillsInfo = getInstalledSkillsInfoForAgent(tool, 'project', projectPath);
+    const userSkillsInfo = getInstalledSkillsInfoForAgent(tool, 'user', projectPath);
+
+    if (projectSkillsInfo?.installed || userSkillsInfo?.installed) {
+      parts.push(chalk.green(`${displayName} ✓`));
+    } else {
+      parts.push(chalk.gray(`${displayName} ○`));
+    }
+  }
+
+  return parts.join(' | ') || chalk.gray('None configured');
+}
+
+/**
+ * Get commands status summary string
+ * @param {Object} manifest - Manifest object
+ * @param {string} projectPath - Project root path
+ * @returns {string|null} Formatted commands status or null if no tools support commands
+ */
+function getCommandsStatusSummary(manifest, projectPath) {
+  const aiTools = manifest.aiTools || [];
+  const parts = [];
+
+  for (const tool of aiTools) {
+    const config = getAgentConfig(tool);
+    if (!config || !config.commands) continue;
+
+    const displayName = getAgentDisplayName(tool);
+    // Check both project and user levels
+    const projectCmdInfo = getInstalledCommandsForAgent(tool, 'project', projectPath);
+    const userCmdInfo = getInstalledCommandsForAgent(tool, 'user');
+    const commandsInfo = projectCmdInfo || userCmdInfo;
+
+    if (commandsInfo?.installed) {
+      parts.push(chalk.green(`${displayName} ✓`));
+    } else {
+      parts.push(chalk.gray(`${displayName} ○`));
+    }
+  }
+
+  return parts.length > 0 ? parts.join(' | ') : null;
+}
+
+/**
+ * Get workflow status summary string (for --summary mode)
+ * @param {string} projectPath - Project root path
+ * @returns {string|null} Formatted workflow status or null if no active workflows
+ */
+function getWorkflowStatusSummary(projectPath) {
+  try {
+    const gate = new WorkflowGate(projectPath);
+    const active = gate.listActiveWorkflows();
+
+    if (active.length === 0) {
+      return chalk.green('No active workflows ✓');
+    }
+
+    const parts = active.map(wf => {
+      const progress = wf.progress
+        ? `${wf.progress.percentage}%`
+        : '';
+      return chalk.yellow(`${wf.workflowName}:${wf.currentStep || '?'} ${progress}`);
+    });
+
+    return parts.join(' | ') + chalk.yellow(` (${active.length} active)`);
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Display workflow status in full check mode
+ * @param {string} projectPath - Project root path
+ */
+function displayWorkflowStatus(projectPath) {
+  try {
+    const gate = new WorkflowGate(projectPath);
+    const active = gate.listActiveWorkflows();
+
+    if (active.length === 0) return;
+
+    console.log(chalk.cyan('Workflow Status | 工作流程狀態'));
+    console.log();
+
+    for (const wf of active) {
+      const progress = wf.progress
+        ? `${wf.progress.completed}/${wf.progress.total} (${wf.progress.percentage}%)`
+        : 'unknown';
+      const statusColor = wf.status === 'paused' ? chalk.yellow : chalk.blue;
+
+      console.log(`  ${statusColor('●')} ${chalk.bold(wf.workflowName)} — ${wf.status}`);
+      console.log(chalk.gray(`    Step: ${wf.currentStep || 'N/A'} | Progress: ${progress}`));
+
+      // Staleness warning
+      if (wf.updatedAt) {
+        const updatedDate = new Date(wf.updatedAt);
+        const daysSince = Math.floor((Date.now() - updatedDate.getTime()) / (1000 * 60 * 60 * 24));
+        if (daysSince > 7) {
+          console.log(chalk.yellow(`    ⚠ Stale: last updated ${daysSince} days ago`));
+        } else {
+          console.log(chalk.gray(`    Updated: ${wf.updatedAt}`));
+        }
+      }
+    }
+
+    console.log();
+  } catch {
+    // Silently skip if workflow gate not available
+  }
+}
+
+// ============================================================
+// i18n Lint (XSPEC-239 — P1-CLI-5)
+// ============================================================
+
+/**
+ * Run i18n lint across canonical + locale variants and print findings.
+ * Exits 1 if any error-level findings are detected.
+ *
+ * @param {string} projectPath
+ * @param {object} options - CLI options (currently honors options.json)
+ */
+async function runI18nLint(projectPath, options = {}) {
+  const findings = lintI18nAll({ projectPath });
+  const { errors, warnings, infos } = partitionI18nFindings(findings);
+
+  if (options.json) {
+    console.log(JSON.stringify({
+      summary: {
+        errors: errors.length,
+        warnings: warnings.length,
+        infos: infos.length,
+      },
+      findings,
+    }, null, 2));
+    if (errors.length > 0) process.exitCode = 1;
+    return;
+  }
+
+  console.log();
+  console.log(chalk.bold('UDS i18n Lint (XSPEC-239)'));
+  console.log(chalk.gray('─'.repeat(50)));
+  console.log();
+
+  if (findings.length === 0) {
+    console.log(chalk.green('  ✓ No i18n violations found.'));
+    console.log();
+    return;
+  }
+
+  // Display errors first
+  for (const f of errors) {
+    console.log(chalk.red(`  ✗ [${f.rule}]`));
+    console.log(chalk.red(`    ${f.file}:${f.line}`));
+    console.log(chalk.gray(`    ${f.message}`));
+    console.log();
+  }
+  for (const f of warnings) {
+    console.log(chalk.yellow(`  ⚠ [${f.rule}]`));
+    console.log(chalk.yellow(`    ${f.file}:${f.line}`));
+    console.log(chalk.gray(`    ${f.message}`));
+    console.log();
+  }
+
+  // Info findings are collapsed to a summary line to avoid flooding output
+  // (e.g. many locale files still lack source_hash). They never fail the gate.
+  if (infos.length > 0) {
+    console.log(chalk.cyan(`  ℹ ${infos.length} locale file(s) lack source_hash — silent content drift cannot be detected for them.`));
+    console.log(chalk.gray('    Stamp source_hash (sha256[:12] of canonical) when a locale is verified in sync to enable detection.'));
+    console.log();
+  }
+
+  console.log(chalk.gray('─'.repeat(50)));
+  console.log(`  ${chalk.red('Errors:')} ${errors.length}    ${chalk.yellow('Warnings:')} ${warnings.length}    ${chalk.cyan('Info:')} ${infos.length}`);
+  console.log();
+
+  if (errors.length > 0) {
+    process.exitCode = 1;
+  }
+}

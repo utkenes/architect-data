@@ -1,0 +1,54 @@
+name: Test and make release
+
+on:
+  push:
+    branches:
+      - master
+  pull_request:
+
+jobs:
+  pre_merge_checks:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v2
+      - name: Set up Python 3.8
+        uses: actions/setup-python@v1
+        with:
+          python-version: 3.8
+      - name: Complete CI/CD setup
+        run: make setup-cicd-check-stage
+      - name: Pre-merge checks
+        run: make pre-merge-checks
+
+  semantic_release:
+    needs:
+      - pre_merge_checks
+    runs-on: ubuntu-latest
+    if: github.event_name == 'push' && github.ref == 'refs/heads/master'
+    steps:
+      - uses: actions/checkout@v2
+      - name: Use Node.js 12.x
+        uses: actions/setup-node@v1
+        with:
+          node-version: 12.x
+      - name: Set up Python 3.8
+        uses: actions/setup-python@v1
+        with:
+          python-version: 3.8
+      - name: Complete CI/CD setup
+        run: make setup-cicd-release-stage
+      - name: Semantic Release
+        uses: cycjimmy/semantic-release-action@v2
+        with:
+          semantic_version: 17.0.4
+          extra_plugins: |
+            @semantic-release/changelog@"^5.0.1"
+            @semantic-release/exec@"^5.0.0"
+            @semantic-release/git@"^9.0.0"
+            @semantic-release/github@"^7.0.5"
+        env:
+          GITHUB_TOKEN: ${{ secrets.SELF_SET_GITHUB_TOKEN }}
+          GIT_AUTHOR_NAME: ${{ secrets.GIT_NAME }}
+          GIT_AUTHOR_EMAIL: ${{ secrets.GIT_EMAIL }}
+          GIT_COMMITTER_NAME: ${{ secrets.GIT_NAME }}
+          GIT_COMMITTER_EMAIL: ${{ secrets.GIT_EMAIL }}

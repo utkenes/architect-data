@@ -1,0 +1,171 @@
+include::../navigation.adoc[]
+
+:jbake-title: Architecture Communication Canvas
+:jbake-type: page
+:jbake-status: published
+
+= Architecture Communication Canvas
+
+[.lead]
+Create a comprehensive one-page visual summary of your architecture that stakeholders can quickly understand and use for decision-making.
+
+== 🎯 Purpose
+
+The Architecture Communication Canvas helps you distill complex architectural information into a single, visual format that:
+
+* **Communicates Value** - Clearly shows why the system exists and what value it delivers
+* **Identifies Stakeholders** - Maps key people and their interests in the system
+* **Highlights Core Functions** - Focuses on the most important capabilities
+* **Reveals Quality Requirements** - Makes non-functional requirements visible
+* **Shows Context** - Illustrates external dependencies and integrations
+* **Documents Decisions** - Captures key architectural choices and their rationale
+* **Identifies Risks** - Surfaces known problems and missing information
+
+== 📋 When to Use
+
+[cols="30,70"]
+|===
+| **Scenario** | **Application**
+
+| **Project Kickoff** | Get team aligned on architecture vision and scope
+| **Stakeholder Reviews** | Present architecture overview to executives and business stakeholders  
+| **Architecture Assessment** | Baseline current state before making changes
+| **Team Onboarding** | Help new team members understand the system quickly
+| **Documentation Reviews** | Ensure all key aspects are covered in detailed docs
+| **Risk Planning** | Identify areas needing more attention or mitigation
+|===
+
+== 🛠️ The Prompt
+
+Copy and paste this prompt into your preferred LLM interface:
+
+++++
+<div class="card border-primary">
+    <div class="card-header bg-primary text-white d-flex justify-content-between align-items-center">
+        <h5 class="mb-0"><i class="fas fa-robot me-2"></i>Architecture Communication Canvas Prompt</h5>
+        <button class="btn btn-light btn-sm" onclick="copyToClipboard('canvas-prompt')" title="Copy to clipboard">
+            <i class="fas fa-copy"></i>
+        </button>
+    </div>
+    <div class="card-body">
+        <pre id="canvas-prompt" class="mb-0"><code>
+++++
+
+[source,text]
+----
+include::{projectRootDir}/prompts/Architecture-Communication-Canvas.md[]
+----
+
+++++
+        </code></pre>
+    </div>
+</div>
+
+<script>
+function copyToClipboard(elementId) {
+    const element = document.getElementById(elementId);
+    const text = element.textContent;
+    navigator.clipboard.writeText(text).then(() => {
+        // Visual feedback
+        const button = event.target.closest('button');
+        const originalIcon = button.innerHTML;
+        button.innerHTML = '<i class="fas fa-check"></i>';
+        button.classList.add('btn-success');
+        button.classList.remove('btn-light');
+        
+        setTimeout(() => {
+            button.innerHTML = originalIcon;
+            button.classList.add('btn-light');
+            button.classList.remove('btn-success');
+        }, 2000);
+    });
+}
+</script>
+++++
+
+== 📊 Expected Output
+
+The prompt will generate an AsciiDoc document containing:
+
+1. **Styled HTML Table** - The canvas layout with proper visual styling
+2. **Nine Key Sections** - Each addressing a critical architectural aspect  
+3. **Actionable Content** - Specific, concrete information rather than generic statements
+4. **Stakeholder-Friendly Language** - Accessible to both technical and business audiences
+
+== 💡 Example Usage
+
+include::../examples/architecture-communication-canvas-example.adoc[tag=example]
+
+== 🔗 Integration with Other Prompts
+
+The Architecture Communication Canvas works well as a starting point for other prompts:
+
+[cols="25,75"]
+|===
+| **Follow-up Prompt** | **How It Connects**
+
+| link:40-arc42-Chapter-Generator.html[arc42 Chapter Generator] | Use canvas insights to populate arc42 chapters 1, 2, and 3
+| link:30-ADR.html[Architecture Decision Records] | Document the key decisions identified in the canvas
+| link:60-Risk-Assessment-Matrix.html[Risk Assessment] | Analyze the risks and missing information sections
+| link:80-Stakeholder-Analysis.html[Stakeholder Analysis] | Deep dive into the key stakeholders identified
+| link:50-Quality-Scenarios-Builder.html[Quality Scenarios] | Create testable scenarios for quality requirements
+|===
+
+== 🎨 Customization Tips
+
+=== For Different Domains
+* **Web Applications**: Focus on user experience, scalability, and browser compatibility
+* **Enterprise Systems**: Emphasize integration, compliance, and data governance
+* **IoT Projects**: Highlight device management, connectivity, and edge computing
+* **Microservices**: Show service boundaries, data consistency, and operational complexity
+
+=== For Different Audiences
+* **Executive Stakeholders**: Emphasize value proposition and business risks
+* **Product Managers**: Focus on core functions and user-facing quality requirements
+* **Development Teams**: Highlight technical decisions and implementation risks
+* **Operations Teams**: Emphasize deployment, monitoring, and operational concerns
+
+== 📈 Success Metrics
+
+A good Architecture Communication Canvas should:
+
+* ✅ **Fit on one page** when printed or displayed
+* ✅ **Be understandable** by stakeholders in 5-10 minutes
+* ✅ **Generate questions** and discussions about the architecture
+* ✅ **Identify gaps** in current understanding or documentation
+* ✅ **Guide priorities** for further architectural work
+
+== 🚀 Next Steps
+
+After creating your canvas:
+
+1. **Review with Stakeholders** - Get feedback and validate understanding
+2. **Identify Gaps** - Use missing information section to plan next work
+3. **Create Detailed Documentation** - Use other prompts to elaborate on canvas sections
+4. **Update Regularly** - Keep the canvas current as the architecture evolves
+5. **Share Widely** - Use as a communication tool across the organization
+
+++++
+<div class="row mt-4">
+    <div class="col-md-6">
+        <div class="card border-secondary">
+            <div class="card-body text-center">
+                <h6 class="card-title">Previous Prompt</h6>
+                <a href="10-Intro.html" class="btn btn-outline-secondary">
+                    <i class="fas fa-arrow-left me-2"></i>Introduction
+                </a>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-6">
+        <div class="card border-secondary">
+            <div class="card-body text-center">
+                <h6 class="card-title">Next Prompt</h6>
+                <a href="30-ADR.html" class="btn btn-outline-secondary">
+                    Architecture Decision Record<i class="fas fa-arrow-right ms-2"></i>
+                </a>
+            </div>
+        </div>
+    </div>
+</div>
+++++

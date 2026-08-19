@@ -1,0 +1,77 @@
+---
+source: ../../../../skills/requirement-assistant/SKILL.md
+source_version: 1.0.0
+translation_version: 1.1.0
+last_synced: 2026-08-17
+status: current
+description: |
+  [UDS] 撰写符合 INVEST 准则的用户故事与需求。
+  Use when: 把一个功能构想转成用户故事、定义可测试的验收条件、检视待办项目的质量。
+  Not for: 带有设计与差异操作的完整规格文档——请用 /sdd；判断这个构想本身对不对——请用 /brainstorm。
+  Keywords: requirement, user story, INVEST, acceptance criteria, backlog refinement, 需求, 用户故事, 验收条件, 待办梳理.
+---
+
+# 需求助手
+
+> **语言**: [English](../../../../skills/requirement-assistant/SKILL.md) | 简体中文
+
+编写结构良好的用户故事和需求文件，遵循 INVEST 准则。
+
+## 工作流程
+
+1. **理解情境** - 收集功能信息
+2. **识别利害关系人** - 谁从这个功能受益？
+3. **编写用户故事** - 遵循标准格式
+4. **定义验收条件** - 具体、可测试的条件
+5. **以 INVEST 验证** - 检查质量准则
+
+## 用户故事格式
+
+```
+As a [role],
+I want [feature],
+So that [benefit].
+
+### Acceptance Criteria
+- [ ] Given [context], when [action], then [result]
+- [ ] Given [context], when [action], then [result]
+```
+
+## INVEST 准则
+
+| 准则 | 说明 | Criterion | Description |
+|------|------|-----------|-------------|
+| **I**ndependent | 可独立开发 | Independent | Can be developed separately |
+| **N**egotiable | 可协商细节 | Negotiable | Details can be discussed |
+| **V**aluable | 提供用户价值 | Valuable | Delivers value to user |
+| **E**stimable | 可估算工作量 | Estimable | Can estimate effort |
+| **S**mall | 适合单一迭代 | Small | Fits in one sprint |
+| **T**estable | 有明确测试标准 | Testable | Has clear test criteria |
+
+## 质量检查清单
+
+- [ ] 用户故事遵循「As a / I want / So that」格式
+- [ ] 至少定义 2 个验收条件
+- [ ] 满足全部 6 个 INVEST 准则
+- [ ] 已考虑边界案例和错误情境
+- [ ] 已记录范围外项目
+
+## 使用方式
+
+- `/requirement` - 交互式需求编写向导
+- `/requirement user login` - 为功能编写需求
+- `/requirement "users can export data"` - 根据描述编写需求
+
+## 下一步引导
+
+`/requirement` 完成后，AI 助手应建议：
+
+> **需求文档已完成。建议下一步：**
+> - 执行 `/sdd` 建立规格文档
+> - 执行 `/atdd` 定义验收测试
+> - 执行 `/brainstorm` 进一步探索需求空间
+
+## 参考
+
+- 详细指南：[guide.md](./guide.md)
+- 核心规范：[requirement-engineering.md](../../../../core/requirement-engineering.md)

@@ -1,0 +1,193 @@
+# AI 協作防幻覺標準 - AI 優化版
+# 來源: core/anti-hallucination.md
+
+id: anti-hallucination
+meta:
+  version: "1.4.0"
+  updated: "2026-04-13"
+  source: core/anti-hallucination.md
+  guide: core/guides/anti-hallucination-guide.md
+  description: 透過證據基礎分析和嚴格驗證標籤來防止 AI 幻覺的協議
+  language: zh-TW
+
+principles:
+  evidence_based:
+    rule: 只分析和引用已明確提供或讀取的內容
+    do:
+      - 分析使用檔案讀取工具已讀取的程式碼檔案
+      - 引用已取得的文件
+      - 引用已檢查的設定檔
+    do_not:
+      - 推測未見過的 API、函式或設定
+      - 假設框架行為而不驗證
+      - 捏造需求細節
+
+  source_attribution:
+    rule: 所有引用必須包含來源類型、位置和可驗證性
+    source_types:
+      - type: "[來源: 程式碼]"
+        description: 直接從程式碼庫讀取
+        reliability: 5
+      - type: "[來源: 文件]"
+        description: README、Wiki、內嵌註解
+        reliability: 4
+      - type: "[來源: 外部]"
+        description: 官方文件附 URL
+        reliability: 4
+      - type: "[來源: 搜尋]"
+        description: 搜尋結果（含日期）
+        reliability: 3
+      - type: "[來源: 知識庫]"
+        description: AI 訓練資料（需驗證）
+        reliability: 2
+      - type: "[來源: 使用者]"
+        description: 使用者對話中的資訊
+        reliability: 3
+
+  certainty_classification:
+    rule: 明確區分已確認的事實、推論和未知項目
+    tags:
+      - tag: "[已確認]"
+        use_when: 來自程式碼/文件的直接證據
+      - tag: "[推論]"
+        use_when: 從可用證據邏輯推導
+      - tag: "[假設]"
+        use_when: 基於常見模式（需驗證）
+      - tag: "[未知]"
+        use_when: 資訊不可用
+      - tag: "[待確認]"
+        use_when: 需要使用者澄清
+
+prohibited_behaviors:
+  - id: fabricate-apis
+    description: 不要發明方法名稱、參數或回傳類型
+    correct_action: 讀取實際原始碼或詢問使用者
+
+  - id: assume-requirements
+    description: 不要猜測使用者需求或商業規則
+    correct_action: 需求不明確時詢問澄清問題
+
+  - id: speculate-unread-code
+    description: 不要描述未審閱檔案的功能
+    correct_action: 明確說明「需要讀取 [檔案] 以確認」
+
+  - id: invent-configuration
+    description: 不要假設環境變數、設定鍵或資料庫 schema
+    correct_action: 審閱實際設定檔
+
+  - id: hallucinate-errors
+    description: 不要在沒有證據的情況下宣稱程式碼有問題
+    correct_action: 分析實際程式碼並引用具體行數
+
+  - id: options-without-recommendation
+    description: 不要列出選項讓使用者選擇而不提供指引
+    correct_action: 始終包含建議選項及理由
+
+epistemic_calibration:
+  description: "Agent 認知校準 — Answer/Ask/Abstain 三動作框架 (XSPEC-008, DEC-014 PassiveQA)"
+  version_added: "1.4.0"
+
+  action_types:
+    answer:
+      use_when: "具備足夠資訊產出高品質結果"
+      requirement: "可選填 completeness (complete | mostly_complete | partial | insufficient) 和 confidence (0.0~1.0)"
+    ask:
+      use_when: "缺少關鍵資訊，強行回答將產生幻覺"
+      requirement: "必填 missing_variables 清單；不可用於逃避困難任務"
+      routing: "Pipeline 暫停，呈現 missing_variables 給使用者或資訊收集流程"
+    abstain:
+      use_when: "任務完全超出能力範圍，或執行將造成不可逆傷害"
+      requirement: "必填 abstain_reason；僅限真正無法執行的情況"
+      routing: "Pipeline 記錄原因，跳過此 agent 或觸發人工介入"
+
+  fail_closed_agents:
+    description: "以下 agent 必須產出 answer，不可 ask 或 abstain"
+    agents:
+      - name: evaluator
+        reason: "必須評分，否則管道無法完成品質評估"
+      - name: guardian
+        reason: "必須做安全判斷 (fail-closed)，不得跳過"
+
+  schema:
+    description: "所有 agent output 可選填的 epistemic 子結構"
+    example: |
+      {
+        "epistemic": {
+          "action_type": "answer",          // "answer" | "ask" | "abstain"
+          "completeness": "mostly_complete", // optional
+          "confidence": 0.85,               // 0.0~1.0, optional
+          "missing_variables": [],           // required when action_type="ask"
+          "abstain_reason": null             // required when action_type="abstain"
+        }
+      }
+    backward_compatibility: "缺少 epistemic 欄位時，預設視為 action_type: answer"
+
+  prohibited:
+    - id: overuse-ask
+      description: "禁止以 ask 逃避困難任務；ask 僅適用於真正缺少必要資訊的情況"
+    - id: overuse-abstain
+      description: "禁止頻繁 abstain；pipeline 應追蹤各 agent 的 abstain 頻率"
+    - id: evaluator-guardian-ask-abstain
+      description: "Evaluator 和 Guardian 禁止 ask 或 abstain"
+
+rules:
+  - id: conversation-language
+    trigger: 回應使用者時
+    instruction: 適應使用者偏好的語言；保留技術術語
+    priority: required
+
+  - id: include-recommendation
+    trigger: 提供多個選項時
+    instruction: 始終標示建議選項及理由
+    priority: required
+
+  - id: suggest-next-steps
+    trigger: 完成任務或子任務時
+    instruction: 建議邏輯性的下一步並標示最推薦的選項
+    priority: required
+
+  - id: cite-sources
+    trigger: 對程式碼做任何陳述時
+    instruction: 包含來源類型標籤和 file:line 引用
+    priority: required
+
+  - id: version-sensitivity
+    trigger: 引用函式庫或 API 時
+    instruction: 可用時始終包含版本資訊
+    priority: required
+
+  - id: ask-for-clarification
+    trigger: 需求不明確時
+    instruction: 繼續之前詢問澄清問題
+    priority: required
+
+checklist:
+  - 來源已驗證（讀取實際檔案/文件）
+  - 來源類型已標記
+  - 引用已標註（file:line 或 URL）
+  - 版本已指定（如適用）
+  - 確定性已分類
+  - AI 知識已標記驗證警告
+  - 無捏造內容
+  - 已對模糊點要求使用者澄清
+  - 提供選項時已包含建議
+
+quick_reference:
+  source_types:
+    columns: [標籤, 可靠度, 說明]
+    rows:
+      - ["[來源: 程式碼]", "⭐⭐⭐⭐⭐", 直接從程式碼庫]
+      - ["[來源: 文件]", "⭐⭐⭐⭐", README/Wiki/註解]
+      - ["[來源: 外部]", "⭐⭐⭐⭐", 官方文件附 URL]
+      - ["[來源: 搜尋]", "⭐⭐⭐", 網路搜尋結果]
+      - ["[來源: 知識庫]", "⭐⭐", AI 知識（需驗證）]
+      - ["[來源: 使用者]", "⭐⭐⭐", 使用者對話]
+
+  certainty_tags:
+    columns: [標籤, 使用時機]
+    rows:
+      - ["[已確認]", 來自程式碼/文件的直接證據]
+      - ["[推論]", 邏輯推導]
+      - ["[假設]", 常見模式（需驗證）]
+      - ["[未知]", 資訊不可用]
+      - ["[待確認]", 需要澄清]

@@ -1,0 +1,2596 @@
+# Changelog
+
+> **Language**: English | [繁體中文](locales/zh-TW/CHANGELOG.md) | [简体中文](locales/zh-CN/CHANGELOG.md)
+
+All notable changes to this project will be documented in this file.
+
+The format is based on [Keep a Changelog](https://keepachangelog.com/),
+and this project adheres to [Semantic Versioning](https://semver.org/).
+
+## [Unreleased]
+
+### Added
+
+- **A gate that checks whether a `uds <cmd>` instruction actually runs (XSPEC-383 R4).** 2026-08-19 found three top-level commands (`uds install`, `uds lint`, `uds sync`) and two flags (`uds check --spec-size`, `uds spec create --boost`) shipped in guidance that do not exist — including in `quickstart.js`, whose entire job is "find the right command", and `integration-generator.js`, which writes commands into every adopter's `CLAUDE.md`/`AGENTS.md`. Both were already fixed (`465335e4`); nothing was checking that the fix stays fixed. `check-command-existence.mjs` walks `core/`, `locales/`, `ai/standards/`, `cli/src/`, `skills/`, `docs/`, and repo-root `*.md`, extracts every `uds <cmd>` shape, and probes each against this commit's own CLI with `uds <path> --definitely-not-a-real-flag` — not `--help`, which commander answers with the general command list for an *unknown* command instead of erroring, which is exactly how `uds lint`/`uds sync` survived the first pass undetected. Flags are probed with two trailing sentinel options so a value-taking flag can never accidentally consume the sentinel and let the real command execute. Wired into CI on its own `command-existence` change-filter (not the existing `cli` one — its source surface is not `cli/**`).
+- Re-running the same probe against the current tree surfaced further drift the first incident's fix never touched: `uds workflow` (removed in v6.0.0) was still shown as live in `docs/user/CHEATSHEET.md`, `docs/reference/FEATURE-REFERENCE.md`, and `skills/workflows/README.md` (and their zh-TW/zh-CN mirrors) for five months, despite `docs/MIGRATION-v6.md` itself giving the exact grep that would have caught it. `uds config --lang`/`--mode` (root `README.md` and both locales, plus `docs/reference/INTEGRATION-VERIFICATION.md`) never existed as flags — correct usage is `uds config set output_language <value>` / `uds config --type content_mode`. `uds agent install --all` used a flag where the CLI takes a positional (`uds agent install all`). `uds reverse-tdd` was invented for a GitHub Actions example (`skills/reverse-engineer/tdd-analysis.md` ×3 locales) — that capability ships only as the `reverse-tdd` AI agent, not a scriptable CLI, and the example now says so instead of showing a fabricated `coverage.json` pipeline. `uds check --interactive` (`cli/src/i18n/messages.js` ×3 locales) doesn't exist because interactive mode is already the default (`--no-interactive` disables it). 29 findings, 29 fixed, 0 remaining.
+
+## [6.7.5] - 2026-08-18
+
+### Changed
+
+- **Eight skills can be selected by a model again.** `audit-assistant`, `changelog-guide`, `commit-standards`, `docs-generator`, `project-discovery`, `release-standards`, `reverse-engineer` and `spec-derivation` carried `disable-model-invocation: true`, applied by `d415937e` alongside the description rewrite and following no stateable rule. They were deliberately left alone on 2026-08-17 for a reason that was correct then: the rule settled on was "a reference is model-invocable", and none of these carried a `status` at all, so lifting them would have replaced one unruled state with one unruled action. Measured since: **all eight carry a full `Use when:` trigger and a `Not for:` exclusion, all eight describe an action rather than reference material, and all eight already have a paired slash command** — which is exactly the shape of `code-review-assistant`, whose `/code-review` was ruled not to justify the flag. `journey-test-assistant` is the standing precedent: same "Generate X" shape, `status: stable`, never disabled. Each now records `status: stable` with the reasoning inline. `stable` rather than a new value, because `skills/` uses reference, stable and experimental and inventing a fourth would be the same unruled action in different clothing.
+- **The count of skills a model can actually select is now 55 of 55.** It was 45.
+
+### Fixed
+
+- **A localized install still shipped the flag after the English source dropped it.** `spec-derivation` is the only skill whose locale packs carried `disable-model-invocation` of their own, and frontmatter merging only copies fields the English source *has* — so a field English no longer declares survives untouched in the locale file and ships anyway. Both zh-TW and zh-CN corrected. Verified by resolving all **60 skills × 3 locales = 165 installed results**: zero still disabled.
+
+## [6.7.4] - 2026-08-18
+
+### Fixed
+
+- **6.7.3 made `uds check` report 52 phantom missing files per repo.** Two 6.7.3 changes only interact once both are present: R1 gave skills a content hash, which made them reach the `unchanged` branch for the first time, and R6b collects entries from that branch into `manifest.fileHashes`. That map is validated with an `isFile()` test and skill entries are directories, so every one of them reported as missing. **Nothing was deleted — the record was wrong, not the disk** (verified: 59 skill directories and their contents intact). `verifiedPristine` is now restricted to file-backed categories, and because fixing the writer does not remove what it already wrote, `uds update` also drops `.claude/skills/` and `.claude/commands/` keys it finds in `fileHashes` — a bad key is never revisited otherwise, since nothing on disk corresponds to it.
+- **Commands now compare by content too (XSPEC-382 R7).** R1 covered skills and left commands on `hash: null`, keeping the unconditional-reinstall branch alive for them. Same shape as the skills fix: `resolveCommandContent(name, agent, locale)` says what an install would contain — locale selection with English fallback, plus the per-agent transform — and the installer writes it while the planner hashes it.
+- **Localized installs shipped SKILL.md files pointing at files that were never installed.** Locale packs are not complete copies of the English source — measured, **4 of 59 localized skills in zh-TW and 5 of 59 in zh-CN** are missing files English ships — and the installer swapped in the locale directory wholesale, so those companions were simply not written. Two of the gaps are referenced: the zh-TW `dev-workflow-guide/SKILL.md` points at `workflow-phases.md` three times and `testing-guide/SKILL.md` at `test-skeleton-templates.md` three times. **Fallback is now per file rather than per skill** — locale file where it exists, English where it does not.
+- **A file UDS does not ship no longer keeps a skill permanently "changed".** Installing a skill now removes top-level files in its directory that the resolution does not name (found in the wild: `deploy-assistant/guide.md`, which is in no UDS skills tree and never was). Scoped by the same provenance test that keeps an adopter's own skill directories out of every path here — verified that a hand-written skill directory and its extra files survive `--force` untouched — and subdirectories are left alone, since the installer has never written them.
+
+## [6.7.3] - 2026-08-18
+
+### Fixed
+
+- **Skills now compare by content, so upgrades stop reprinting 55 rows that mean nothing.** Both sides of the diff hardcoded `hash: null`, so every skill was an unconditional reinstall. Hashing the source directory does not work — installing is not a verbatim copy: a localized `SKILL.md` gets English frontmatter merged in (`brainstorm-assistant`: a 23,753-byte zh-TW source becomes 23,866 bytes installed), the source is chosen at runtime by locale with per-skill fallback to English, and subdirectories are skipped. Built that way, all 55 would show as content **changes** on every upgrade — indistinguishable from real ones, and worse than the known absence of signal. Instead there is one function: `resolveSkillFiles(name, locale)` says what an install would contain, the installer writes that, and the planner hashes it, so the two cannot drift. Verified against a real installed project — 110 files byte-identical, 0 mismatches, and the 18 adopter-written skills correctly unresolved. The actual side hashes **only UDS-managed directories**; an adopter's own skills are never compared and never become deletion candidates. `Update (57)` on a real upgrade is now `Update: 0, Unchanged: 127`.
+- **`uds check --restore` could not restore 64 of 72 tracked standards.** It matched `entry.endsWith(fileName)` against `manifest.standards`, whose entries have been IDs (`commit-message`) rather than paths since 3.4.0 — a comparison that can never be true. The eight that worked were the `options/` entries, still stored as paths, which is why the failure never looked total; the rest reported "Could not determine source". The same ID-to-source lookup already existed twice elsewhere in the file and this site never got a copy, so the fix is one resolver in `registry.js`, paired with the filename resolver it has to agree with.
+- **A byte-perfect standard could not stop being reported as modified.** Actual state is hashed from disk, so a file matching upstream is classed `unchanged`, produces no action, and is never re-hashed — and reconciliation returned early without writing the manifest when the plan was empty. There was no path back. The diff now reports the files it **proved** identical to upstream and those records are corrected before that early return. Deliberately narrow: it only ever records a hash after proving disk matches the desired upstream content, so a hand edit is never absorbed. Syncing the record to whatever is on disk would leave `uds check` unable to report a modified standard ever again.
+- **Backups did not contain skills, and nothing said so.** Skills are directories and the backup called `copyFileSync` on them, which throws on every platform (ENOTSUP measured on two filesystems here — not a temp-directory artifact). The failure was hidden twice: the executor aborted only when **nothing** backed up, so a single success concealed any number of failures, and the backup manifest had no errors field, making a backup of 74 of 129 planned paths indistinguishable on disk from a complete one. Measured on a real repo before the fix: a backup manifest recorded 74 paths for a plan of 129 actions, with **0 of the 55 skill directories** among them — a rollback point that did not cover the largest part of what it was about to overwrite. Directories now copy recursively, the manifest records `failedToBackUp` and `coverage: {planned, backedUp, failed}`, and **any** backup failure aborts the run: refusing to overwrite a file that could not be copied first is what a backup is for.
+
+### Changed
+
+- **The unconditional-reinstall collapse is kept, and its wording widened.** Commands still have no content comparison, so the branch is live. It is not removed along with the skills half because a collapse that silently stops applying looks exactly like a plan that had nothing to collapse.
+
+## [6.7.2] - 2026-08-18
+
+### Fixed
+
+- **`uds update --skills` updated everything and never advanced the version marker.** Four of five adopter repos sat on 6.6.0 while the same manifest's `skills.version` already read 6.7.0; the only one that advanced was the one with no skills installed. Both runs exited 0, both printed "57 succeeded", and neither printed a failure. The earlier reading of this — that something reported failure and it never surfaced — was wrong. Probes showed `results=57 failing=0`, the registry version resolving to `"6.7.1"`, and the value about to be written being correct: **the reconciler did everything right and a later write undid it.** `update.js` loads the manifest once at the top of the command, before the reconciler runs, and `updateSkillsOnly()` then writes that stale in-memory object back over it. `updateCommandsOnly()` had the identical defect and was found by traversing rather than by hitting it. Both now re-read the manifest and apply **only the fields they own** — copying the whole object back would re-open the same defect for any field a later step adds. This matters because the mechanism's own comment says it exists so the weekly staleness scout, which reads exactly this field, stops misreporting.
+- **A plan that listed 57 changes, 55 of them unconditional.** Skills carry no content comparison (XSPEC-382 R1), so every upgrade reprinted the same 55 rows with one identical reason, burying the two rows a reviewer actually had to approve. They are now collapsed into a single line **that states how many were collapsed**, with the total unchanged — a cap that does not announce itself reads as "these are all of them". The Summary line likewise now reads `Update: 57 (2 changed, 55 unconditional reinstall)`; `Update: 57` alone was true and answered nothing, and the Summary is what you read when deciding whether to approve an upgrade.
+
+### Changed
+
+- **The reason string for unconditional reinstalls is a single exported constant** rather than one copy at the site that produces it and another at the site that renders it. Drift between two copies would be silent here: the collapse would simply stop collapsing and the plan would look exactly as it always had.
+
+### Testing
+
+- **A behavioural test for the version marker, alongside the existing shape test.** The regression test added with the fix asserts source text — that the two functions contain `readManifest(projectPath)` — which would stay green for a refactor that calls it and discards the result. The claim being made is behavioural, so `tests/e2e/update-version-advances.test.js` now runs a real install, seeds a probe version, runs `update --apply --yes --skills`, and asserts the marker moved. Verified in both directions: green with the fix, red with it reverted.
+- Both new suites assert **both arms**. The collapse test checks that ordinary plans are left untouched, because a test that only checks "the 55 are gone" passes equally for a renderer that drops every update row.
+
+## [6.7.1] - 2026-08-18
+
+### Fixed
+
+- **The localized cheat sheets embedded English skill descriptions — for every locale, always.** `scripts/generate-usage-docs.mjs` scanned skills once, before the language loop, and always from `skills/` (the English source), so all three cheat sheets and feature references shared one set of descriptions. Measured before the fix: **all 82 descriptions in `locales/zh-TW/docs/CHEATSHEET.md` were byte-identical to the English ones** — and they were the pre-6.7.0 stripped `[UDS] <label>` form, so a Traditional Chinese reader saw a stale description in the wrong language while the `SKILL.md` they had installed carried the full Chinese trigger surface. `scanSkills()` now takes a language and is called **inside** the loop, preferring the locale variant and falling back to English per skill when one is missing. Fixed in the generator rather than in the 82 rows: a hand-edited cheat sheet is guaranteed to diverge from `SKILL.md` on the next edit.
+- **`disable-model-invocation: true` removed from `code-review-assistant` and `checkin-assistant`.** The flag followed no stateable rule. Of the six skills carrying `status: reference`, **four (`tdd`, `bdd`, `atdd`, `pr-automation`) were never disabled** despite the identical XSPEC-095 relocation of their lifecycle to the adoption layer — same category, opposite treatment — and the other eight disabled skills carry no `status` at all. The system had already recorded the consequence: `pr-automation-assistant` routes *"the substance of the review itself — use `/code-review`"*, and that referral was unreachable from any model-initiated path. All six references are now treated alike, which makes the rule statable: **a reference is model-invocable**. Both files carry the reasoning inline. The remaining eight are deliberately untouched — they have no `status`, so lifting them would replace one unruled state with another unruled action; they are named in XSPEC-378 R5 rather than left unexplained.
+
+## [6.7.0] - 2026-08-17
+
+### Fixed
+
+- **Skill trigger surface restored across all three layers — 55 skills × English, zh-TW, zh-CN.** A skill's `description` is the only thing a model sees when deciding whether to invoke it. Commit `d415937e` (2026-02-10) rewrote 17 of them to `[UDS] <label>` and deleted the `Use when:` and `Keywords:` lines, **Chinese keywords included**; the neighbouring commit's title says `token optimization`. Only tokens were countable — nothing was measuring trigger surface, so the trade looked one-sided when it was not. Measured on 2026-08-14: of 55 skills carrying a `SKILL.md`, **27 had a trigger condition, 27 had keywords, 0 had an exclusion condition, and 28 had neither** — and the 28 were the methodology core: tdd, bdd, atdd, spec-driven-dev, code-review, commit-standards, checkin, requirement.
+  - **English source**: 28 restored, and **all 55 gained an exclusion condition** (`Not for:`). Adding triggers without exclusions buys over-triggering, and a skill that fires when it should not gets switched off entirely — taking the working ones with it. Of the 15 recoverable from git history, **8 were rewritten** because the historical text no longer described current behaviour: six claim to drive a lifecycle that moved to the adoption layer in XSPEC-095. Restoring a stale description is worse than restoring none.
+  - **Locale layers**: zh-TW and zh-CN, **55/55 each, translated rather than transcoded**. This half is the point — a project installing with `--locale zh-tw` was still receiving the stripped descriptions while the English source was already fixed, so the repair would not have reached the reader it was for. Traditional and Simplified are each written in their own idiom, and three zh-CN descriptions that had Traditional characters mixed in were corrected.
+  - **Translation drift 62 → 38**, and the remaining 38 is a deliberate stop: 24 files whose drift came only from this description edit had their hashes updated, while 12 whose bodies had already drifted keep their stale hashes — updating those would assert a whole-file sync nobody verified.
+  - ⚠️ **Ten of the 28 carry `disable-model-invocation: true`**, added by the same `d415937e`. For those, a description does not restore selectability — the flag does, and whether to lift it is a design decision rather than a defect. The count of skills a model can actually select is **45, not 55**.
+
+### Added
+
+- **`ai-response-navigation` 1.2.0 → 1.3.0 — optional R10 and R11.** Their source is not the same as R7–R9's: a user stating twice in one session that a correct and complete answer was unreadable, while R7–R9 had already shipped and were being followed. Leading with the finding was not enough.
+  - **R10 — plain language is the subject; identifiers are support.** *Trigger*: any response explaining a situation, a defect, or a system's behaviour to a human. Explain what happened in the words the reader would use; paths, symbols, line numbers, command output and version strings belong **after** the sentence they support, not as the sentence. It does **not** license omitting them — a reader who wants to verify must be able to. **Deliberately separate from R7**: R7 orders finding before evidence, and a response can lead with its finding while stating it in vocabulary only its author holds. Both leave the reader unable to act; they are different failures.
+  - **R11 — every option carries its own trade-off.** *Trigger*: a response asking the reader to choose between two or more courses of action. Rule 2 already requires marking the recommendation and giving *its* reason; R11 requires **each** option to state what it buys and what it costs. A list where only the recommendation is argued hands the comparison back to the reader — the work they asked to have done — and an option shown without a downside reads as having none. **A trade-off is not a hedge**: "slightly harder" is not a cost, "rewrites 110 files and needs a human to check the translations" is. An empty cost cell reads as "not analysed", and the reader cannot tell those apart.
+
+## [6.6.0] - 2026-08-17
+
+### Added
+
+- **`spec-driven-development` 2.3.0 → 2.4.0 — an AC with no verification item is not an AC.** Every acceptance criterion must have a **verification item that points at it** — a test, a check, a gate, or an explicitly recorded manual step. An AC that no verification item references is a promise nobody kept, and it does **not** fail loudly: it simply stops being true while the spec continues to assert it. **Rule**: such an AC must be **demoted to a design intent**, not carried as an AC — demotion is honest, an unverified AC is not. The standard also states what does *not* count: "a reviewer will notice" is not a verification item, because the reviewer reads the spec, and the spec says the AC holds. Adds rule `SDD-AC-VERIFIED`.
+  - **The measured instance**: a 2026-05-14 spec carried `AC-7: the legacy system-report is fully preserved, no regression`. Its Test Plan had seven items and **none pointed at AC-7**. The report's timer was disabled and its deploy function was never called — **from the same day the AC was written**. It surfaced three months later, by accident, while verifying an unrelated install. It was not wired to a check and later came loose; **it was never wired at all**.
+
+- **`ai-response-navigation` 1.1.0 → 1.2.0 — optional rules R7–R9 governing the answer itself** (XSPEC borrow B-10, from [`ayghri/i-have-adhd`](https://github.com/ayghri/i-have-adhd), MIT). Rules 1–6 govern what comes *after* the answer: a Navigation Footer, a marked recommendation, a template matched to the response type. Nothing governed the answer. A response could therefore bury its conclusion under a wall of evidence and still satisfy **every rule in this standard** by appending a correct footer — and a reader who cannot find the answer is not helped by being told what to do next.
+  - **R7 — lead with the finding, not the process.** *Trigger*: a response that answers a question, reports an investigation result, or presents a decision. The first line states what was found or what to do — not the method, not a restatement of the request, not a plan for answering. Evidence (`file:line`, command output, tables, measurements) is **support** and belongs after the claim it supports; leading with it forces the reader to reconstruct the conclusion themselves, which is the work they asked to have done. This orders the evidence; it does **not** license omitting it.
+  - **R8 — restate state each turn.** *Trigger*: work spanning 3 or more exchanges, or a task with 3 or more steps. One line on where the work stands. The reader cannot be assumed to hold "we are on step 3 of 5" across messages, and restating it costs a sentence. Composes with Template 4 (*In Progress*): R8 governs the opening, the template governs the footer.
+  - **R9 — no preamble.** *Trigger*: any substantive response. Generalizes an existing prohibition: [`anti-sycophancy-prompting`](core/anti-sycophancy-prompting.md) already forbids *"opening critique with positive affirmation"*, but only for critiques. R9 extends the same prohibition to every substantive response for a different reason — not flattery, but the delay it puts between the reader and the answer. **R9 does not apply to closers**; R1's Navigation Footer requirement stands.
+  - **3 of the source's 10 rules were taken; the reasons for dropping the other 7 are recorded in the standard itself**, not only in a backlog. Two duplicate R1–R2. Three conflict with this standard or others: its *"no recap / no closers"* directly contradicts R1's Navigation Footer, its *"cap lists at 5 items"* would truncate evidence tables and traversal denominators, and its *"specific time estimates"* is already governed by [`estimation-standards`](core/estimation-standards.md).
+  - **Optional in the same sense as R6** (model tier annotation): adopters need not enable them, existing skills need no retroactive change, and a project MAY promote any of them to required in its own configuration. **What is not optional is that each carries a precise trigger** — a rule phrased too loosely to fire is indistinguishable from not having the rule, which is the failure mode recorded in XSPEC-378.
+  - Extends the **existing** standard rather than adding a new one: a second standard covering "how an AI writes to a human reader" would put two implementations on one axis.
+
+## [6.5.0] - 2026-08-14
+
+### Added
+
+- **Five reinforcements to four existing standards, borrowed from `AmazingAng/old-coder`** (XSPEC borrow B-01). No new standard was created; each cut is a clause inside a standard that already existed. Two further claims from the same source were **rejected** because our versions are stricter — `verification-evidence` already carries the four evidence-validity rules with eight worked instances, and `class-level-fix` already requires the negative control to be run **per sub-set** and to **name** the offending member, which the source does not.
+  - **`verification-evidence` 1.2.0 → 1.3.0 — VE-011, evidence freshness.** Every number in an evidence record must come from **one fresh run executed after the last edit to the artefact it verifies**; results from mid-task runs are stale and must not be reported. VE-001 through VE-010 all govern how a result is *interpreted*; none governed *when it was produced*. The failure this closes is a green suite followed by an edit to a prompt or a config, followed by a commit — the suite that passed was the one before the last change, and the guard that catches it is precisely the one pinning content hashes, which type-checking and linting never wake.
+  - **`test-governance` 1.1.0 → 1.2.0 — threshold gates must fail closed.** A measurement layer that prints a percentage and exits `0` regardless of whether the number cleared its threshold is a report, not a gate: it stays green while the number drifts downward and nothing stops the next merge. Enforcement must come from the tool's own flag (`--cov-fail-under`, `diff-cover --fail-under`, `nyc --check-coverage`) rather than a wrapper re-parsing printed output. Placed here rather than in `verification-evidence` because this standard governs **how a check is built**, while that one governs **how an exit code is read** once it exists; the two now cross-reference.
+  - **`mutation-testing` 1.0.0 → 1.1.0 — kill attribution, one-sided invariants, equivalent mutants.** `Killed` means *some* test failed; tools do not record which, and none records which **level**. A 7/7 score therefore verifies the whole suite that ran, not the property suite inside it — so "the properties verify X" requires re-running the mutants against the property suite alone. A one-sided invariant ("never exceeds the limit") **cannot** detect a fail-closed mutant, because rejecting everything never produces an over-limit output; every one-sided property now needs its opposite boundary. And a surviving mutant is not automatically a gap — semantically equivalent mutants must be classified with a reason rather than killed by an assertion that exists only to move the number.
+  - **`class-level-fix` 1.0.0 → 1.1.0 — what a passing negative control does not prove.** A control that passes once demonstrates that **one** known-bad case reaches the checker's failure path. It does **not** demonstrate that the checker recognises **every** violation of the rule it purports to guard. A grep-based gate can fail closed perfectly while guarding a spelling rather than a behaviour: the synthetic member proves the wire is connected, not that the net is wide enough.
+  - **VE-012 / CLF-008 — a narrow gate must be registered, not merely disclosed.** Where a check's actual coverage is narrower than the rule it serves, saying so is necessary and not sufficient: **disclosure alone does not satisfy the rule**, because writing "this check does not cover everything" is far cheaper than widening coverage, so every narrow gate would grow an honest paragraph and stay narrow. The gap must carry a dated entry in an exception inventory with a review date. This is the repository's own recurring failure — a hash scan that took 115 files and emitted 2, a reference checker skipping an entire shipped directory, an index gate firing only on a date stamp — each one a gate narrower than its rule with nothing saying so.
+
+### Changed
+
+- **`model-selection` 1.0.1 → 2.1.0 — one axis became two** (XSPEC-362). The standard decided model tier from **how many files a task changes**. A 3-file redesign of module boundaries is harder than an 8-file mechanical rename, so that signal mis-sorted "deep and narrow" work **in a fixed direction** — a bias, not noise. It survived because it is cheap to measure, not because it predicts anything. Replaced by two criteria: **reasoning-ceiling requirement** (is there a component more thinking time cannot solve?) and **specification definiteness**, which is explicitly **bidirectional** — handing an ambiguous task to a literal-following model yields "precisely executed the wrong sentence", and feeding a written-out step list to a high-ceiling model *lowers* output quality. Tier ids (`fast` / `standard` / `capable`) are unchanged; only the criteria moved.
+  - **New effort axis, orthogonal to the model axis.** Depth-of-thinking is now a **parameter of one dispatch**, not a property of a model: vendor-neutral levels `low` / `medium` / `high` / `very-high` / `max`, mapped locally by each platform. The standard states plainly which failure gets which remedy — output shallow but sound is **depth insufficient** (raise effort on the same model), output wrong in kind *at max effort* is **ceiling insufficient** (escalate the tier) — and that the two are not interchangeable. Escalating a tier without exhausting effort is an untested assumption about which axis was short.
+  - **New reverse-exclusion section.** The old standard only said what work to *raise* to a tier, never what not to *send* to one. **Hard boundaries** (context capacity, effort-parameter support, modality) are the absence of a capability, not a lower degree of it, and must be excluded **before** cost comparison — excluding them afterwards lets a cheaper, incapable model win on price. **Reverse risks**: a high-capability tier may decline specification-sensitive work via a safety classifier, and **the refusal is not an error** — it arrives as a normal response carrying a refusal marker. For a caller checking only the exit code or only whether an exception was raised, that is a **silent failure**: the pipeline records success and the work was never done. Callers must now inspect for the marker.
+  - **`capability_dimensions` sub-dimensions split into `declared` and `measured`.** One 1–5 score was carrying two different facts: *can it do this at all* (binary, vendor-declared, free at connection time) and *how well* (continuous, needs a benchmark). Merged, the cheap fact and the expensive one become indistinguishable. `declared: false` is now a hard boundary; `declared: true` with `measured` absent is `UNKNOWN`. Deriving `supported` from a score is prohibited, and a **failed measurement must not be recorded as a score** — including `0`, which is not on the 1–5 scale, and which makes "we could not measure it" look exactly like "we measured it and it was bad".
+  - **`routing_rules` extended from three states to four.** `UNSUPPORTED` previously meant "score ≤ 1 **or unregistered**", collapsing "measured and unreliable" with "never measured". The consequence is that a newly detected model is excluded on first evaluation and never re-enters the pool — the opposite of supporting more models. `UNKNOWN` is now a distinct state that **queues for calibration**, and the two must be distinguishable **in the return structure**, not merely in logs: a caller has to tell "this model cannot do it" from "I do not yet know", because they lead to different next actions.
+  - **Re-measurement now has three independent triggers**: version-identifier change, `measured.at` older than 90 days, and a degradation-detection alert (DEC-033). Version change is a **sufficient** condition, not a necessary one — DEC-033 exists precisely because behaviour changes while the version string does not, so an implementation keyed only to version change misses the entire scenario it was built to catch.
+  - **Section versions removed** (R6a). The file carried a whole-file version `1.0.1` *and* a section marked `2.0.0`, with no rule saying which the `.ai.yaml` `meta.version` tracked — so "the versions are in sync" was not a checkable claim. There is now one version field, and the rule stating that `.ai.yaml` tracks it is written in the standard. The 2026-04-13 addition of the capability-management section — which had **never been entered in the version history at all** — is now recorded there.
+
+### Added
+
+- **`check-model-pin-freshness` — a clock for `capability_registry`** (XSPEC-362 R4). DEC-031 D1 required `pin_date` to be *recorded*; nothing ever required it to be *read*. The shipped example sat **120 days past its own 90-day threshold**, and on the page an expired entry was indistinguishable from a current one. The check reports two kinds of rot: dates older than the threshold, and **concrete vendor model IDs in shipped examples** — a model ID written into a standard is a citation with an expiry date and no owner, so examples now use placeholders. It is **WARN, never BLOCK**, per XSPEC-361 R8's measured false-positive rate for in-file invariants; only a scan that did not complete exits non-zero, because "the checker broke" and "the checker found nothing" must not produce the same output. It walks the shipped trees rather than a typed list of standards, and prints its denominator and exclusions. `--self-test` runs both predicates against fixtures with known verdicts, because a checker that scans 366 files and reports nothing looks exactly like one whose predicates never fire. Wired into `pre-release-check.sh` step 18.8, which prints its warnings rather than swallowing them — `run_check` hides the output of anything exiting 0, and this check exits 0 by design.
+- **Claude Code host-layer mapping for `model-selection`** (XSPEC-362 R5): `integrations/claude-code/model-selection-mapping.md` and its machine-readable twin, four reference subagent definitions under `integrations/claude-code/.claude/agents/`, and a cross-repository dispatch template. The standard is vendor-neutral **by rule** — it defines `fast` / `standard` / `capable` and `low` … `max` as labels and states that it cannot say which effort levels a given model accepts, leaving those cells marked `?`. This directory answers them for one host, and is the only place in the repository where concrete model identifiers belong. `core/` is unchanged and still carries **zero** concrete model IDs.
+  - **The mapping exists because the names do not line up.** UDS `very-high` is spelled `xhigh` in Claude Code — the single renamed level. The standard is not bent to match the tool; the rename is absorbed at the host layer, which is what R5 is for.
+  - **The `fast` tier has no effort axis on this host**, because its model accepts no effort level at all. That is a hard boundary with a consequence for the standard's own rules: **MS-005** ("raise effort on the same model") **cannot be executed there**, and reaching for MS-001 instead does not violate the ordering rule — the effort set at that tier is empty from the start. A grid whose cells were `?` in the standard is now resolved, per provider.
+  - **Hard boundaries are registered as `declared`, not as scores**, per R7b, and `measured` is absent throughout because no benchmark was run — recorded as `UNKNOWN`, never filled with a default. The register also names two boundaries that are invisible in an agent file: the same alias resolves to different models per provider (on some, `effort` is silently inert), and a background subagent — the default since v2.1.198 — silently loses built-in tools outside a fixed set, reporting no error.
+  - **R3b is quoted from the vendor, not asserted.** The host's own documentation says its highest-capability model triggers automatic fallback when safety classifiers fire, and that the way to get good output from it is to "describe the outcome, not the steps" — R3b #1 and #2 respectively, stated from the other side.
+  - **The dispatch template's rationale was measured, and it corrects a claim this repository was shipping.** `agent-dispatch.ai.yaml` said subagents do not load the target project's instructions and cannot invoke its skills. Both halves are false: subagents load the CLAUDE.md hierarchy and can invoke skills. The real constraint is narrower and easier to miss — **they load the hierarchy of the main session's working directory, not of the repository they are being sent to work on.** Measured 2026-08-12 by dispatching a tool-denied subagent and asking it, before it was allowed to run `pwd`, which CLAUDE.md files were in its context: exactly two, neither of them the target's. Same-repository dispatch needs no template; cross-repository dispatch has no other source of rules. The note is corrected in place, with the measurement and with an explicit warning against deleting the mechanism after reading the vendor docs.
+  - **`check-model-pin-freshness` now walks `integrations/` too.** Its `VENDOR` predicate is suppressed there — concrete IDs are the *required* form in a host mapping — while `STALE` still applies, which is the entire reason for scanning the tree: the argument that a model ID is "a citation with an expiry date and no clock" does not stop being true because the ID moved to a legitimate home. Suppressed hits are counted into `skipped` rather than dropped, so the carve-out stays in the denominator, and `--self-test` gains cases in **both** directions — a suppression tested only in the direction it suppresses is indistinguishable from one that swallowed everything.
+- **`agent-dispatch` machine-readable standard reinstated** (XSPEC-362 R5a): `ai/standards/agent-dispatch.ai.yaml`, the self-adoption copy, and registry + manifest entries. `core/agent-dispatch.md` has shipped in the npm bundle continuously, but the `.ai.yaml` was removed in 6.0.0 (XSPEC-086 Phase 2 / DEC-049) on the premise that `dev-autopilot` owned the canonical machine-readable copy. **That owner entered maintenance mode on 2026-04-28** — the day after the migration landed — and the removal proceeded anyway two months later. Adopters installing with `--format ai` have since received the prose in the bundle and the rules nowhere. `agent-dispatch` is removed from the `REFERENCE_ONLY` lists in all four checker scripts that carry one; the other seven standards from that batch remain reference-only and are **not** addressed here.
+  - Responsibility boundary, so the two standards do not grow duplicate copies of the same rules: `agent-dispatch` covers **how to dispatch** (parallel safety, independent domains, status protocol, prompt design); `model-selection` covers **who to dispatch to and how deeply**. They cross-reference rather than restate.
+
+## [6.4.0] - 2026-08-10
+
+### Added
+
+- **`class-level-fix` standard — aim a fix at the set, not the member.** A defect is rarely alone: it is one flag in a dispatch chain, one entry in a manifest, one directory under `agents/`. Fixing the member you were shown leaves the rest of the set exactly as it was, and nothing announces the next one — it returns months later as a fresh incident, which is why this kind of work feels endless. The rule: before fixing, name the enumerable set the defect belongs to and add a check that **walks** that set. The third question is the one that decides whether the check survives — where does the walk read its members from? It has to be the source the system itself reads (the CLI definition, the directory, the manifest), never a list someone typed, because a typed list is correct until the fourth member arrives and nothing will say so. Enumerating fails silently; walking with an exclusion list fails loudly, because an exclusion has to be written down by a person who has to justify it. The check must print its denominator **and what it excluded** — "checked 4,012 declarations" reads like coverage while the filter silently skipped every directory entry. And it must be proven non-vacuous per sub-set before it is trusted, because a check over five lists that was only ever tested against the first is a check over one list.
+
+  Every example in the standard was measured on 2026-08-10. The one that carries it is the counter-example: this repository had already fixed exactly this defect for `--integrations-only` eleven days earlier, **with a comment explaining the general problem**, and left the other three branches untouched. The knowledge was in the file; it had not reached its siblings. A comment describing the class is not a check over the class.
+
+  The standard states plainly that **it has no automated gate** — nothing can walk "every defect being fixed right now" — and records why, what enforces it (review, with one question: *what set is this a member of?*), and what would make a gate possible. Omitting that would have made it the next instance of the thing it was written to prevent.
+
+### Fixed
+
+- **`--plan` and `--apply` scope behaviour now reaches `--help`.** 6.3.10 documented the new combined behaviour by editing `docs/reference/FEATURE-REFERENCE.md` — a generated file. The edit survived exactly as long as nobody regenerated it. The text now lives in the `.option()` strings in `cli/bin/uds.js`, so it appears in `uds update --help` as well, which the hand-edited copy never did.
+
+## [6.3.10] - 2026-08-10
+
+### Fixed
+
+- **`--plan` was dropped by four other flags, and the one that prevents damage is the one that got ignored.** `uds update --plan --skills` installed Skills; `--plan --sync-refs` rewrote integration files and the manifest. The flag documented as "Show reconciliation plan without executing (like terraform plan)" was silently discarded, because scope flags (`--skills`, `--commands`, `--integrations-only`, `--sync-refs`) sat ahead of mode flags (`--plan`, `--apply`, `--force`, `--rollback`) in one first-match-wins chain where every branch returns. `--integrations-only` had already been fixed on 2026-07-30 for exactly this; the other three were left, and eleven days later they were still writing. Mode is now decided before scope, and a test enumerates the flag list from the CLI definition rather than from a hand-written list — a flag added later is covered without anybody remembering to add it. That test is what found the fourth instance.
+- **`--apply --skills` upgraded Skills and silently left the standards behind, reporting success.** Same chain: `--skills` returned before the reconciler ever ran. Upgrading a real project this way left it on the previous standards version with nothing on screen saying so. `--apply` and `--force` now do the reconciliation *and* the requested scope.
+- **A confirmation prompt with nobody to answer it exited 0.** In a non-interactive shell `@inquirer/prompts` throws `ExitPromptError`; the exception was never caught and the process still ended with exit code 0 — so in CI "wrote nothing" and "updated successfully" returned the same value. It now explains that nothing was written, points at `--yes`, and exits 2. Detection is by the prompt actually failing rather than by probing `process.stdin.isTTY`, which is wrong in both directions.
+- **`--rollback` now says that `--skills`/`--commands` cannot narrow it**, instead of accepting them and restoring everything anyway.
+
+## [6.3.9] - 2026-08-09
+
+### Fixed
+
+- **The standards index announced a number the sync check disagreed with, and both were describing the same manifest.** 6.3.8 taught the check to resolve manifest entries through the registry; the index block kept announcing `installedStandards.length` straight off the manifest. On a real project that is 78 against 70, and the difference is the eight machine-readable standards `MIGRATION-v6` §2 removed in 6.0.0, still declared in manifests two majors later because `uds update` does not prune them. Seventy-eight was the wrong number irrespective of the check: it sat directly above "the authoritative list is the `standards` field of `.standards/manifest.json`" — pointing the reader at the source of the discrepancy as though that settled it — and it told an agent to expect eight files that are not there. The block now counts entries that resolve to a file and names the rest underneath, with a line saying why they linger, so both numbers appear and neither has to be inferred.
+
+## [6.3.8] - 2026-08-08
+
+### Fixed
+
+- **`uds deps` printed a green tick over a set it had not examined.** Run against a project with no runtime dependencies and a pnpm lockfile, it reported `0 runtime dependencies checked`, then `no package-lock.json — nothing to compare the registry against`, then `✓ every dependency resolves to the version you test against`, and exited 0. Both facts were true; together they claimed a repository this command cannot read had been checked and was fine, and a gate wired to that exit code agrees. `clean` was the conjunction of three empty lists, which holds vacuously over an empty set — and the test covering it asserted exactly that, on the reasoning that the denominator travels with the verdict. It did travel, and it changed nothing: the tick came straight after it and the exit code carried no trace of the count. **Printing the denominator does not stop an empty set reading as reassurance; refusing the verdict does.** Also fixed the second half of that message: the project has a perfectly good `pnpm-lock.yaml`, and being told it has no lockfile is how a reader decides the tool is confused and stops reading it. The command now names the lockfile it found and says which format it reads.
+- **A registry ID is not a filename, and eight places treated it as one.** A manifest's `standards` array is mixed by design: core standards became registry IDs in v3.4.0, option entries stay as their upstream source path because options have no ID. Every consumer ran `basename()` over both — correct for a path, a no-op for an ID. `error-code-standards` installs as `error-codes.ai.yaml`, `logging-standards` as `logging.ai.yaml`, `ai-agreement` as `ai-agreement-standards.ai.yaml`; most IDs do equal their basename, which is why this survived. Three failures came out of the one mistake: minimal mode printed `.standards/<id>`, leaving **seven of seventy paths in a real adopter's AGENTS.md pointing at nothing**, directly beneath a line reading "you MUST read and follow the standards in `.standards/`"; the index block filtered by an `.ai.yaml` suffix, which no ID carries, so **every core standard was dropped** and the same adopter's earlier block listed seven options and none of its sixty-three core standards; and the task-mapping table is keyed by filename, so an ID matched nothing and the standard quietly got no mapping. Resolution is now one exported function used by all eight call sites, and entries it cannot resolve are reported under the list rather than printed as paths.
+- **The check that exists to catch exactly that drift had the same defect.** `AGENTS.md Standards Sync` reported `7/7` against a manifest of seventy: the `.ai.yaml` filter left only the seven option entries, all seven were present, so it ticked — before the upgrade when sixty-three standards were missing from the block, and after, with seven dead paths in it. Blind to ninety percent of what it measured, and green throughout. Now 67 of 67 on the same project, and breaking one path by hand reports 66/67 and names the file. The mapping it needed was already built a hundred and seventy lines above it, with a comment naming the exact case.
+- **The generator still wrote a path removed in 6.0.0 into adopters' instruction files.** `MIGRATION-v6` §2 removed eight machine-readable standards whose runtime moved to the adoption layer; three `Reference:` lines and a MUST-priority task mapping kept pointing at `.standards/workflow-enforcement.ai.yaml`. The human-readable `core/workflow-enforcement.md` was deliberately kept upstream, but adopters receive `.standards/`, not `core/`, so it is not a substitute path — the lines are gone rather than redirected. The condition gating that section matched a filename no manifest has held since 3.4.0, so it had quietly stopped firing for the two projects that still declare the standard; both forms now match.
+
+## [6.3.7] - 2026-08-07
+
+### Fixed
+
+- **`uds deps` read only the root manifest, so a monorepo got a clean answer about part of itself.** npm workspaces put declarations in more than one `package.json`, and this command examined one of them. Measured on a real project: 34 dependencies reported, 47 declared — the 13 in a workspace were invisible, and among them a package carrying a high-severity advisory. **A count without its scope cannot be told apart from a complete one**, which is the failure this command exists to report. Workspaces are now expanded from the `workspaces` field, every manifest is examined, and the report prints which workspaces were included so the denominator carries its own scope. Each drift row names the workspace it came from — otherwise a reader knows a package drifted but not which `package.json` to edit.
+- Three details that make the difference between covering workspaces and appearing to. A lockfile entry may be hoisted to the root **or** nested under the workspace, so both are tried; checking one reports the other as "not present in package-lock.json", and a fabricated unknown reads as a finding. A workspace depending on a sibling workspace is a file link, not a published package, so it is skipped rather than queried — asking npm returns 404 and would be recorded as unverifiable. And a `workspaces` pattern more complex than a trailing `*` in the last segment now **fails loudly** instead of matching a subset: silently covering less than the author meant is the same defect in a new place.
+
+## [6.3.6] - 2026-08-07
+
+### Fixed
+
+- **6.3.5 said the shipped standards all parsed. It had counted 141 of 287.** The gate added in 6.3.5 named three directories explicitly and did not recurse, so `ai/options/`, `locales/` and `skills/` — all of which `prepack` bundles into the tarball — sat outside its denominator. Ten files in those directories still failed to parse after 6.3.5 shipped, in both Chinese locales and in `skills/`. **A gate that enumerates its own scope goes stale the moment a directory is added**, so it now walks the repo and checks every `.ai.yaml` outside build and vendor paths — 759 files here, against the 423 it previously claimed as complete.
+- **Eight more files parsed and were wrong, which no parses-or-not check can see.** `{UT:70%,IT:20%}` is not a mapping: without a space after the colon, YAML reads a single plain scalar key `UT:70%` whose value is null. An unquoted `- git commit -m "feat: add model"` becomes `{'git commit -m "feat': 'add model"'}`. These pass every syntax check while handing an agent nonsense. The gate now also rejects keys carrying a quote character or a colon with no space after it — the fingerprint of a scalar silently read as a mapping — and both branches are covered by a control test rather than assumed.
+
+## [6.3.5] - 2026-08-07
+
+### Fixed
+
+- **Four shipped `.ai.yaml` standards did not parse.** 6.3.4 delivered 141 machine-readable standards, of which `agent-behavior-discipline`, `container-security`, `full-coverage-testing` and `knowledge-graph-memory` were syntactically invalid YAML. The same four sat in `.standards/`, which is what `uds init` puts in an adopter's directory. An agent reading them gets an exception, not empty content — and a downstream that catches it gets a silence indistinguishable from "this standard has no rules". All four failed the same way: an unquoted scalar carrying YAML-significant characters — a colon inside parentheses, a flow sequence followed by prose, a quote closing mid-value, a key indented differently from its siblings. Fixed by quoting or re-indenting, with no restructuring.
+
+### Added
+
+- **`npm run check:ai-yaml` — every `.ai.yaml` must parse, and the check is wired into pre-commit and the release.** The four above reached a release because eight scripts read that directory and not one parsed the whole set; `check-standards-sync.sh` compares versions and registry entries, which an unparseable file passes without complaint. The check reads `ai/`, `.standards/` and `cli/bundled/`, and runs unconditionally rather than behind a path glob — a glob narrow enough to have skipped this one is the same mistake relocated. **Exit 2 is reserved for "the check could not run"**: an unreadable directory, a directory containing no `.ai.yaml`, a missing YAML library. That is not a pass, and it fails the release, because a check whose "nothing wrong" and "could not look" produce the same output converts an unknown into a reassurance.
+
+## [6.3.4] - 2026-08-07
+
+### Fixed
+
+- **`uds deps` named the version npm would not install.** The resolved column was computed as the highest published version satisfying the declared range. That is semver's rule, not npm's: `npm-pick-manifest` prefers the `latest` dist-tag whenever it satisfies, precisely so a `next` or `beta` publish carrying an ordinary version number does not land on people who asked for a caret. Measured on `@anthropic-ai/claude-agent-sdk`, which publishes `latest = 0.3.223` and `next = 0.3.224`: the command reported 0.3.224 while `npm install …@^0.3` installs 0.3.223. The one column whose entire purpose is to say what an install receives was naming something no install receives. Versions and dist-tags are now read in a single `npm view` call and npm's own preference is applied, falling back to the maximum inside the range when `latest` sits outside it — a project pinned to an older major still gets a truthful answer. Two tests cover both branches.
+- The previous two releases corrected this command's wording. This one corrects its arithmetic, and it is worth saying plainly: the earlier fixes made a wrong number easier to read.
+
+## [6.3.3] - 2026-08-07
+
+### Fixed
+
+- **6.3.2 corrected the explanation and left the heading above it asserting what the explanation had just withdrawn.** The drift section was headed `N shipped ≠ tested` — in yellow, one line above the dim paragraph explaining that whether shipped differs from tested depends on how the project ships. For an artifact that carries its own lockfile, shipped *is* tested, so the heading stated the opposite of the truth in the most prominent line of the report. This is precisely the shape 1.1.0 rewrote the Lock Strategy entry to stop producing: a misleading line with a qualification underneath it. The heading now names the two columns that disagree — `N tested ≠ resolves` — which is a statement about the measurement rather than a conclusion about who received it. A test holds it.
+- **Two more places said the same thing, including the first one an adopter reads.** `uds deps --help` described the command as "Compare what you test against what your users install (published packages ship no lockfile)", and the module's own summary line asked "does what you test match what your users install?". Both now speak in terms of what the declared ranges resolve to. Found by grepping the repository for the withdrawn wording after fixing the heading — the two instances my own pass had missed.
+
+## [6.3.2] - 2026-08-06
+
+### Fixed
+
+- **`uds deps` asserted a distribution channel it cannot know.** The report ended with "consumers resolve the range themselves, because a published package does not ship a lockfile", and labelled the third column `users get=`. Both are false for a product distributed as a container image built with `npm ci` — its users get the `tested=` column exactly, and the resolved column is instead what the next lockfile regeneration will pull in, unreviewed. Found by running the command against a closed-source product that ships a Docker image and does not publish to npm at all. The column is now `resolves=` and the report states both readings, because a row read on its own must not say the opposite of the truth. This is the same correction 1.1.0 made to the Lock Strategy entry — appending a "but note…" under a misleading line leaves the line misleading, and a report, like a standards table, is mostly read one line at a time. Three tests now hold the wording in place; nothing did before.
+
+## [6.3.1] - 2026-08-06
+
+### Fixed
+
+- **6.3.0 never reached npm — and this release exists because of the same failure it describes.** The release ran, its clean-room job failed at `npm ci` with `EUSAGE … Missing: @emnapi/core@1.11.3 from lock file`, and `Publish to npm` was skipped. The lock file had been regenerated by `npm install --save semver`, which dropped transitive entries that `npm ci` requires; the check I ran locally accepted it, so the disagreement only became visible in the release job — after the tag and the GitHub Release were already public. Rebuilt from the last lock file whose `npm ci` demonstrably passes, adding the semver entry alone, and verified across the CI matrix rather than on one machine.
+- **`v6.3.0` is left in place, not deleted, and its release notes now state it was never published.** A tag with no npm counterpart is exactly the mismatch `uds deps` was written to catch; deleting it would remove the evidence rather than the discrepancy. **6.3.1 carries the entire content of 6.3.0**, listed below.
+
+## [6.3.0] - 2026-08-04
+
+### Added
+
+- **`uds deps` — does what you test match what your users install?** A published package does not carry its lockfile: your CI tests the versions `package-lock.json` pins, your users get whatever the declared ranges resolve to at their install time. When those differ, the whole suite is green about a combination nobody installs, and that green is indistinguishable from a real one. The command compares all three numbers per runtime dependency and reports **only the differences**, with the denominator alongside — a table of agreeing rows gets skimmed, and so do the two that mattered.
+  - **Native dependencies are held to a stricter rule.** A package with a native binding is flagged when it is declared with a range, **whether or not it is currently drifting**. semver makes no promise about native ABI compatibility, and this ecosystem has broken it inside a minor range. A range matching exactly one published version is safe because upstream has not published again, not because anything guarantees it — waiting for drift means waiting until your users already have it.
+  - **A lookup that fails is never reported as agreement.** It becomes `unverifiable` and fails the run. A check whose "everything is fine" and "I could not find out" look the same converts an unknown into a reassurance.
+  - `--path`, `--json`, `--concurrency`.
+
+### Changed
+
+- **`supply-chain-security-standards` 1.0.0 → 1.1.0 — the Lock Strategy entry was correct and incomplete.** It said "use lock files, always committed to Git", which reads as complete and gave nobody following it a reason to look further — while a committed lock file constrains *your* build and reaches none of your users. Rewritten in place rather than annotated with a caveat, because a "but note…" appended under an unchanged rule leaves the original line misleading to anyone who reads only that line, and a standards table is mostly read one line at a time. The new section states the failure with the case that produced it, adds four requirements for projects that publish, and scopes itself explicitly to published artifacts — a deployed service ships its lock file with it and is unaffected.
+
+### Notes
+
+- The standard's `.ai.yaml` remains a five-line stub with no machine-readable rules — **one of four out of 141**, alongside `design-document-standards`, `estimation-standards` and `privacy-standards`, so an agent reading the `ai/` layer gets nothing for any of them. This release deliberately did not add its one new rule there: a single rule in an otherwise empty file makes coverage look better than it is. The gap is now recorded inside the file.
+
+## [6.2.8] - 2026-07-31
+
+### Fixed
+
+- **Downloaded standards had their Chinese corrupted.** The HTTPS response was accumulated with `data += chunk`, which decodes each chunk on its own — so any character whose bytes straddled a chunk boundary became replacement characters (`日期` → `日�期`). One-byte Latin text was unaffected; three-byte CJK was not. Nothing failed along the way: the transfer completed, the file was written, the action reported success, and the damage was visible only by reading the text. Measured across one machine, **11 projects carried ~278 replacement characters** in their installed standards. The damage concentrates in `requirement-checklist.md`, `requirement-template.md`, `requirement-document-template.md` and locale packs — the files the published package does not ship (`files` carries no `templates/` or `extensions/`), so they can only arrive by download. **If your standards contain `�`, run `uds update --force` on 6.2.8 or later — the re-downloaded content is correct and replaces them.**
+
+## [6.2.7] - 2026-07-31
+
+### Fixed
+
+- **The reconciler could not fetch extensions from any npm install.** Entries in `manifest.extensions` (locale packs and the like) reached the executor with no resolved source path, because the published package's `files` list carries no `extensions/` directory — so `uds update --force` failed them with `No source path available` while plain `uds update` refreshed the very same file. The executor now resolves extensions through `copyStandard`, the bundled → repo → download fallback it already used for registry entries and the one the legacy path had been using all along. Entries with no source of any kind still fail, as they should.
+
+## [6.2.6] - 2026-07-31
+
+### Added
+
+- **`uds update --apply`** — applies exactly the plan `uds update --plan` prints.
+
+### Fixed
+
+- **`--plan` told you to run a command that ignores the plan.** It printed "Run `uds update` to apply these changes", but plain `uds update` never reaches the reconciler — it runs the legacy path, refreshes existing standards, and reports success for that. On one upgrade it printed `✓ 69 standards updated` while all 8 deletions and 2 creations in the plan above were skipped; the files were still on disk afterwards. Nothing failed, so the output was indistinguishable from having applied the plan. `--force` was not the answer either: it recomputes with `force: true`, a larger plan that rewrites every managed file. **If you have been running `uds update` after reading a plan, the plan's deletions and creations were never applied** — run `uds update --plan` again to see what is still outstanding.
+
+## [6.2.5] - 2026-07-31
+
+### Fixed
+
+- **`uds update`'s backup directory could be committed to your repository.** `.uds-backup-<timestamp>/` is written beside the project so a reconciliation can be rolled back, and nothing ignored it — so a `git add -A` swept it in. It happened twice in our own repos, once taking 360 files and 73,992 lines into a public one. The backup now ignores itself, via a `.gitignore` containing `*` written inside the directory at creation: `git status` and `git add -A` no longer see it, and **your** `.gitignore` is not modified. Existing backups from earlier versions are not retroactively hidden — delete them or add the rule yourself.
+
+## [6.2.4] - 2026-07-31
+
+### Fixed
+
+- **`uds update` proposed deleting skills you wrote yourself.** Provenance treated a skill as UDS's own if `manifest.skillHashes` recorded any file under it. That was safe only while the hasher was broken — it held 2 entries for 78 installed skills. Fixing the hasher in 6.2.2 filled the same map with all 137 files under the skills folder, including hand-written ones; each then fell outside a desired state built from what UDS ships and diffed as an orphan to remove. One project's plan proposed deleting 18 directories, 14 of them its own ops skills. Provenance is now a single signal: the name exists in UDS's own `skills/` tree. Skills UDS has since removed are warned about rather than deleted — nothing on disk distinguishes them from your own work, and leaving a stale directory with a warning is a better way to fail than deleting a file somebody hand-wrote. **If you are on 6.2.2 or 6.2.3 and keep your own skills alongside UDS's, run `uds update --plan` before applying anything.**
+
+## [6.2.3] - 2026-07-31
+
+### Fixed
+
+- **Re-selecting an already-installed agent appended a duplicate manifest entry.** Four manifest writers appended installations with `[...existing, ...new]`, so an agent already on record gained a second entry every time it was re-selected; one project's manifest read `['claude-code', 'claude-code']`. The installer itself was never affected — `installSkillsToMultipleAgents` deduplicates its input. The damage was confined to the *record* and to every consumer that iterates it: `checkNewFeatures` and the reconciler's scanner and desired-state calculator each walked the agent twice. Harmless in effect, which is precisely why it accumulated unnoticed across five upgrades. The four writers now use the same helper the installer already relied on.
+
+## [6.2.2] - 2026-07-31
+
+### Fixed
+
+- **`uds check` was reporting skill integrity over a fraction of your files.** On one project it printed `✓ All skill files intact (6 files)` with **345** installed. `scanDirectory` derived relative paths with `fullPath.slice(basePath.length + 1)`, which assumes the base path carries no trailing separator — and three agent skill paths do (`.claude/skills/`, `.opencode/skill/`, `.cursor/skills/`). Every entry therefore lost its first character (`ac-coverage` → `c-coverage`, `.manifest.json` → `manifest.json`); `computeDirectoryHashes` rebuilt an absolute path from the mangled name, found no file, and skipped the entry. 115 files scanned, 2 hashed. Nothing failed along the way — the directory existed, the loop completed, the function returned an object, and the check printed a green tick over 2% of the surface. `manifest.skillHashes` is now populated correctly; the same project reports 345.
+
+
+## [6.2.1] - 2026-07-31
+
+### Fixed
+
+- **`uds update --locale <x> --skills` now records which locale it installed.** `manifest.skills.locale` was written once by `init` and by no other path — the same stale-by-design shape 6.2.0 stopped trusting for `skills.names`. Switching a project's skills to a localized variant swapped every file on disk and left the field untouched. That field became load-bearing in 6.2.0, whose locale fix reads `skills.locale` first and falls back to `display_language`: where the two disagree — a project whose display language is English but whose skills were installed with `--locale zh-tw` — the next reconcile would quietly put them all back to English. Exactly the defect 6.2.0 fixed, re-entering through the other door. All five skill-install paths now record the locale they installed.
+
+
+## [6.2.0] - 2026-07-31
+
+> **The reconciler was deleting things it did not install, and reporting success afterwards.** `uds update --plan` proposed removing 86 files from one adopter repo; 72 of them were skills, commands and option files that UDS ships and the project uses. Twelve defects, all of one shape: a well-formed name that simply never matches, so nothing errors and the plan looks authoritative. If you have ever looked at a `--plan` output and wondered why it wanted to delete your work — it was not you.
+
+### Added
+
+- **The standards index in `CLAUDE.md` / `AGENTS.md` now states a count and points at the manifest** instead of listing every standard by name (XSPEC-358 R1). The enumerated list cost roughly 2 KB of always-loaded context per project and duplicated `.standards/manifest.json`, which is authoritative and never out of date. The block regenerates itself on the next `uds update`; no action is needed. **If you have tooling that parses the enumeration, read `manifest.standards` instead.**
+
+### Fixed
+
+- **The reconciler no longer deletes skills you wrote yourself.** `isUDSManaged` returned true for every directory under the skills folder, so anything not shipped by the running UDS version was proposed for removal. One adopter's plan listed fourteen hand-written ops skills for deletion. Provenance is now established from UDS's own `skills/` tree — which also covers the non-skill siblings (`_shared`, `agents`, `ai`, `tools`, `workflows`) that an older CLI copied in by mistake, so those remain cleanable — or from a recorded hash. Anything else is warned about, not removed. The deliberate cost: four skills UDS has since retired are now warned about rather than deleted, because nothing on disk distinguishes them from your own work.
+- **`manifest.skills.names` and `commands.names` are no longer treated as the desired state.** Both were written once by `init` and by no other code path. One repo's list stayed frozen at 32 skills across nine commits and five UDS upgrades while the shipped set grew to 55, so 40 usable skills diffed as "no longer in desired state". The desired set is now what the running UDS version ships, which is what `uds update` actually installs. All 18 install sites now keep the lists truthful as well.
+- **Gemini CLI commands are no longer proposed for deletion.** The scanner stripped a hard-coded `.md`; Gemini installs commands as `.toml`, so its keys stayed `commit.toml` and never matched the desired key `commit`. All 30 of them diffed as orphans. The extension now comes from the agent config, shared with the installer that writes those files.
+- **UDS no longer proposes deleting its own installation record.** `.manifest.json`, written by the command installer, was counted as a stray command.
+- **Selected options are no longer proposed for deletion.** `calculateOptions` iterated `manifest.options` as if its keys were standard ids, found no standard named `workflow`, and skipped — producing an empty desired option set for every project. One repo's plan proposed deleting all seven options its own manifest names. The manifest-key to registry-category mapping now lives in one table both the installer and the calculator read.
+- **Locale packs and other extensions are no longer proposed for deletion.** `manifest.extensions` had no branch in the reconciler at all, so every installed extension — locale packs, language style guides, framework patterns — fell outside the desired state while the manifest went on listing it as installed.
+- **A reconcile no longer reinstalls every skill in English.** The skill install path omitted the locale argument that the command path passed, silently replacing localized skills with their canonical English variants while `skills.locale` went on recording the original.
+- **A successful reconcile now records the version it reconciled to.** `upstream.version` was never advanced, so `uds check` still reported the project as behind and any staleness monitor reading that field kept flagging it.
+- **A rewritten integration block no longer reports itself as modified.** `migrate_block` refreshed `integrationBlockHashes` but not `fileHashes`, which is what File Integrity compares.
+- **The reconciler and `uds update` now generate the same integration block.** Two independent builders had drifted: the reconciler's omitted the content categories entirely, so reconciling a project silently dropped its commit-message section; it also defaulted the output language to English regardless of `options.output_language`, and looked up `integrationConfigs` by tool key when the manifest stores it by file name.
+- **Option files are counted correctly in the index block.** They were counted from `manifest.standards`, which records them inconsistently — one repo reported "0 options" with seven of them installed.
+- **`uds check` no longer reports a false out-of-sync on the new index block.** Two checks asserted the retired enumeration by grepping for every standard name, so after upgrading they reported `5/70` and `0/7` and advised running `uds update` — which regenerates the same block. Both now verify the declared count against the manifest, which also catches a stale count the name grep never could.
+- **`manifest.integrations` is read tolerantly in both shapes.** It has been written as tool keys by one path and as file paths by another; 20 of 21 measured repos stored file paths, and the reconciler understood only tool keys — so it proposed stripping the UDS block from `CLAUDE.md` / `AGENTS.md` in all of them.
+- **`uds update --plan --integrations-only` no longer writes files.** The `--integrations-only` branch ran before the `--plan` check.
+- **`uds init` no longer installs husky into the UDS source repo** when the test suite runs from the repository root.
+
+### Changed
+
+- **The release gate measures again.** `pre-release-check.sh` invoked `tsx` bare, so on a shell without it on PATH three checks reported "✗ Failed" for a missing binary — indistinguishable from a real finding; it now resolves `tsx` or stops. And its dogfooding gate ran `uds check` without `--force`, which DEC-044's self-adoption guard refuses inside this repo — the gate had failed on every release since it was added in 5.15.1.
+
+
+## [6.1.1] - 2026-07-18
+
+> **`uds check` was measuring the wrong thing, quietly.** Its staleness check compared your standards against the CLI's own bundled copy instead of npm — so a stale CLI produced a backwards, meaningless message and could never actually say your standards were behind — and it buried that message under one line per unchanged file.
+
+### Fixed
+
+- **`uds check` now compares your installed standards against the latest release on npm, not the CLI's own bundled copy** (XSPEC-342). `displayAdoptionStatus` checked `manifest.upstream.version` against the standards bundled *inside the running CLI*. When the CLI itself was out of date, that bundled copy was older than npm — so the check printed a backwards `⚠ Update available: 6.1.0 → 5.12.1` (telling you to "update" to an *older* version) and structurally could never report that your standards were behind. It now asks npm for the latest version; when your standards trail it, the message reframes to **"Your installed standards are behind the latest release"** and gives the full two-step fix — `npm update -g universal-dev-standards` **and then** `uds update` — because updating only the CLI leaves your project's `.standards/` untouched. `--offline` silently skips the comparison instead of falling back to the misleading bundled check.
+
+### Changed
+
+- **`uds check` no longer lists every unchanged file** (XSPEC-342). It printed one `✓ … (unchanged)` line per tracked file — about 70% of the command's output (measured 121 → 41 lines) — which buried the messages that actually needed reading and made the output large enough that automated callers (pre-commit agents) truncated it. The per-file "unchanged" listing is gone; the count remains in the one-line integrity summary, and modified / missing / unhashed files are still listed individually.
+
+## [6.1.0] - 2026-07-17
+
+> **Two failures of the same shape, one in the standards and one in the CLI**: a check ran, returned, and reported success while measuring nothing. `verification-evidence` gains the layer that names it; `uds init` stops being an instance of it.
+
+### Fixed
+
+- **`uds init` no longer overwrites an existing `prepare` script** (XSPEC-341). Since 2026-02-04, `uds init` shelled out to `npx husky init` on any Node project without a `.husky/` directory. That command is a one-time bootstrap for a *new* project: it sets `"prepare": "husky"` unconditionally. If your project already had a `prepare` — and for a published package, `prepare` is commonly the build step — **it was silently replaced**, and the CLI reported success. `uds init` now chains instead of clobbering (`"tsup"` → `"tsup && husky"`), prints every `package.json` field it modifies, and no longer discards husky's stderr.
+
+  > **⚠️ If you ran `uds init` on a project that already had a `prepare` script, check it now.** This fix protects future runs; it cannot restore a `package.json` that was already rewritten. The symptom is `"prepare": "husky"` where you expected your build command — and if your package publishes built output (`files: ["dist"]`, `main` pointing into `dist/`) with no `prepack`/`prepublishOnly`, your next `npm publish` ships an unbuilt or stale directory. Restore it by chaining: `"prepare": "<your original command> && husky"`.
+
+- **`uds init` no longer seeds `.husky/pre-commit` with `npm test`** (XSPEC-341). That line came from husky's init template, not from UDS — it put a full test-suite gate on every commit that adopters never opted into. UDS now only appends its own `npx uds check`, and appends to existing hooks rather than rewriting them.
+
+- **Fresh husky hooks are written in v9 format** (XSPEC-341). The fallback hook template still emitted the v8 `#!/usr/bin/env sh` + `. "$(dirname -- "$0")/_/husky.sh"` preamble, which is deprecated in husky v9 and removed in v10 — while `uds init` installs husky `^9`. This was latent (husky init previously wrote the hook); removing `husky init` promoted the fallback to the primary path, so it was corrected.
+
+### Changed
+
+- **`verification-evidence` 1.1.0 → 1.2.0 — evidence validity** (XSPEC-340). The standard treated `exit_code` as ground truth: `trust_rules` said "`exit_code ≠ 0` → verification failed", `physical_spec.checks` asked "is `exit_code` 0 (success)?", and VE-002 triggered a fix loop on any non-zero. **All three are now qualified**, because a verification command can run, return, and mean nothing:
+  - **New `evidence_validity` layer + rules VE-007 – VE-010**: `exit_code = 0` means success only for tools that return 0 on success (VE-007); "empty / not-found / 0" is not absence until the query tool is shown to have executed (VE-008); existence checks must not discard stderr (VE-009); a pipeline's exit code belongs to no single stage (VE-010).
+  - **New `non_evidence_claims`**: "Done" / "It should work now" / "I changed the code" / "The tests should pass" / "The command returned 0".
+  - Distinct from `anti-hallucination`, whose prohibitions are all forms of "don't assert what you didn't check". This is the opposite failure — **it was checked, and the checking tool silently did not work**. `core/verification-evidence.md` carries eight real instances as evidence.
+- **`verification-evidence` human docs caught up with v1.1.0.** The v1.1.0 `environment_layer` work (XSPEC-204) had landed in all three `.ai.yaml` copies and **none of the four `.md` copies** — the human documentation had been describing the standard incorrectly since 2026-05-13. `core/*.md` now documents `environment_layer`, the Environment Layers section, and VE-005 / VE-006.
+- **`verification-evidence` gains three sections that previously existed only in the zh-TW translation**: Non-Evidence Claims, Evidence Types, Related Standards. The translation was more complete than its source; the sections are now upstream in English and present in both locales.
+
+## [6.0.0] - 2026-07-06
+
+> ⚠️ **Major release.** Contains one breaking rename and removes 8 deprecated machine-readable standards plus 4 deprecated CLI commands (all carrying a "removed in 6.0.0" notice since 5.4.0). **See the [v6 Migration Guide](docs/MIGRATION-v6.md)** ([繁體中文](locales/zh-TW/docs/MIGRATION-v6.md) | [简体中文](locales/zh-CN/docs/MIGRATION-v6.md)).
+
+### Changed — BREAKING
+
+- **`review` command/skill renamed to `code-review`** (T1). `/review` callers must migrate to `/code-review`; flow-id `review-flow` → `code-review-flow`. See Migration Guide §1.
+
+### Removed — BREAKING (scheduled since 5.4.0)
+
+- **8 deprecated `.ai.yaml` standard stubs removed** (runtime relocated to adoption layer in 5.4.0 per XSPEC-086/095 / DEC-049): `agent-communication-protocol`, `agent-dispatch`, `branch-completion`, `change-batching-standards`, `execution-history`, `pipeline-integration-standards`, `workflow-enforcement`, `workflow-state-protocol`. The human-readable `core/*.md` documents remain as reference (now on the registry-check REFERENCE_ONLY list); registry entries removed. See Migration Guide §2.
+- **4 deprecated CLI commands removed**: `uds start` / `uds mission:*`, `uds workflow:*`, `uds flow:*`, `uds sweep` (orchestration is adoption-layer responsibility; `/sweep` skill replaces `uds sweep`). Dead i18n keys and stale in-CLI hints referencing removed commands cleaned up (`config` next-steps, `quickstart` recipes). See Migration Guide §3.
+
+### Added — New standards (coverage-roadmap waves + flagships)
+
+- **Domain & lifecycle standards completed**: product — `prd-standards`, `product-metrics`, `user-story-mapping` (XSPEC-069); infra — `container-image`, `secret-management`, `iac-design` (XSPEC-065); SRE — `incident-response`, `slo-sli`, `runbook` (XSPEC-063); data engineering — `data-pipeline`, `schema-evolution`, `data-contract` (XSPEC-068); compliance — `audit-trail`, `pii-classification` (XSPEC-066).
+- **Flagship standards**: `verification-oracle` (XSPEC-256), `model-provenance` (XSPEC-255), `resource-cost-boundary` (XSPEC-277).
+- **`user-journey-testing`** shipped as a first-class standard (ai/standards + core + zh-TW + registry).
+- **`logging-standards` mandatory events catalog** (XSPEC-234).
+
+### Added — UDS Stage 2 hardening (T5–T16)
+
+- **Canonical AC annotation** (T5) across `acceptance-criteria-traceability` and worked examples.
+- **Sourced quantitative thresholds** (T8): `browser-compatibility` 95%/90% gate, `checkin` code-smell, `accessibility` session-timeout, `code-review` PR-size/response-time + bulk exception, `project-context-memory` 7-day staleness, `developer-memory` retirement, `privacy` DPIA "large scale".
+- **Failure Handling sections** (T7): `git-worktree` transient-failure retry, `reverse-engineering` escalation, `forward-derivation` recovery.
+- **Cross-functional hand-offs** (T16): `security-testing` finding-remediation lifecycle, `pii-classification` discovery & hand-off contract.
+- **Glossary terminology normalization** as canonical source of truth (T6).
+- **CLI hardening** (T11/T12): Mission `FAILED` terminal state + resume guard, transactional `init` with rollback, input validation for `hitl`/`run`/`release`/config.
+
+### Added — Migration & refactor completeness family
+
+- `migration-assistant` post-cutover data reconciliation (XSPEC-284 P0), state-machine & temporal parity (XSPEC-287); `full-coverage-testing` migration error-path completeness (XSPEC-288); `performance-standards` migration non-functional parity (XSPEC-286).
+
+### Added — Tooling & workflow
+
+- **BQS v1 quality contract for `/brainstorm` v4** (XSPEC-296).
+- **CI Job Orchestration Patterns** in the `ci-cd-assistant` skill — trigger separation, shared-resource serialization, change-detection gating, advisory-vs-gating, `npm ci` `EUSAGE` troubleshooting (UDS #126 / XSPEC-300).
+- **Pre-deploy attestation verification gate** in `pipeline-security-gates`.
+- **Pre-release issue/PR triage gate** in the release flow (XSPEC-265).
+- `release verify` now consumes the recorded manifest checksum.
+- `/journey-test` and `/skill-builder` registered as formal commands.
+- Optional model-tier annotation (R6, XSPEC-270 Work Package A).
+- `sync-standard` four-layer sync tool; Phase 2 content-coverage audit metadata.
+
+### Added — Incident-sourced anti-drift & testability
+
+- **`refactoring-standards` Semantic Duplication & Copy-Drift** (#142): names the Copy-Drift anti-pattern (a domain fact re-implemented across sites, or a derived aggregate stored without an enforced binding to its source — invisible to textual-duplication metrics) and the Single-Source-of-Truth / Derive-Don't-Duplicate remedy (one unit per fact, derive over store, recompute stored aggregates at one choke point, lock with golden + architecture tests), plus the migration Intentional-Divergence Registry.
+- **`mock-boundary` injectable background execution** (#143): treats in-process fire-and-forget work (`Task.Run`, unawaited promises, `setTimeout`, goroutines, executors) as an injectable seam like the clock — production keeps real fire-and-forget, the test dispatcher runs inline and tracks the task for deterministic completion; adds the Poll/Sleep-for-Background-Result anti-pattern and a no-poll/sleep rule.
+
+### Changed
+
+- **API versioning & deprecation consolidated into single sources of truth** — producer-side API-versioning material folded into `api-design-standards`; inconsistent deprecation timelines reconciled (XSPEC-298 R8).
+- **Deployment Version Identity** section added to `versioning` with a build-metadata discriminator caveat (XSPEC-298 R1).
+- **`versioning` build identity & polyglot versioning** (XSPEC-298 R2/R3): git-height–derived versioning (MinVer / Nerdbank.GitVersioning / GitVersion) for .NET/JVM/multi-language projects; build identity promoted to a requirement — deployed services MUST expose `version + commit sha + build time` via `/version`|`/health`, and Phase-5 verification MUST assert the sha matches the deployed artifact (#138).
+
+### Deprecated
+
+- **6 workflow skills** marked as `reference` with visible deprecation notices; deprecated runtime commands tagged with a structured `@superseded-by` pointer (XSPEC-291 §4).
+
+### Fixed
+
+- **`uds audit` false positives**: `options/` files reported missing (health check now recurses into subdirectories), CP950 console mojibake, non-TTY crash (#115); unused-standard detection now matches on canonical id rather than filename (#125).
+- **Bundle ⇄ source parity restored** — 25 standards synced into the `.standards/` self-adoption tree.
+- Numerous docs/i18n integrity fixes: stale standard/skill/command counts, broken locale cross-links, command/skill index regeneration, anchor-slugger and table-parity paths.
+
+## [5.17.0] - 2026-06-08
+
+### Added — Executable SDD consistency & AC-format extensions (XSPEC-262/263/264)
+
+- **`/sdd analyze` — cross-artifact consistency (XSPEC-262, `scripts/sdd-analyze.ts`)**: the executable face of acceptance-criteria-traceability + forward-derivation single-spine. 7 signals — orphan test / uncovered / not_implemented / cross-spec AC conflict / orphan .feature / AC-without-scenario / user-guide↔E2E drift (`T-NNN`, fulfilling XSPEC-260 R5). `npm run sdd:analyze [-- --userguide docs --json]`; 12 bats tests. `/sdd` skill documents the action + ac-coverage division of labour.
+- **EARS notation as optional AC format (XSPEC-263)**: `spec-driven-development` v2.2.0→v2.3.0 adds an AC Formats section with 5 EARS templates; `acceptance-criteria.schema.yaml` gains an optional `ears` field (`given/when/then` relaxed from required, backward compatible). GWT remains default & preferred.
+- **Structured Bugfix Spec Template (XSPEC-264)**: `sdd-guide.md` splits the bug decision-tree into trivial vs regression-prone, and adds a lightweight `<BUG-ID>.bugfix.md` template (current/expected/**unchanged** behavior + root-cause + regression-test-as-AC).
+
+> Note: `sdd-guide` locale (zh-TW/zh-CN) sync for the Bugfix template is deferred to the XSPEC-248 feature-review loop (pre-existing locale drift).
+
+## [5.16.0] - 2026-06-08
+
+### Added — Test Derivation Chain Extended to the User Guide (XSPEC-260)
+
+- **`core/forward-derivation-standards.md`**: New `## Terminal Projection: User Guide` section + `### Single-Spine Principle`. Extends the derivation pipeline past tests to the user guide — the user guide is the terminal projection of the same AC spine that journey/E2E tests verify by machine. Defines shared `T-NNN` numbering (a user-guide step's `T-NNN` MUST equal a real journey/E2E test id), the user-facing AC filter with conservative default, and the single-spine principle: test/doc sources are N×1 projections of one AC spine, not N×N parallel cross-checks; minting a parallel numbering scheme is a VIOLATION.
+- **`ai/standards/forward-derivation-standards.ai.yaml`**: Mirrored `terminal_projection` block + 3 rules (`single-spine-no-parallel-numbering`, `user-guide-shared-tnnn`, `user-facing-ac-conservative-default`).
+- **`core/acceptance-criteria-traceability.md`**: New `## User-Documentation Coverage` dimension — tracks whether user-facing AC are documented in the user guide. Includes a user-facing AC filter (conservative default: when in doubt, user-facing), reused ✅/⚠️/❌ status, and a coverage formula excluding non-user-facing and `not_implemented` AC.
+- **`ai/standards/acceptance-criteria-traceability.ai.yaml`**: Mirrored `user_doc_coverage` block + 2 rules (`user-doc-user-facing-only`, `user-doc-shared-tnnn`).
+- **zh-TW / zh-CN locales**: Both new sections fully translated for both standards.
+
+## [5.15.0] - 2026-05-28
+
+### Added — i18n Layered Language Strategy (XSPEC-239)
+
+- **`core/ai-instruction-standards.md` v1.0.0 → v1.1.0**: New `## Internationalization (i18n)` section defining L1/L2/L3/L4 layered language strategy for SKILL.md and root-level AI instruction files. **Scope extended** from root-level only (`CLAUDE.md`, `.cursorrules`, ...) to also cover skill-level files (`SKILL.md`). Defines canonical/locale file structure, responsibility boundaries, chimera-prevention rules, and adopter installation model.
+- **`ai/standards/ai-instruction-standards.ai.yaml` v1.0.0 → v1.1.0**: Mirrored `i18n:` block + 4 new rules (`i18n-canonical-english-only`, `i18n-locale-must-match-language`, `i18n-l3-template-language-controls-output`, `i18n-no-manual-canonical-edits-by-adopters`).
+- **10 missing zh-TW locale skill variants**: `ac-coverage`, `deploy-assistant`, `dev-methodology`, `journey-test-assistant`, `orchestrate`, `plan`, `push`, `skill-builder`, `spec-derivation`, `sweep`. zh-TW skill coverage now 54/54 (100%).
+- **`cli/src/lint/i18n.js` + `uds check --i18n` command**: Lint enforcing 5 chimera-prevention rules (`canonical:description-must-be-ascii` error, `locale:description-must-match-language` error, `locale:must-have-source-frontmatter` error, `canonical:l3-language-consistency` warn, `translation-drift-warn` warn). Exit code 1 on errors. `--json` mode for CI.
+- **`scripts/generate-locale-coverage.mjs` + auto-generated `locales/COVERAGE.md`**: Coverage matrix per skill/standard per locale + drift warnings. npm script `docs:locale-coverage`.
+- **`UDS_LOCALE` environment variable support**: Read in `cli/src/i18n/messages.js detectLanguage()` and `cli/src/commands/update.js resolveLocale()`. Accepts `zh-tw`, `zh_tw`, `zh-cn`, `zh_cn`, `en` (case-insensitive).
+- **`.uds/install.yaml` `locale:` field support**: `cli/src/utils/config-manager.js readInstallYaml()` reads optional `locale:` so adopters declare preferred locale once instead of passing `--locale` every time.
+- **Locale fallback WARN**: When `installSingleSkill` falls back from a missing locale variant to English, a single end-of-install yellow WARN block lists affected skills. Replaces the previous silent fallback.
+- **i18n messages**: New keys `localeFallbackTitle` / `localeFallbackHint` in en/zh-tw/zh-cn locales.
+
+### Changed
+
+- **CLI locale resolution priority** (`cli/src/commands/update.js resolveLocale()`): now 6-tier — `--locale` CLI flag > `.uds/install.yaml` `locale:` > `UDS_LOCALE` env > manifest > `.standards/` detection > `'en'`. Aligned across `init` and `update`.
+- **Translations of `core/ai-instruction-standards.md`**: zh-TW and zh-CN locales synced to v1.1.0 with full localized i18n section. (zh-CN section marked pending-review per XSPEC-239 O-2 — translation quality strategy unresolved.)
+
+### Fixed
+
+- **29 canonical SKILL.md description chimera fixed** (XSPEC-239 Phase 1B): removed CJK content from `description:` frontmatter across `adr-assistant`, `ai-collaboration-standards`, `ai-friendly-architecture`, `ai-instruction-standards`, `api-design-assistant`, `audit-assistant`, `ci-cd-assistant`, `contract-test-assistant`, `database-assistant`, `deploy-assistant`, `documentation-guide`, `error-code-guide`, `git-workflow-guide`, `incident-response-assistant`, `journey-test-assistant`, `logging-guide`, `observability-assistant`, `orchestrate`, `plan`, `pr-automation-assistant`, `project-structure-guide`, `push`, `retrospective-assistant`, `runbook-assistant`, `security-assistant`, `security-scan-assistant`, `slo-assistant`, `sweep`, `testing-guide`. Translations live in `locales/{lang}/skills/` instead. Adopters relying on Chinese descriptions in `.claude/skills/` should re-run `uds update --locale zh-TW` (or `--locale zh-CN`).
+- **`skills/reverse-engineer/SKILL.md` description em dash (U+2014)** replaced with ASCII hyphen — canonical descriptions must be ASCII-only per new lint rule.
+- **`locales/zh-TW/core/self-review-protocol.md` missing YAML frontmatter** added (`source:`, `source_version:`, `translation_version:`, `last_synced:`, `status:`) to match other zh-TW core variants.
+
+### Migration notes for adopters
+
+This release contains potentially user-visible changes for projects that installed UDS with `--locale zh-TW` or `--locale zh-CN` (or had `LANG=zh_*` detected):
+
+- **Re-run `uds update`** after upgrading. Skills whose descriptions previously contained Chinese will now have English `description:` in canonical and full Chinese `description:` + body in the locale variant. Your `.claude/skills/{name}/SKILL.md` will be re-installed from the locale variant automatically.
+- Adopters who **manually edited canonical** files (added Chinese descriptions in `.claude/skills/`) should reconcile their customizations into locale variants or overlays — see `XSPEC-239` migration section in `core/ai-instruction-standards.md`.
+- The new `uds check --i18n` lint can verify your project is clean: errors are blocking, warnings (e.g. `translation-drift-warn`) surface in dashboards but don't fail CI by default.
+
+## [5.14.0] - 2026-05-27
+
+### Added
+- **`.github/RELEASE-FLOW-TODOS.md`**: Persistent tracking file for release-flow improvements surfaced during dogfood. Contains TODO-001 ~ TODO-005 (auto docs:generate-index in bump-version.mjs, FB/Threads prompt capture habit, `_template/` validation on next bootstrap, Phase 1.5 social-assets hard gate, Phase 2 Meta API auto-publish workflow). Maintainers edit this file to add new items or resolve existing ones.
+
+### Changed
+- **`.github/workflows/release-reminder.yml`**: Now reads `.github/RELEASE-FLOW-TODOS.md` and surfaces open TODOs inside the weekly Monday 09:00 UTC reminder issue body. Improvements compound across release cycles instead of getting lost in commit history.
+
+### Fixed
+- **`cli/src/commands/check.js` — false-positive missing standards in AI tool integration check**: `uds check` incorrectly reported `error-code-standards` and `logging-standards` as missing even when the actual `.ai.yaml` files (`error-codes.ai.yaml`, `logging.ai.yaml`) were correctly referenced in `CLAUDE.md`. Root cause: `migrateStandardsPathsToIds()` converts manifest path entries to registry IDs (e.g. `ai/standards/error-codes.ai.yaml` → `error-code-standards`), but the integration file is generated with the actual filename. The check now builds an `id → aiFilename` lookup from the registry and falls back to the actual filename when the ID is not directly found in the integration file content.
+
+## [5.13.3] - 2026-05-26
+
+### Fixed
+- **`scripts/pre-release-check.sh` Step 22.5 logic upgrade**: Original implementation (v5.13.0) only accepted Pass A (`[Unreleased]` non-empty). After a CHANGELOG promotion (`[Unreleased]` → `[X.Y.Z]`), the section is correctly emptied but the original check falsely failed and required `--skip-changelog` workaround. New logic adds **Pass B (post-promotion)**: also passes when the latest dated section matches today AND has substantive entries. Also adds **Fail D**: today's dated section exists but is template-only. Surfaced when releasing v5.13.0 — the gate's own pre-release-check fell back to `--skip-changelog` because the gate was already at scenario B.
+
+### Note (translation backfill)
+- `locales/zh-TW/CHANGELOG.md` and `locales/zh-CN/CHANGELOG.md` backfilled with the [5.13.1] section that was missed during the v5.13.1 hotfix commit (Edit tool encountered a tool-state issue blocking those two translations).
+
+## [5.13.2] - 2026-05-26
+
+### Fixed
+- **`.github/workflows/publish.yml` Clean-room Install Test (XSPEC-221 hotfix v2)**: Replaced `uds init --dry-run` (option not implemented in CLI) with `uds init --help` as the safe non-mutating verification of init command wiring. Surfaced when v5.13.1 publish failed with `error: unknown option '--dry-run'` — the v5.13.1 fix correctly resolved deps but the next verification step relied on a non-existent flag. Second self-bug found by the gate; gate is now exercised end-to-end.
+
+## [5.13.1] - 2026-05-26 [FAILED PUBLISH — see 5.13.2]
+
+### Fixed
+- **`.github/workflows/publish.yml` Clean-room Install Test (XSPEC-221 hotfix)**: Added `npm ci --ignore-scripts` step before `npm install -g .` in the alpine clean-room job. Surfaced when v5.13.0 release publish failed with `ERR_MODULE_NOT_FOUND: Cannot find package 'commander'` — `npm install -g .` does NOT install transitive dependencies in clean-room environments, requiring deps to exist before the global symlink. The gate (XSPEC-221) correctly blocked a broken release; this fixes the gate's own command sequence.
+
+## [5.13.0] - 2026-05-26
+
+### Added
+- **`core/self-review-protocol.md` v1.0.0** (paired with `ai/standards/self-review-protocol.ai.yaml`, `locales/zh-TW/core/self-review-protocol.md`, and `cli/standards-registry.json` entry): New standard mandating a self-review pass on large markdown edits (>50 lines) before commit. Defines **6 categories of internal cross-reference inconsistency** — diagram/step mismatch, changelog reference errors, count drift, stale templates, wrong tool references, placeholder/rule misalignment — with concrete check methods. Distinguished from code review (covers code), content self-audit (covers completeness), and peer review (covers design). Born from observed `v1.X→v1.X.1` patch cycles in downstream skill editing.
+- **`scripts/pre-release-check.sh` Step 22.5 — CHANGELOG hard gate**: Refuses release when `CHANGELOG.md [Unreleased]` section is empty. New `--skip-changelog` flag provides an escape valve (justification expected in release commit message). Inserted between flow gate (step 22) and dogfooding gate (step 23).
+- **`scripts/pre-commit.mjs` Step 1.5 — CHANGELOG drift advisory**: Warns (non-blocking, exit 0) when substantive changes are staged (`core/`, `ai/standards/`, `cli/src`, `cli/bin`, `scripts/`, `skills/*/SKILL.md`, `.github/workflows/`) without a paired `CHANGELOG.md` update. Points users to the release-time hard gate so they understand the consequence of ignoring the warning.
+- **`.github/workflows/release-reminder.yml`**: Weekly Monday 09:00 UTC cron that opens (or updates) a labeled issue when `CHANGELOG.md [Unreleased]` is non-empty **and** ≥7 days have passed since the latest semver tag. Auto-closes any open reminder when conditions no longer hold. Suggests semver bump heuristic (major/minor/patch) from entry content.
+- **`scripts/check-skill-structural-integrity.ts`** (XSPEC-223, P1 release gate): Validates skill `SKILL.md` structural completeness (frontmatter fields, required sections). Wired into `pre-release-check.sh` step 18.5; blocks release if any skill has structural defects.
+- **`packaging-standards`** (XSPEC-233 / #112): API migration contract test fixtures section added — defines fixture format for testing API migration compatibility across versions.
+- **Clean-room install gate** (XSPEC-221) in `.github/workflows/publish.yml`: Alpine Node 20 container runs `npm install -g .` from `cli/`, verifies `uds --version` / `uds list` / `uds init --dry-run`. Blocks the `publish` job if any step fails.
+- **Dogfooding gate** (XSPEC-222) — `scripts/pre-release-check.sh` step 23: New CLI build must pass `uds check` against itself before release proceeds.
+
+### Changed
+- **`core/deployment-standards.md`** (XSPEC-231 / #110 + #113): Defensive deploy pairing — mandates archive integrity verification + extract-verify-then-delete pattern. Closes the "corrupted archive deleted before verification" failure class.
+- **`core/logging-standards.md`** (XSPEC-232 / #111): Mandatory dual-trigger log rotation policy — both size **AND** time triggers must be configured (not OR). Closes the "rotation never fired because size threshold never hit" failure mode.
+- **`skills/contract-test-assistant/SKILL.md`** and **`skills/runbook-assistant/SKILL.md`**: Minor updates supporting XSPEC-231/232/233 patterns.
+- **Dependencies (`cli/`)**: `lint-staged` 17.0.3→17.0.4 (#107), `@inquirer/prompts` 8.4.2→8.4.3 (#106), `eslint` 10.3.0→10.4.0 (#105), `@vitest/coverage-v8` 4.1.5→4.1.6 (#103), `vitest` 4.1.5→4.1.6 (#101), `@commitlint/cli` 21.0.0→21.0.1 (#104), `tsx` 4.21.0→4.22.3 (#109).
+- **CI actions**: `actions/checkout` 4→6 (#98), `actions/setup-node` 4→6 (#99).
+
+## [5.12.1] - 2026-05-19
+
+### Changed
+- **`full-coverage-testing.ai.yaml`** (`no-tautology-assertions` rule, XSPEC-220): AI agents generating unimplemented test skeletons MUST use `it.todo("AC-XXX: ...")` instead of `it() { expect(true).toBe(true) }`. Any `it()` callback containing only tautology assertions is an `[ANTI-FAKE-001]` violation regardless of whether generated by a human or an AI agent.
+- **`test-governance.ai.yaml`** (`gate-wiring-required` rule, XSPEC-220): Quality detection scripts (anti-fake, stub-check, coverage ratchet) MUST appear in at least one CI workflow job AND at least one local hook. A script that exists in `scripts/` but is never called by CI is equivalent to not existing and constitutes a governance gap.
+- **`acceptance-criteria-traceability.ai.yaml`** (`not_implemented` status, XSPEC-220): Extended definition to explicitly map `it.todo()` placeholders to `not_implemented 🚫` status (excluded from coverage denominator), with decision tree distinguishing `not_implemented` (deliberate placeholder) from `uncovered` (oversight).
+
+## [5.12.0] - 2026-05-16
+
+### Added
+- **`docs/user/` user documentation hub** (XSPEC-211): New dual-track documentation structure mirroring VibeOps conventions. Contains 8 files serving first-time users and daily users:
+  - `docs/user/GETTING-STARTED.md` — 5-minute end-to-end walkthrough (install → `uds init` → `/sdd` → `/commit`)
+  - `docs/user/SKILLS-INDEX.md` — auto-generated index of all 54 skills, organized by Tier (DEC-061) and Category, plus "When to Use" quick reference
+  - `docs/user/COMMANDS-INDEX.md` — auto-generated alphabetical listing of all 48 slash commands with skill mapping
+  - `docs/user/FAQ.md` — 14 questions covering installation, skills, SDD, updating, and architecture
+  - `docs/user/GLOSSARY.md` — definitions for UDS, SDD, ATDD, BDD, TDD, XSPEC, Dual-Layer, Skill Tier, Standard, Activity, Bundle/Source, ADR, AC
+  - `docs/user/TROUBLESHOOTING.md` — problem→solution guide (installation, skills not showing, non-Claude-Code tools, update failures), absorbing `SKILL-FALLBACK-GUIDE.md`
+  - `docs/user/README.md` — three-audience doc hub (new users / daily users / maintainers) with document map
+  - `docs/user/CHEATSHEET.md` — moved from `docs/` (no content change)
+- **`scripts/generate-skill-index.ts`** — generates `SKILLS-INDEX.md` and `COMMANDS-INDEX.md` from `uds-manifest.json` + `skills/*/SKILL.md` frontmatter. Uses SKILL.md `name` field as authoritative command source. Run: `npm run docs:generate-index`
+- **`scripts/check-skill-index.ts`** — pre-commit guard; regenerates docs and diffs; exits non-zero if stale. Run: `npm run docs:check-index`
+- **`scripts/setup-hooks.sh`** — installs `.git/hooks/pre-commit` to call `docs:check-index` on every commit
+- **`.github/workflows/docs-check.yml`** — CI job that verifies `SKILLS-INDEX.md` and `COMMANDS-INDEX.md` are in sync when `uds-manifest.json`, `skills/*/SKILL.md`, or `cli/standards-registry.json` are modified in a PR
+- **`docs/reference/FEATURE-REFERENCE.md`** — `FEATURE-REFERENCE.md` relocated from `docs/` to `docs/reference/` (auto-generated, no content change)
+- **`docs/archive/USER-MANUAL-2026-03-24.md`** — archived copy of the deprecated User Manual
+
+### Changed
+- **`package.json`**: Added `docs:generate-index` (`tsx scripts/generate-skill-index.ts`) and `docs:check-index` (`tsx scripts/check-skill-index.ts`) scripts
+- **`scripts/generate-usage-docs.mjs`**: Updated English output paths — `FEATURE-REFERENCE.md` now writes to `docs/reference/`, `CHEATSHEET.md` now writes to `docs/user/`
+- **`skills/README.md`**: Added banner pointing to `docs/user/SKILLS-INDEX.md` and `COMMANDS-INDEX.md` as the primary indexed skill reference
+- **`README.md`**: Added "📚 Documentation" table in Quick Start section, listing all 7 `docs/user/` files with direct links
+- **`docs/USER-MANUAL.md`**: Added deprecation banner directing users to `docs/user/README.md`; archived copy preserved at `docs/archive/USER-MANUAL-2026-03-24.md`
+
+### Removed
+- **`docs/SKILL-FALLBACK-GUIDE.md`**: Content merged into `docs/user/TROUBLESHOOTING.md`. Non-Claude-Code fallback strategies and Skill→Core Standard mapping table are preserved under the "Using UDS Without Claude Code" section
+
+## [5.11.0] - 2026-05-14
+
+### Added
+- **`spec-driven-development`** SPEC Type Agent variant: `acceptance-criteria-traceability.ai.yaml` and the SDD template gain a `spec-type: feature | agent | infrastructure` field, plus a five-section Agent SPEC template (capability surface / decision boundaries / observability / failure modes / cross-agent invariants). Enables Builder/QA/Planner-style SPECs to be tracked separately from feature SPECs and linked back to specific agents via the new `agent-id` field. (XSPEC-205)
+- **`reverse-engineering-standards`** migration inventory bidirectionality: new routing-driven discovery method (filesystem-glob starting points are now forbidden), target→source bidirectional scan, and `[GAP]` marker protocol for findings that have no corresponding source artefact. Pairs with a new `migration_testing` section in `testing.ai.yaml` requiring a 3-step schema parity pattern enforced via CI gate. Closes UDS Issues #96 and #97. (XSPEC-206)
+
+### Fixed
+- **`uds update` spurious "CLAUDE.md.md: 無法判斷來源" restore failure for schema 3.x manifests** (`cli/src/utils/integration-generator.js`, `cli/src/commands/update.js`): Schema 3.x manifests store **filenames** (e.g. `"CLAUDE.md"`) in `manifest.integrations`, not tool keys. The `getToolFileName` fallback at `integration-generator.js:56` unconditionally appended `".md"`, so `getToolFilePath("CLAUDE.md")` returned `"CLAUDE.md.md"`, was reported as a missing file, and failed to restore (`getSourcePathFromRelative` had no mapping for the synthetic path). Commit `79532b3` (5.10.0) fixed the inverse case (tool-name input) but missed this filename variant. Fix: precompute `KNOWN_TOOL_FILES` from `SUPPORTED_AI_TOOLS` and short-circuit when input is a known integration filename or already carries a known file extension (`.md`/`.yaml`/`.yml`/`.json`). 5 new regression tests in `integration-generator.test.js`. (XSPEC-208 BUG-208-01)
+- **`uds update` / `uds check` spurious "Integration UDS Block Integrity: GEMINI.md/AGENTS.md missing" warnings** (`cli/src/commands/update.js`, `cli/src/i18n/messages.js`): `manifest.integrationBlockHashes` accumulated entries on every install but was never pruned. When `manifest.aiTools` shrank (e.g. `["claude-code","gemini-cli"]` → `["claude-code"]`) the GEMINI.md hash remained and `check.js:1491 checkIntegrationBlocksIntegrity` falsely reported the file as missing. Fix: after the integration regeneration step, derive the expected file set from `manifest.aiTools` (the declared configuration, NOT `results.integrations` which over-prunes on transient write failures) and prune any orphaned hash. Pruned filenames are reported via a new i18n key `prunedOrphanedBlockHashes` (en / zh-TW / zh-CN). 3 new regression tests in `update.test.js`. Reproduced on machine-setup `uds update` 5.1.0-beta.4 → 5.10.0; verified fixed on 5.10.0 → 5.11.0. (XSPEC-208 BUG-208-02)
+
+## [5.10.0] - 2026-05-13
+
+### Added
+- **`multi-environment-e2e-testing`** (`ai/standards/multi-environment-e2e-testing.ai.yaml`): New standard for E2E test configuration across multiple deployment targets. Core principle: "The run command IS the documentation." Covers: BASE_URL baked into test framework config (not .env); self-checking runner scripts per environment; environment capability matrix committed to repo; CI gate mapping; credential handling rules. Closes UDS Issue #95. (XSPEC-204)
+
+### Changed
+- **`mock-boundary`** (v1.0.0 → v1.1.0): Added Level 1 / Level 2 mock layer distinction. Level 1 = code-level mocks regulated by STUB rules. Level 2 = infrastructure-level stub servers (WireMock, MockSoap) regulated by environment stratification rules, NOT subject to STUB deployment-blocking. Added `external_dependency_testability_matrix` template (✅/⚠️/❌ per service × environment). Added rules: `level-2-stub-server-rules`, `no-stub-server-in-prd`. Closes UDS Issue #94 Blind Spot 2. (XSPEC-204)
+- **`deployment-standards`** (v1.0.0 → v1.1.0): Added `environment_stratification_matrix` block — projects with external dependencies must build this matrix at test-planning time; template includes 10-flow × 3-environment grid. Added `stub_server_cicd_rules` block — Option A (sidecar deploy) / Option B (PRD smoke deferral); production artifact exclusion rules; PRD prohibition rules; forbidden state definition. Closes UDS Issue #94 Blind Spots 1 & 3. (XSPEC-204)
+- **`verification-evidence`** (v1.0.0 → v1.1.0): Added Iron Law (Environment): evidence must specify `environment_layer` for externally-dependent ACs. Added `environment_layer` field to evidence format (required for features with external service dependencies). Added rules VE-005, VE-006. (XSPEC-204)
+- **`test-completeness-dimensions`** (v1.2.0 → v1.3.0): Added Dimension 11: **Environment Verifiability** — for ACs with external service dependencies, document minimum verifiable environment layer (local/UAT/PRD), track PRD-only items, require smoke test plan. Updated feature type mapping: External Integration → [1,3,7,11]; new type External-Dependent Workflow → [1,3,4,5,9,10,11]. Updated use-checklist rule. (XSPEC-204)
+
+### Fixed
+- **`uds update` spurious "missing file" restore for integration tool names**: When `manifest.integrations` contained AI tool identifiers (`"claude-code"`, `"opencode"`), the update command pushed them directly into `allTrackedFiles` as file paths instead of resolving them via `getToolFilePath()`. This caused `existsSync("claude-code")` to return false, triggering a spurious "⚠ N file(s) still missing after update" warning and "✗ claude-code: 無法判斷來源" restore failures. Fix: resolve each entry via `getToolFilePath(int)` first; skip entries that don't map to a real path. Reproduced on `uds update` 5.7.2 → 5.8.0.
+
+## [5.9.0] - 2026-05-13
+
+### Added
+- **`feature-discovery-standards`** (`ai/standards/feature-discovery-standards.ai.yaml`, `core/feature-discovery-standards.md`): New standard defining language-agnostic methodology for exhaustive feature discovery in legacy systems. Establishes the **Deterministic-First principle** (AI prohibited from generating feature lists through inference alone in Discovery Phase). Defines Software Form Taxonomy for 7 forms (web/cli/gui/daemon/library/mobile/embedded) with detection signals and extraction tools. Defines Five Static Foundations (entry points → call graph → string mining → resource files → external interfaces), Dynamic Observation Protocol (Linux/macOS/Windows), Human Observation Protocol (confidence: 0.7 rule), and Cross-Layer Validation Matrix template. Pipeline position: Discovery → feature-manifest → behavior-snapshot. (XSPEC-202)
+- **`ai/language-packs/language-pack-php-to-csharp.ai.yaml`**: First UDS Language Pack for PHP→C# (ASP.NET Core) migration risks. Contains 7 risk labels (SESSION_HANDLING, ORM_DIFFERENCES, TIMEZONE_HANDLING, FILE_UPLOAD_PATH, REGEX_DIFFERENCES, ARRAY_FUNCTIONS, EXCEPTION_HIERARCHY) with detailed descriptions. (XSPEC-203)
+- **`ai/language-packs/README.md`**: Language pack naming convention, usage guide, and contributing instructions. (XSPEC-203)
+
+### Changed
+- **`feature-manifest-standard`** (v1.0.0 → v1.1.0): Refactored `migration_risks` to language-agnostic architecture. Removed `php_to_csharp` hardcoded block (migrated to `ai/language-packs/`). Added `language_packs` Extension Point (`extension_point: true`). Added 3 new generic risk labels: CONCURRENCY_MODEL, PACKAGE_ECOSYSTEM, TYPE_SYSTEM. (XSPEC-203)
+- **`behavior-snapshot`** (v1.0.0 → v1.1.0): Extended from HTTP-only to multi-modal. Added `adapter` field (default: `http`, backward compatible). Added `adapters` section with 4 concrete schemas: `http` / `cli` / `file` / `event`. Added `adapter-selection` and `backward-compatibility` rules. Existing HTTP snapshots without `adapter` field remain valid. (XSPEC-203)
+
+## [5.8.0] - 2026-05-12
+
+### Added
+- **`feature-manifest-standard`** (`ai/standards/feature-manifest-standard.ai.yaml`, `core/feature-manifest-standard.md`): New standard defining the FM-NNN machine-readable feature inventory format for migration/refactoring projects. Includes confidence scoring, migration risk labels (PHP→C#), FEATURE_STUB: marker protocol, and Gate 1 completeness gate. (XSPEC-200)
+- **`behavior-snapshot`** (`ai/standards/behavior-snapshot.ai.yaml`, `core/behavior-snapshot.md`): New standard defining HTTP golden-file snapshot format for migration parity verification and refactoring characterization tests. Includes snapshot schema, `ignore_fields` guidance, parity gate (exit codes 0/1/2), and Gate 0 characterization test protocol. (XSPEC-201)
+
+### Changed
+- **`acceptance-criteria-traceability`**: Added 4th AC status `not_implemented` (🚫) — distinct from `uncovered` (code exists but no test) and `not_implemented` (code does not exist). Updated coverage formula to exclude `not_implemented` from denominator. Added CI gate rule: `not_implemented_count > 0` → blocking (independent of coverage % gate). Added decision tree for status classification. (XSPEC-199)
+
+## [5.7.3] - 2026-05-08
+
+### Fixed
+- **`uds update` stale-ID skip** (`cli/src/commands/update.js`): Four loops (display, copy, hash recomputation, post-update integrity check) now skip unrecognized short IDs in `manifest.standards` (entries that contain neither `/` nor `.` but have no matching registry entry, e.g. stale AI tool names `claude-code`, `opencode`). Previously these caused spurious "missing file" warnings and failed restore attempts during `uds update`.
+
+## [5.7.2] - 2026-05-08
+
+### Fixed
+- **Manifest schema v3.4.0 — `standards` path→ID migration** (`cli/src/core/manifest.js`): Added `migrateToV340()` migration step and `migrateStandardsPathsToIds()` helper. Manifests whose `standards` array contains legacy path-format entries (e.g. `"ai/standards/foo.ai.yaml"`) are now automatically converted to short registry IDs (e.g. `"foo"`) when loaded. Option file paths (`ai/options/…`) are preserved as-is. An `ensureRequiredFields()` safety net runs even when the schema version already matches, guarding against partially-written manifests. (`cli/src/core/manifest.js`, `cli/src/reconciler/desired-state-calculator.js`)
+- **`uds check` legacy existence check** (`cli/src/commands/check.js`): The no-hash fallback path now resolves registry-ID-format standards to their actual source filenames (e.g. `"testing"` → `"testing.ai.yaml"`), and correctly routes option file paths into `.standards/options/`. Previously, ID-format standards resulted in path-less lookups that always reported "missing".
+- **`uds update` ID-format support** (`cli/src/commands/update.js`): Five code paths (`checkNewStandards`, file list display, file copy loop, hash recomputation, post-update integrity scan) now resolve ID-format standards to source paths via the registry, so projects whose manifests have been migrated to v3.4.0 continue to receive correct file operations.
+- **`uds audit` health/friction checks** (`cli/src/utils/health-checker.js`, `cli/src/utils/friction-detector.js`): Both utilities now resolve ID-format standards to actual filenames before checking disk/CLAUDE.md references, preventing false-OK results on migrated manifests.
+
+## [5.7.1] - 2026-05-08
+
+### Fixed
+- **`cli/package-lock.json`**: Sync lock file to fix `npm ci` failure on GitHub Actions (`@emnapi/core` and `@emnapi/runtime` entries were missing).
+
+### Removed
+- **`specs/`**: Removed 4 spec files already migrated to dev-platform as XSPECs (SPEC-frontend-design-standard, SPEC-mcp-design-standards-server, superspec-borrowing-phase1-2-spec, superspec-phase4-spec). Retained `execution-history-spec.md` (Archived), `schemas/`, and `standards-effectiveness-schema.json`.
+- **`docs/archive/`**: Removed 7 outdated migration guides and workflow analysis documents.
+- **`.project-context/`**: Removed gemini-cli auto-generated artifact (content covered by `CLAUDE.md`).
+
+### Added
+- **`.npmignore`**: Exclude `tests/`, `scripts/`, `.github/`, `.githooks/`, `.gemini/`, `.release-readiness/`, `docs/internal/` from the npm package. These were previously published unintentionally (no `files` field or `.npmignore` existed).
+
+**Adopter note**: If you previously relied on any files from `tests/` or `scripts/` installed from npm, install them from the GitHub repo directly.
+
+## [5.7.0] - 2026-05-08
+
+> **Cross-platform script migration** (XSPEC-179 + XSPEC-180): Bash scripts are
+> being progressively replaced by single-source TypeScript / Node.js ESM
+> equivalents that run unchanged on macOS / Linux / Windows. Legacy `.sh` files
+> remain with `DEPRECATED` notices for backward compatibility.
+
+### Removed
+
+- **Ecosystem section in README** (`README.md`, `locales/zh-TW/README.md`,
+  `locales/zh-CN/README.md`): Removed `## 🌐 Ecosystem` / `## 🌐 生態系統` /
+  `## 🌐 生态系统` section entirely. UDS is a standalone tool-agnostic standards
+  library; the section's heading suggested an "ecosystem of products" that no
+  longer applies after downstream-project decoupling (Batch 1–6, 2026-05-04).
+  Tool compatibility list (Claude Code / Cursor / etc.) is preserved earlier in
+  the README.
+
+### Added
+
+- **Skill tiering & budget tuning** (XSPEC-185 / DEC-061): Three-tier classification (Core / Advanced / Specialist) for the 40+ UDS skills, addressing Claude Code's `/doctor` warning about truncated skill descriptions when adopters install extra plugins. New artifacts:
+  - `skills/README.md` §Skill Tiers — tier membership table
+  - `flows/skill-tiering-rationale.md` — tiering criteria and DEC-051 mapping
+  - `examples/skill-overrides-recommended.json` — copy-paste `skillOverrides` reference (Tier 3 → `"name-only"`)
+  - `docs/skill-budget-tuning.md` — adopter guide (user/project settings, customization, raising budget)
+
+  **Adopter action (optional)**: merge the `skillOverrides` block from `examples/skill-overrides-recommended.json` into your `~/.claude/settings.json` or project `.claude/settings.json`. Tier 3 skills remain callable via `/<name>` — only Claude's auto-discovery listing is suppressed. See `docs/skill-budget-tuning.md`.
+- **AI tool table coverage** (`README.md`, `locales/zh-TW/README.md`, `locales/zh-CN/README.md`): Added five previously missing tools — GitHub Copilot, OpenAI Codex, Aider, Continue, Google Antigravity. Introduced a ⚠ Minimal status legend entry. (`1b588e1`)
+- **`scripts/bump-version.mjs`** (XSPEC-179 Phase 1): Cross-platform version-bump implementation, on par with the legacy `.sh`. (`1a44e14`)
+- **`scripts/install-hooks.mjs`** (XSPEC-179 Phase 1): Cross-platform git hooks installer; skips `chmod` automatically on Windows. (`1a44e14`)
+- **`scripts/pre-commit.mjs`** (XSPEC-180): Node.js ESM implementation of the pre-commit hook, with a platform branch that calls `check-translation-sync.ps1` on Windows and `.sh` elsewhere. (`1572869`)
+- **7 TypeScript check scripts** (XSPEC-179 Phase 2, `0a26d14`): Migrated from bash to a single TypeScript source executed via `tsx`:
+  - `scripts/check-ai-behavior-sync.ts`
+  - `scripts/check-commit-spec-reference.ts`
+  - `scripts/check-flow-gate-report.ts`
+  - `scripts/check-integration-commands-sync.ts`
+  - `scripts/check-registry-completeness.ts`
+  - `scripts/check-release-readiness-signoff.ts`
+  - `scripts/check-workflow-compliance.ts`
+- **`tsx@^4.20.0`** added to root `devDependencies` (XSPEC-179 Phase 2, `0a26d14`).
+- **7 npm scripts** wiring the TypeScript checks (`0a26d14`): `check:ai-behavior`, `check:commit-spec`, `check:flow-gate`, `check:integration-commands`, `check:registry`, `check:release-signoff`, `check:workflow-compliance`.
+
+### Changed
+
+- **Downstream-project decoupling** (6 Batches, `ebe716c`–`2392c0f`): All public-facing references to specific downstream projects (DevAP / VibeOps) replaced with adoption-layer neutral terminology across 130+ files. UDS is reaffirmed as a pure MIT + CC BY 4.0 standards library independent of any specific adoption layer. Key areas: `README.md`/`CLAUDE.md`/locales, `.standards/`/`ai/standards/` DEPRECATED stubs, `core/*.md`/locale mirrors, `cli/` source + tests, `skills/*/SKILL.md`, `flows/*.flow.yaml`/`flows/README.md`, `docs/specs/`, `specs/` root, `packaging-standards`, `git-worktree` path examples.
+
+- **REGISTRY**: `roo-code` integration tier moved from `planned` to `partial`; Roo Code split out from the Cline row in the AI tool table. (`1b588e1`)
+- **`.githooks/pre-commit`** (XSPEC-180, `1572869`): Reduced from a 51-line bash implementation to a 16-line POSIX `sh` shim that delegates to `scripts/pre-commit.mjs`.
+- **`scripts/bump-version.mjs`** (`19ad314`): Added `buildCmd()` helper that switches to PowerShell + `.ps1` on Windows when invoking `check-version-sync` / `check-translation-sync`, restoring parity on Windows.
+- **XSPEC-179 Phase 2 strategy revision** (`0a26d14`): Abandoned the previous `.sh` + `.ps1` dual-track plan in favour of a **single TypeScript source** approach. A single `.ts` file runs unchanged across all platforms via `tsx`, eliminating the "can only verify on Windows" feedback gap.
+
+### Deprecated
+
+- **`scripts/bump-version.sh`** (`1a44e14`): Marked DEPRECATED; superseded by `bump-version.mjs`.
+- **`scripts/install-hooks.sh`** (`1a44e14`): Marked DEPRECATED; superseded by `install-hooks.mjs`.
+- **7 legacy `check-*.sh` scripts** (`0a26d14`): Their `.ts` counterparts (above) are now the canonical implementation. The `.sh` files are retained for legacy Linux/macOS environments but should not receive new features.
+
+### Removed
+
+- **`.devap/` directory** (`2392c0f`): Orphan DevAP dogfooding installation removed. DevAP retired 2026-04-28 (XSPEC-086/095); UDS now uses `flows/commit.flow.yaml` natively and `scripts/bump-version.mjs` for releases.
+
+### Fixed
+
+- **`scripts/check-release-readiness-signoff.sh`** (`0a26d14`, latent bug fixed in TypeScript port): Faulty `grep -c "0\n0"` pattern (which never matched a literal `\n`) corrected so missing sign-off signals are detected reliably.
+- **`scripts/check-integration-commands-sync.sh`** (`0a26d14`, latent bug fixed in TypeScript port): Eliminated SIGPIPE noise originating from a broken pipe between `find` and downstream consumers.
+
+## [5.6.0] - 2026-05-06
+
+> **Minor Release**: Full Coverage Testing Paradigm (XSPEC-178) — abolishes pyramid thresholds in favour of behaviour-completeness (happy / edge / error path per public function), ratchet CI, anti-fake-test enforcement, and STUB marker protocol.
+
+### Added
+
+- **`ai/standards/full-coverage-testing.ai.yaml`** — New standard defining the Full Coverage Testing Paradigm: behaviour-completeness model, ratchet CI policy, anti-fake-test rules (no tautology assertions, no mocking core business logic), STUB marker protocol, `@ac` AC-traceability tagging, and `COVERAGE_EXEMPT` exemption format (XSPEC-178)
+- **`core/full-coverage-testing.md`** — Human-readable companion to the new YAML standard; required by pre-commit standards-sync hook
+
+### Changed
+
+- **`ai/standards/testing.ai.yaml`**: Added `deprecated_rules` block; pyramid threshold rules (`follow-pyramid`) deprecated since v5.5.0 and replaced by `follow-full-coverage` pointing to the new standard
+- **`ai/options/testing/unit-testing.ai.yaml`**: Removed `pyramid_percentage: 70%`; replaced with `coverage_policy: "Behaviour-completeness ratchet (XSPEC-178)"`
+- **`ai/options/testing/integration-testing.ai.yaml`**: Removed `pyramid_percentage: 20%`; replaced with ratchet coverage policy targeting all critical integration paths
+- **`cli/standards-registry.json`**: Added `full-coverage-testing` entry (category: `skill`, skillName: `testing-guide`); updated `testing` entry description to remove pyramid threshold percentages
+- **`cli/src/commands/init.js`**: `standardOptions` now includes `coverage_model: 'full-coverage'` default
+- **`cli/src/commands/update.js`**: v5.5.0 migration block sets `options.coverage_model = 'full-coverage'` on upgrade and prints paradigm-shift notice
+- **`cli/src/commands/check.js`**: Added `checkFullCoverageCompliance()` — warns when `full-coverage-testing.ai.yaml` is missing in v5.5.0+ projects, reports STUB marker count in `src/`
+
+### Also in this release (post-v5.5.0 fixes)
+
+- **`core/`**: Added `release-readiness-gate.md` aggregation standard; extended `browser-compatibility-standards.md`; closed coverage gaps for a11y threshold, contract testing, cross-flow regression, and capacity sign-off
+- **`templates/`**: Expanded flow test matrix to multi-gate model with UAT script column; added flow specification section to `requirement-template.md`
+- **`flows/`**: Wired Multi-Gate Flow into RQM and pre-release pipeline
+- **`cli/package.json`**: Bumped `@inquirer/prompts` 8.4.2, `ora` 9.4.0, `vitest` 4.1.5, `ajv` 8.20.0, `opencc-js` 1.3.0, `@commitlint` 20.5.3
+- **CLAUDE.md / docs**: Added XSPEC-176 source-of-truth precedence note
+
+### Migration from Pyramid Thresholds
+
+Projects upgrading from `< 5.5.0` will receive a migration notice via `uds update`:
+
+```
+⚠ Testing paradigm migrated to Full Coverage (XSPEC-178).
+  full-coverage-testing.ai.yaml installed. Remove coverageThreshold from jest/vitest config.
+```
+
+See `core/full-coverage-testing.md` for the complete migration checklist (delete `coverageThreshold`, install `.coverage-baseline.json`, add ratchet scripts to CI).
+
+## [5.5.0] - 2026-05-05
+
+> **Minor Release**: 17 New Standards — Testing Security, LLM Output Validation, Supply Chain Integrity, Release Quality. See [GitHub Release](https://github.com/AsiaOstrich/universal-dev-standards/releases/tag/v5.5.0) for full notes.
+
+## [5.4.0] - 2026-04-27
+
+> **Minor Release**: XSPEC-086 Phase 2 — 8 個純流程/編排標準遷移至 DevAP（deprecated stubs 保留向後相容）。UDS 職責回歸活動定義層，流程編排交由 DevAP 負責（DEC-049）。
+
+### Deprecated（XSPEC-086 Phase 2 — 遷移至 DevAP）
+
+下列 8 個標準已遷移至 `dev-autopilot/standards/`，成為 DevAP canonical 位置。UDS 保留 deprecated stub 至 v6.0.0。
+
+**`ai/standards/flow/`（已遷入 DevAP `standards/flow/`）**
+- `workflow-enforcement.ai.yaml` → `dev-autopilot/standards/flow/workflow-enforcement.ai.yaml`
+- `workflow-state-protocol.ai.yaml` → `dev-autopilot/standards/flow/workflow-state-protocol.ai.yaml`
+- `change-batching-standards.ai.yaml` → `dev-autopilot/standards/flow/change-batching-standards.ai.yaml`
+- `branch-completion.ai.yaml` → `dev-autopilot/standards/flow/branch-completion.ai.yaml`
+- `pipeline-integration-standards.ai.yaml` → `dev-autopilot/standards/flow/pipeline-integration-standards.ai.yaml`
+
+**`ai/standards/orchestration/`（已遷入 DevAP `standards/orchestration/`）**
+- `agent-dispatch.ai.yaml` → `dev-autopilot/standards/orchestration/agent-dispatch.ai.yaml`
+- `agent-communication-protocol.ai.yaml` → `dev-autopilot/standards/orchestration/agent-communication-protocol.ai.yaml`
+- `execution-history.ai.yaml` → `dev-autopilot/standards/orchestration/execution-history.ai.yaml`
+
+### Changed
+
+- `cli/standards-registry.json`：8 個標準條目標記 `deprecated: true`、`deprecatedSince: "5.4.0"`、`removalVersion: "6.0.0"`、`canonicalOwner: "devap"`、`canonicalPath`
+- `cli/tests/unit/core/execution-history-standards.test.js`：測試更新為驗證 deprecated stub 結構（meta.deprecated + canonical_path），22 tests 通過
+
+### Migration Guide
+
+安裝 DevAP 並載入對應標準以取得完整的流程執行能力：
+
+```bash
+npm install -g dev-autopilot
+# 各標準 canonical 位置見 dev-autopilot/standards/README.md
+```
+
+UDS 5.x 仍提供 deprecated stubs（含 fallback 規則），UDS 6.0.0 將完全移除。
+
+## [5.3.2] - 2026-04-27
+
+> **Patch Release**: Bug fix — `uds update -y` now auto-installs/updates Skills and Commands instead of only showing hints.
+
+### Fixed
+- **`uds update --yes` / `-y`** (`cli/src/commands/update.js`): The `--yes` flag previously skipped Skills and Commands installation entirely, printing a "New features available" hint instead. It now mirrors the interactive path — missing Skills/Commands are installed immediately and outdated ones are updated. The manifest and integration files are refreshed accordingly. Fixes the regression where `uds update -y` left `.claude/` Skills unchanged while interactive `uds update` updated them.
+
+## [5.3.1] - 2026-04-27
+
+> **Patch Release**: Bug fix — `uds check` no longer falsely warns "AGENTS.md standards out of sync" after `uds update`.
+
+### Fixed
+- **`generateAgentsMdSummary()`** (`integration-generator.js`): Removed `.slice(0, 30)` cap that caused AGENTS.md to list only 30 of all installed standards. `uds check` compares against all manifest standards, so the truncation always produced a false "out of sync" warning. Generator now lists all installed `.ai.yaml` standards; check passes cleanly.
+
+## [5.3.0] - 2026-04-26
+
+> **Minor Release**: Four new standards + one new Skill (XSPEC-085/064) — `no-cicd-deployment`, `rollback-standards`, `cd-deployment-strategies`, `pipeline-security-gates`, and `/deploy` Skill. Total standards: 136.
+
+### Added
+- **`no-cicd-deployment.ai.yaml`** (XSPEC-085 Phase 1): Three-layer deployment architecture for no-CI/CD environments — `set -euo pipefail` + deploy.lock + version tag enforcement; smoke test + auto-rollback; Blue-Green <30s rollback.
+- **`rollback-standards.ai.yaml`** (XSPEC-064 Phase 1): Rollback trigger matrix — auto (error rate >2× baseline), assisted (SLO violated), manual (latency within SLO). Error budget <10% escalates to auto. P0–P3 severity with SLA.
+- **`cd-deployment-strategies.ai.yaml`** (XSPEC-064 Phase 1): Strategy selection matrix — blue-green / canary / rolling / recreate decision tree (traffic × risk × cost). No-CI/CD compatibility notes included.
+- **`pipeline-security-gates.ai.yaml`** (XSPEC-064 Phase 1): CI security gate positions — pre-commit secrets scan, post-build SAST, post-staging DAST, package-stage SCA+SBOM. Critical/High block pipeline; Medium requires approval.
+- **`/deploy` Skill** (`skills/deploy-assistant/`, XSPEC-085 Phase 1b): Interactive no-CI/CD deployment script generator with zh-TW locale translation.
+
+## [5.2.0] - 2026-04-24
+
+> **Minor Release**: Three new standards/skills (XSPEC-080/081/082) — `/release package` sub-command, `/push` Quality Gate Skill, and `agent-behavior-discipline` standard (Karpathy four principles: Ask/Simple/Precision/Test). Bundle parity hardened. Docs centralized to dev-platform. Total standards: 74.
+
+### Added
+- **`agent-behavior-discipline.ai.yaml`** (Trial, expires 2026-10-24, XSPEC-082 / DEC-048): New governance standard encoding Andrej Karpathy's four AI Agent behavioral principles — Ask (surface assumptions before executing), Simple (minimum sufficient code), Precision (surgical changes only), Test (define verifiable success criteria + self-correction loop). Integrated into `uds-manifest.json` (74th entry) and `cli/standards-registry.json`.
+- **`/push` Skill** (`skills/push/`, XSPEC-081): Git push quality gates and collaboration guardrails — protected branch detection, force-push guard, pre-push gate validation, push receipt audit log, PR integration entry point. Includes two configuration options: `options/push/single-owner-mode.ai.yaml` (reduced guardrails for solo repos) and `options/push/team-mode.ai.yaml` (full guardrails, confirmation required for teams).
+- **`/release package` sub-command** (`skills/release/`, XSPEC-080): Packaging guidance for 10 target formats — npm/Node.js, Python/PyPI, Go binary, Electron app, Homebrew formula (Wave 1) + Rust/Cargo, Tauri desktop, Docker image, VS Code Extension, GitHub Release asset (Wave 2). Detection-first design: auto-detects project type before applying packaging steps.
+
+### Fixed
+- **Bundle parity** (XSPEC-072 Phase 2): Resolved parity gap between `ai/standards/` and `bundle/` — all 74 standards now present in the bundle. CI hardened to hard-fail (exit 1) on any parity mismatch, preventing silent bundle drift.
+- **i18n NO META frontmatters** (BUG-A06): Added missing YAML frontmatter to 36 translation files that were flagged as `NO META` — fixes translation sync validation false positives.
+
+### Changed
+- **Docs centralization (DEC-047 Batch 2)**: Migrated UDS planning/governance docs to the AsiaOstrich dev-platform planning hub. These files are no longer distributed with UDS:
+  - `docs/AI-AGENT-ROADMAP.md` → dev-platform `cross-project/roadmap/uds-agent-roadmap.md`
+  - `docs/OPERATION-WORKFLOW.md` → dev-platform `cross-project/ops/uds-operation.md`
+  - `docs/internal/AGENT-PROTOCOL.md` → dev-platform `cross-project/ops/uds-agent-protocol.md`
+  - `docs/internal/AI-AGENT-SYNC-SOP.md` → dev-platform `cross-project/ops/uds-ai-agent-sync-sop.md`
+  - `docs/internal/INTEGRATION-SIMPLIFICATION-PROPOSAL.md` → dev-platform `cross-project/ops/uds-integration-simplification-proposal.md`
+  - Locale copies (`locales/zh-TW/docs/`, `locales/zh-CN/docs/`) of ROADMAP and OPERATION-WORKFLOW also removed.
+
+[5.2.0]: https://github.com/AsiaOstrich/universal-dev-standards/compare/v5.1.1...v5.2.0
+
+## [5.1.1] - 2026-04-20
+
+> **Patch Release**: Windows CI fix, skill `name` field added to 53 SKILL.md files, three `.md` source standards updated with incident rules from BUG-A08 post-mortem, zh-TW/zh-CN translations synced.
+
+### Fixed
+- **`cli/src/utils/directory-mapper.js`**: Replace `dir.split('/').pop()` with `path.basename(dir)` for Windows cross-platform compatibility — fixes `directory-mapper.test.js` failures on Windows CI runners.
+
+### Added
+- **`name` field** added to 9 source `skills/*/SKILL.md` files and 44 `locales/zh-TW/skills/*/SKILL.md` files — required by skill validation tooling.
+
+### Changed
+- **`core/test-governance.md`** 1.0.0 → 1.1.0: added `test-execution-continuity` rule (BUG-A08 post-mortem — 22 tests existed but were never wired to CI execution triggers).
+- **`core/checkin-standards.md`** 1.5.0 → 1.6.0: added Legacy Project File Sync (`project-file-sync`) section — every source file on disk must be registered in legacy project manifest files.
+- **`core/testing-standards.md`** 3.1.0 → 3.2.0: added E2E Precondition Scope (`e2e-precondition-scope`) section — E2E pre-checks must verify all pages/endpoints under test, not just the auth entry point.
+- **zh-TW and zh-CN translations** synced for `test-governance.md`, `checkin-standards.md`, and `testing-standards.md`.
+
+[5.1.1]: https://github.com/AsiaOstrich/universal-dev-standards/compare/v5.1.0...v5.1.1
+
+## [5.1.0] - 2026-04-20
+
+> **Stable Release**: BUG-A06 i18n completeness — 32 missing translations added, semver-aware translation gate, new `translation-lifecycle-standards` UDS standard. BUG-A07 shell test coverage — bats smoke tests for 20+ scripts. BUG-A08 fake-pass test audit — 22 tests corrected. Pre-release Batch 0: 6 standards promoted from Trial to Adopt (DEC-021/025/031/035/038/040). Total standards: 106.
+
+### Added
+- **`translation-lifecycle-standards`** (Trial, expires 2026-10-20): New UDS standard codifying MISSING vs OUTDATED distinction, semver-aware severity classification (MISSING/MAJOR = release blocker, MINOR/PATCH = advisory), automation integration (pre-commit hook, release gate, bump-version integration). Source: BUG-A06 post-mortem.
+- **`.githooks/pre-commit`** + **`scripts/install-hooks.sh`**: Commit-time reminder when `core/*.md` files are staged; shows OUTDATED warnings without blocking commits. Activate via `./scripts/install-hooks.sh`.
+- **32 zh-TW and zh-CN translations** (BUG-A06): All core standards now have complete zh-TW and zh-CN translations including: `circuit-breaker`, `token-budget`, `dual-phase-output`, `failure-source-taxonomy`, `immutability-first`, `security-decision`, `capability-declaration`, `recovery-recipe-registry`, `retry-standards`, `health-check-standards`, `timeout-standards`, `skill-standard-alignment-check`, `standard-admission-criteria`, `standard-lifecycle-management`, `packaging-standards`, `frontend-design-standards`, `translation-lifecycle-standards`, and others.
+- **bats smoke tests** (BUG-A07): `tests/scripts/` — smoke tests for 20+ shell scripts covering `check-translation-sync.sh`, `check-version-sync.sh`, `bump-version.sh`, `install-hooks.sh`, and others.
+
+### Changed
+- **`check-translation-sync.sh`**: Semver-aware severity — MAJOR version gap now exits 1 (release blocker); MINOR/PATCH gaps exit 0 with advisory warnings. Added `semver_diff()` function and `[MAJOR]`/`[MINOR]`/`[PATCH]` severity labels.
+- **`bump-version.sh`**: Auto-runs `check-translation-sync.sh` after version files updated, providing translation health snapshot at release prep time.
+- **`scripts/pre-release-check.sh`**: Updated to call `check-translation-sync.sh` as a hard gate (MISSING + MAJOR = exit 1).
+
+### Fixed
+- **zh-CN `anti-hallucination.md`** (BUG-A06): Updated from 1.5.0 → 1.5.1 — added missing "Agent Epistemic Calibration" section (Answer/Ask/Abstain framework from XSPEC-008). The section was absent in zh-CN since 2026-04-13.
+- **22 fake-pass tests** (BUG-A08): Tests that passed without actually testing the correct behavior have been corrected with real assertions.
+
+### Promoted to Adopt (Pre-release Batch 0)
+- `circuit-breaker` (DEC-021): Adopted after 6-month Trial
+- `token-budget` (DEC-025): Adopted after 6-month Trial
+- `dual-phase-output` (DEC-031): Adopted after 6-month Trial
+- `security-decision` (DEC-035): Adopted after 6-month Trial
+- `immutability-first` (DEC-038): Adopted after 6-month Trial
+- `failure-source-taxonomy` (DEC-040): Adopted after 6-month Trial
+
+[5.1.0]: https://github.com/AsiaOstrich/universal-dev-standards/compare/v5.1.0-beta.7...v5.1.0
+
+## [5.1.0-beta.7] - 2026-04-17
+
+> **Beta Release**: DEC-043 Wave 1 — six trial-status standards covering reliability patterns and governance meta-framework.
+
+### Added
+- **Reliability pack (XSPEC-067)**: Three trial-status standards for resilience patterns.
+  - `retry-standards` (`ai/standards/retry-standards.ai.yaml`, `core/retry-standards.md`): retry policy with exponential backoff, jitter, and idempotency guards.
+  - `timeout-standards` (`ai/standards/timeout-standards.ai.yaml`, `core/timeout-standards.md`): layered timeout budgets (call / request / end-to-end) and propagation rules.
+  - `health-check-standards` (`ai/standards/health-check-standards.ai.yaml`, `core/health-check-standards.md`): liveness / readiness / startup probe semantics.
+- **Governance meta pack (XSPEC-070, Wave 1 prerequisite)**: Three trial-status standards defining how standards themselves are admitted, managed, and aligned with Skills.
+  - `standard-admission-criteria`: gating criteria for new standard proposals.
+  - `standard-lifecycle-management`: Trial → Stable → Deprecated → Archived transitions.
+  - `skill-standard-alignment-check`: alignment audit between Skills and the standards they reference.
+- All six standards follow the UDS three-way sync requirement: `.ai.yaml` (machine) + `.md` (human) + `cli/standards-registry.json` entry (+66 lines).
+
+### Context
+- Driven by **DEC-043** (UDS coverage completeness roadmap). Governance meta pack is the Wave 1 prerequisite unblocking Wave 2–4 (eight topic standard packs: SRE / CI-CD / IaC / Compliance / Reliability / Data Engineering / Product / Governance — XSPEC-063~070).
+- PR: #77
+
+[5.1.0-beta.7]: https://github.com/AsiaOstrich/universal-dev-standards/compare/v5.1.0-beta.6...v5.1.0-beta.7
+
+## [5.1.0-beta.6] - 2026-04-13
+
+> **Beta Release**: Bug fixes for `uds init` crash, E2E test isolation, and macOS display language detection.
+
+### Fixed
+- **`uds init --yes` crash** (`manifest-installer.js`): `contentMode: 'auto'` failed schema validation (allowed: `minimal/index/full`), causing init to crash after copying files without writing `manifest.json`. Now resolves `'auto'` to `'minimal'` before writing.
+- **macOS display language ignored** (`bin/uds.js`, `config.js`, `update.js`): Three root causes prevented `uds config` display language from taking effect on English-locale macOS after upgrading from 3.5.1 to 5.1.0-beta.5. Fixed language detection priority chain and `display_language` backfill migration.
+- **E2E test isolation** (`tests/utils/cli-runner.js`): Tests inherited developer's `~/.udsrc` (`zh-tw`), overriding language detection and breaking all English-output assertions. Added `HOME: TEST_HOME_DIR` isolation.
+- **E2E test count assertion** (`tests/e2e/update-flow.test.js`): CLAUDE.md yaml count compared against total manifest standards including 3 non-yaml `.md` templates. Filter to `.ai.yaml` only before comparing.
+
+### Added
+- **Epistemic calibration framework** (`core/anti-hallucination.md`, XSPEC-008): Six calibration protocols — Certainty Gradient (CG), Evidence Chain (EC), Uncertainty Decomposition (UD), Boundary Awareness (BA), Calibration Feedback (CF), Meta-Uncertainty (MU).
+- **`/e2e-assistant` Skill**: From BDD Gherkin scenarios, auto-generate E2E test skeletons; framework detection (Playwright/Cypress/Puppeteer); coverage gap analysis.
+- **`/process-to-skill` Skill**: Process-to-Skill governance framework; 3-Times Rule; Simple/Complex/Delta decision tree.
+- **`execution-history.ai.yaml`** synced with XSPEC-003-SDD schema.
+
+## [5.1.0-beta.5] - 2026-04-10
+
+> **Beta Release**: 大規模 CLI 擴展（SDLC Flow Engine、Standards-as-Hooks 編譯器、分層 CLAUDE.md、SuperSpec Phase 4、opt-in 遙測上傳）與 Skill 治理框架（/process-to-skill、DEC 評估框架）。
+
+### Added
+
+**新功能 — CLI & Standards**
+- **opt-in 遙測上傳** (SPEC-TELEMETRY-002): Hook 執行結果可選擇性上傳至遠端分析端點；雙重防護（`telemetryUpload=true` + `telemetryApiKey` 非空）；SHA-256 匿名 user_id，不含 PII
+- **DEC 借鑲評估框架** (XSPEC-014 Layer 1): 技術雷達（Technology Radar）、假設書（Hypothesis Document）、Reversal DEC 三大評估工具，支援借鑲決策記錄
+- **SuperSpec Phase 4 — 收尾功能** (XSPEC-005): `uds spec archive`（歸檔索引）、`uds spec search`（全文搜尋）、`uds spec quickstart`（快速建立）、`uds spec split`（大型 spec 拆分）
+- **SuperSpec Phase 2 — 驗證管線**: `spec-linter`（格式驗證）、品質評分（0-100 分）、`context sync`（AC 與文件同步）
+- **spec 大小閘門** (AC-3): `validateSpecSize()` — 超過 600 行觸發警告，超過 1200 行阻擋提交
+- **YAML 標準擴展** (AC-18): `.standards/*.ai.yaml` 格式擴展，支援 `enforcement` 區塊與 `required_fields` 定義
+- **SDLC Flow Engine** (SPEC-FLOW-001): 自訂 SDLC 工作流程引擎，含狀態機持久化（Phase 1）、可插拔品質閘門（Phase 4）、Export/Import（Phase 6-7）、互動式建立（AC-12）
+- **Standards-as-Hooks 編譯器** (SPEC-COMPILE-001): `uds compile` — 將 `.standards/*.ai.yaml` 的 `enforcement` 區塊自動轉譯為 Claude Code hook 腳本
+- **分層 CLAUDE.md** (SPEC-LAYERED-001): `uds init --content-layout` 支援多層目錄的獨立 CLAUDE.md；`directory-mapper` + `generator` 核心模組
+- **Hook 整合** (SPEC-HOOKS-001): `uds init --with-hooks` 一鍵安裝 hook 腳本（commit-msg / security / logging）；YAML enforcement 區塊自動注入
+- **Hook 執行遙測** (SPEC-TELEMETRY-001): 本地端 hook 執行統計（exitCode、duration_ms、hook_type），寫入 `.uds/hook-stats.jsonl`
+- **執行歷史倉庫標準** (`execution-history`): 新增 `core/execution-history.md` — AI Agent 工作階段跨對話持久化記憶標準，含 `@executes`/`@reads`/`@writes` 標註慣例
+- **`/e2e` 斜線命令** (SPEC-E2E-001): 從 BDD Gherkin 場景自動生成 E2E 測試骨架；支援 Playwright/Cypress/Puppeteer；AC 分析、模式識別、覆蓋差距報告
+- **`/process-to-skill` Skill** (XSPEC-020): Process-to-Skill 治理框架；3-Times Rule；Simple/Complex/Delta 決策樹；Placement Decision（專案 vs UDS）
+- **Skill 治理模板**: `templates/SKILL-CANDIDATES.md`（候選追蹤）、`templates/SKILL-BRIEF-TEMPLATE.md`（Simple Skill 最小規格）
+- **Integration Commands Sync** (SPEC-INTSYNC-001): `check-integration-commands-sync.sh` — 自動偵測 AI 工具整合檔是否引用所有斜線命令
+- `COMMAND-INDEX.json`: 47 個 commands 的 Single Source of Truth，含 7 類分類
+- `/derive` 擴展：感知 `test_levels` 配置 + AC Level Summary；支援 IT + E2E 測試推演（SPEC-DERIVE-001）
+- **三個核心標準新增 `enforcement` 區塊**: `commit-message-guide`、`testing-standards`、`checkin-standards`
+- Pre-release 新增 Step 7.5 整合命令同步檢查
+
+**文件與規格**
+- 批次歸檔 28 個已完成的 orphan specs 為 Archived 狀態
+- 歸檔 SPEC-TELEMETRY-001、SPEC-COMPILE-001、SPEC-LAYERED-001、SPEC-HOOKS-001、SPEC-FLOW-001、SPEC-E2E-001（共 6 份規格）
+- 新增 XSPEC-005 SuperSpec 借鑲規格與衍生測試工件
+
+### Changed
+- `REGISTRY.json`: 所有 tier 新增 `requiredCategories` 欄位；Complete 和 Partial tier 均要求全部 command categories
+- `REGISTRY.json`: Cursor 依實際能力（不支援 Workflows）從 `complete` 降為 `partial` tier
+- `spec dependency tracking`：新增 `depends_on` 欄位與 dual mode 支援（strict / advisory）
+
+### Fixed
+- `check-orphan-specs.sh`: 排除 traceability 文件的誤判（含 `SPEC-` 前綴的參考行被誤判為 orphan）
+- `check-orphan-specs.sh`: 修復 orphan spec 偵測 regex（支援 list 前綴和中文狀態欄位）
+
+### Chore
+- `.gitignore`: 新增 `.workflow-state/`（排除工作流程狀態 ephemeral 檔案）
+- 移除 11 個測試檔案中過時的 `[TODO]` 標記
+
+## [5.1.0-beta.4] - 2026-04-01
+
+> **Beta Release**: 大規模標準擴展（+17 新標準），覆蓋 SDLC 8 階段。SDLC 覆蓋率從 64% 提升至 84%。
+
+### Added
+- **Phase 1 — 監控維運標準** (5 個新 core 標準):
+  - `observability-standards`: 三支柱框架（Logs/Metrics/Traces）、Golden Signals、L0-L4 成熟度模型
+  - `slo-standards`: SLI 選取指南、SLO 設定方法論（5 步驟）、Error Budget 政策
+  - `alerting-standards`: P1-P4 分級、Escalation 路徑、SLO-based alerting、告警品質指標
+  - `runbook-standards`: 標準範本（7 段落）、5 類 Runbook、演練機制、品質 6 原則
+  - `postmortem-standards`: Blameless 原則、5 種 RCA 方法、Action Items 生命週期
+- **Phase 2 — 編碼實作標準** (3 新建 + 1 擴展):
+  - `tech-debt-standards`: 6 類分類法、登記簿範本（11 欄位）、預算機制、3×3 影響矩陣
+  - `feature-flag-standards`: 4 類 Flag、TTL 生命週期、腐化偵測、清理檢查表
+  - `environment-standards`: 4 環境層級、5 層配置優先級、Secret 管理、IaC 原則
+  - `checkin-standards` 擴展: Linting 三級分級、Auto-fix 策略、團隊一致性原則
+- **Phase 3 — 部署與交付** (1 新建 + 2 擴展):
+  - `containerization-standards`: Dockerfile 最佳實踐、Multi-stage Build、Image 標籤/安全/Registry
+  - `deployment-standards` 擴展: 部署驗證（成功判定、觀察期、Smoke Test）
+  - `environment-standards` 擴展: IaC 原則（聲明式/冪等/Drift Detection）
+- **Phase 4 — 測試深化** (2 新建 + 2 擴展):
+  - `test-data-standards`: 3 層資料策略、匿名化規則、隔離原則、Factory Pattern
+  - `chaos-engineering-standards`: 4 步驟實驗流程、5 種故障注入、安全護欄、SLO 整合
+  - `performance-standards` 擴展: 4 種效能測試類型、基準線管理、效能預算
+  - `testing-standards` 擴展: 探索式測試 SBTM、SFDPOT 啟發法
+- **Phase 5 — 退役與演進** (2 個新 core 標準):
+  - `deprecation-standards`: API Sunset 6 階段、Feature Sunset 8 步清單、系統退役 7 步驟
+  - `knowledge-transfer-standards`: 30 天 Onboarding 路線圖、Handoff 6 步清單、Bus Factor 評估
+- **Phase 6-8 — 規劃/治理/品質** (4 個新 core 標準):
+  - `supply-chain-security-standards`: SBOM（SPDX/CycloneDX）、SLSA L1-L4、License 合規矩陣
+  - `estimation-standards`: 3 種估算方法、校準機制、5 個反模式、信心等級
+  - `design-document-standards`: HLD（6 段落）/LLD（5 段落）範本、C4 架構圖、設計審查
+  - `privacy-standards`: Privacy by Design 7 原則、資料分類、DPIA、使用者 5 項權利
+- **3 個新 Skill**: `observability-assistant`、`slo-assistant`、`runbook-assistant`
+- **翻譯**: 17 個新標準 × zh-TW + zh-CN = 34 個翻譯檔
+- **同步工具**: `scripts/check-registry-completeness.sh`（core→ai.yaml→registry→.standards/ 完整性檢查）
+- **Pre-release 檢查**: 新增 Step 18 registry completeness（總步驟 19→20）
+- **SDD 工件**: 18 份規格、18 份 BDD Feature、693 個 TDD 測試（全部通過）
+
+### Changed
+- **Integration 精簡化**: `uds init`/`update` 根據 AI 工具 tier 自動選擇 contentMode
+  - complete (Claude Code) → minimal, partial (Copilot) → full, preview (Gemini) → index
+  - `ai-agent-paths.js` 新增 `tier` 欄位和 `getAgentTier()` 函式
+  - `integration-generator.js` 新增 `resolveContentModeForTool()` 映射函式
+  - `init.js` contentMode 預設值從 `'index'` 改為 `'auto'`
+- **CLAUDE.md**: Installed Standards Index 從 61 → 78 標準、核心檔案數 49 → 71
+- **OPERATION-WORKFLOW.md**: §8.1 新增標準同步清單從 10 步擴展為 12 步
+
+### Added (carried from Unreleased)
+- **標準自我診斷系統** (SPEC-SELFDIAG-001): 讓 UDS 從被動框架升級為能自我診斷的框架
+  - `uds audit --score [--self]`: 4 維度健康評分（完整度/新鮮度/一致性/覆蓋度）
+  - `--save / --trend`: 歷史趨勢追蹤與退化偵測
+  - `--ci --threshold N`: CI 模式，以 exit code 反映健康狀態
+  - `--format json`: 結構化 JSON 輸出
+- **Hook 學習迴路**: inject-standards.js 支援觸發統計記錄（opt-in）
+  - 啟用方式：在 `.uds/config.json` 設定 `{"hookStats": true}`
+  - 分析工具：`node scripts/analyze-hook-stats.mjs`
+  - 隱私保護：不記錄 prompt 內容，僅記錄匹配統計
+  - 檔案大小上限 1MB，自動截斷舊記錄
+- **排程自我診斷**: `.github/workflows/scheduled-health.yml`
+  - 每週一 09:00 UTC 自動執行健康評分
+  - 分數低於閾值時自動建立 GitHub Issue
+  - 支援 `workflow_dispatch` 手動觸發
+- **外部參考檢查**: `scripts/check-external-references.mjs`
+  - 掃描 `core/*.md` 和 `.standards/*.ai.yaml` 中的外部 URL
+  - 偵測失效連結（link-rot）和過期版本引用
+  - 支援離線模式（`--offline`）和 JSON 輸出（`--json`）
+- **跨產品標準效果回饋協議**: `specs/standards-effectiveness-schema.json`
+  - 定義 DevAP/VibeOps → UDS 的標準效果回饋 JSON 格式
+  - 匯總工具：`scripts/aggregate-effectiveness.mjs`
+- **版本清單產出**: `scripts/generate-version-manifest.mjs`
+  - Release 時產出 `.standards/version-manifest.json` 供消費者偵測版本漂移
+- **整合冒煙測試**: `cli/tests/integration/tool-outputs.test.js`
+  - 驗證全部 10 個 AI 工具的 `uds init` 產出格式
+
+### Changed
+- `.gitignore`: 新增 `.uds/` 排除本地統計資料
+
+## [5.1.0-beta.3] - 2026-03-28
+
+> **Beta Release**: 依賴大版本升級、文件生命週期標準、CLI bug 修復。供早期使用者測試。
+
+### Added
+- **文件生命週期標準** (SPEC-DOCLC-001): 新增 `core/documentation-lifecycle.md`
+  - 定義文件更新觸發規則表（7 種觸發條件 × 6 種文件類型）
+  - 定義文件檢查金字塔（Commit → PR → Release 三層）
+  - 區分硬檢查（自動化）與軟檢查（人工審查）
+  - 定義責任歸屬矩陣（角色 × 文件類型 × 時機）
+- **Release Workflow 文件同步檢查**: `release-workflow.md` 新增 Documentation Sync Verification 章節
+- **文件可及性標準**: `documentation-writing-standards.md` 新增 WCAG 2.1 可及性章節
+- **業界標準引用增強**: 4 個文件標準補齊 ISO 26515、Diátaxis、Conventional Comments 引用
+- **新技能與標準**: `/adr`、`/retrospective`、`/contract-test`、`/metrics` 技術債量化、`/incident` 改善追蹤、`/discover` 風險登記簿、`/ac-coverage` 四層追溯
+
+### Changed
+- **Commander v14**: 升級 commander 至 v14.0.0（無程式碼變更）
+- **Inquirer → @inquirer/prompts**: 從 inquirer v9 遷移至 @inquirer/prompts v7
+  - 刪除不再需要的 checkbox monkey patch
+  - 所有 prompt 呼叫改用新 API 格式（15 個 source files + 7 個 test files）
+
+### Fixed
+- **Skill-only 標準 null path**: 修正 `project-discovery` 等純 skill 標準安裝時的 path 錯誤
+- **GitHub 429 Rate Limit**: 修正 `uds check` 在 GitHub API 回應 429 時崩潰的問題
+- **AI 工具連動安裝**: 新增 AI 工具時自動連動安裝 Skills 和 Commands
+- **Windows 路徑重複**: 修正 Windows 環境下路徑重複問題
+- **Manifest 殘留清理**: 修正移除 AI 工具時未清理 manifest 中的殘留元資料
+
+## [5.1.0-beta.2] - 2026-03-25
+
+> **Beta Release**: `output_language` 統一語言設定、文件生態系閉環。供早期使用者測試。
+
+### Added
+- **文件生態系閉環** (SPEC-DOCS-01): 新增 `/docs impact` 和 `/docs translate` 子命令
+  - `/docs impact` — 主動分析程式碼變更對文件的影響，附建議命令
+  - `/docs translate` — 翻譯狀態檢查與 AI 輔助翻譯同步
+  - `sync-updates` 規則升級為自動 AI 行為，改完 code 自動提醒受影響文件
+  - 命令建議映射表：每種文件類型對應建議的斜線命令
+- **文件三層分級制度**: bilingual 模式下文件依 L1（強制）/ L2（建議）/ L3（不影響）分級
+
+### Changed
+- **`commit_language` → `output_language`**: 統一語言設定名詞，同時控制 commit message 和文件語言（74 檔案重命名）
+  - 與 `display_language` 形成對稱：display = 顯示端、output = 產出端
+  - 向後相容：manifest 自動遷移、`--commit-lang` 保留為 hidden alias
+- **`/docs` 命令擴展**: 子命令從 4 個增加到 6 個（新增 `impact`、`translate`）
+
+### Fixed
+- **removeFromManifest 遺漏清理**: 修正解除安裝時未清理 `integrationBlockHashes` 和 `integrationConfigs` 的問題
+
+## [5.1.0-beta.1] - 2026-03-25
+
+> **Beta Release**: 手動打包部署 Release 模式、AI 回應導航標準。供早期使用者測試。
+
+### Added
+- **手動打包部署 Release 模式** (SPEC-RELEASE-01): 為未使用 CI/CD 的專案新增 RC 制版本管理流程
+  - `uds release promote` — RC → Stable 版本晉升
+  - `uds release deploy` — 記錄部署紀錄到 deployments.yaml
+  - `uds release manifest` — 產生 build-manifest.json
+  - `uds release verify` — 驗證 manifest 與 Git 狀態一致性
+  - `uds init` 新增發布模式選擇（ci-cd / manual / hybrid）
+  - `uds config --type release_mode` 支援模式切換
+  - 4 個核心工具模組：version-promote、release-config、build-manifest、deployment-tracker
+  - 87 個新增測試（70 單元 + 17 整合）
+- **AI 回應導航標準** (SPEC-STD-08): 統一 AI 助手回應結尾的下一步引導格式
+
+### Fixed
+- **版本更新通知觸發範圍** (SPEC-CLI-UPDATE-NOTIFY): `uds --version` 現在會檢查並顯示新版本提示；`postAction` 從白名單（僅 4 指令）改為黑名單策略（排除 `update`/`simulate`/`fix`），大幅擴大觸發範圍
+- **`--version` 實作方式**: 使用 `configureOutput({ outputVersion })` 攔截版本輸出，避免 Commander.js 的 `.option()` 覆寫導致 help 訊息洩漏
+
+### Changed
+- **version-check-on-uds-operation 規則**: `context-aware-loading.ai.yaml` 中 priority 從 `optional` 提升為 `required`，AI agent 首次使用斜線命令/Skills 時必須檢查版本
+- **Release Standards Skill**: 新增手動模式文件和 AI Agent 行為定義
+- **/release 命令**: 新增 promote、deploy、manifest、verify 子命令路由
+
+### Dependencies
+- bump glob 13.0.1 → 13.0.6 (patch, devDependency)
+- bump ora 8.2.0 → 9.3.0 (major, Node 20 required)
+- bump lint-staged 15.5.2 → 16.4.0 (major, devDependency)
+
+## [5.0.0] - 2026-03-25
+
+> **Stable Release**: First stable release of v5.0.0 — AI Command Behavior 標準、44 個指令完整覆蓋、19 步 pre-release 檢查。
+
+### Added
+- **AI Command Behavior 標準** (`core/ai-command-behavior.md`): 定義 AI Agent 在指令定義檔中的運行時行為結構（Entry Router、Interaction Script、Stop Points、Error Handling）
+- **44 個指令完整覆蓋 AI Agent Behavior**: 為所有多步驟指令補齊行為定義，包含最後 6 個遺漏的指令（commit、init、config、methodology、update、check）
+- **11 個新斜線命令**: `/security`、`/api-design`、`/database`、`/ci-cd`、`/incident`、`/pr`、`/scan`、`/metrics`、`/durable`、`/migrate`、`/audit`（命令總數 34→45）
+- **AI Agent Behavior 覆蓋率檢查**: `check-ai-behavior-sync.sh` 腳本，整合至 pre-release-check.sh（Step 16，總步驟 17→19）
+- **使用者手冊與入門教學簡報** (`docs/manual/`)
+- ai-command-behavior 標準的 zh-TW 和 zh-CN 翻譯
+
+### Changed
+- **dev-workflow 技能更新**: 納入 11 個新命令與 2 個新場景
+- **24 個互動式 SKILL.md 加入 AI Agent Behavior 引用**
+- **.claude/skills SKILL.md 本地化**: 6 個 SKILL.md 轉為純繁中版本，加入 source/translation frontmatter
+- 移除 SKILL.md 中冗餘的跨技能比較表
+
+### Fixed
+- **testing-standards 重構**: 以覆蓋率為核心指標重構測試標準
+- **3 個命令 AI 行為定義補強**: 修復 4 個停止點標記
+- **/commit next steps**: 修正不當建議每次更新 CHANGELOG
+
+## [5.0.0-rc.16] - 2026-03-24
+
+> **Release Candidate**: Sixteenth RC for v5.0.0 with 10 new skills, feature gap analysis, Windows path bug fix, translation completeness enforcement, and AI tool integration expansion.
+
+### Added
+- **10 new skills**: `/security`, `/api-design`, `/database`, `/ci-cd`, `/incident`, `/pr`, `/scan`, `/metrics`, `/durable`, `/migrate` — each with 5 platform files (canonical + Claude + Gemini + zh-TW + zh-CN)
+- **2 new AI tool integrations**: Aider and Continue.dev (AGENTS.md + README.md + REGISTRY.json)
+- **Translation completeness check**: `check-translation-sync.sh` now detects missing skill and core standard translations (not just outdated ones)
+- **40 missing translations**: Backfilled zh-TW (20 files) and zh-CN (20 files) for previously untranslated skills and core standards
+- **Skill disambiguation sections**: `/methodology` vs `/dev-workflow`, `/spec` vs `/sdd`, `/coverage` vs `/ac-coverage` comparison tables
+- **AI Skills Hierarchy**: Three-layer system documentation in `/ai-collaboration`, `/ai-instruction-standards`, `/ai-friendly-architecture`
+- **Testing Skills Navigator**: Decision tree in `/testing` for navigating 6 testing-related skills
+- **Retroactive specs**: SPEC-NEW-SKILLS-BATCH-01, SPEC-TRANSLATION-COMPLETENESS, SPEC-NEW-INTEGRATIONS-BATCH-01
+
+### Fixed
+- **Windows path separator bug**: `manifest.fileHashes` keys now normalized to forward slashes (`/`) on all platforms — fixes duplicate file display and false "modified" detection after `uds update` on Windows
+  - Fixed in: `update.js` (4 locations), `check.js` (3 locations), `standards-installer.js` (1 location), `manifest-migrator.js` (1 location)
+
+### Changed
+- **CLI descriptions clarified**: `uds check` vs `uds audit`, `uds spec` descriptions updated to cross-reference related commands
+- **UDS skill count**: 30 → 40 skills
+- **AI tool integrations**: 12 → 14 tools
+
+## [5.0.0-rc.15] - 2026-03-23
+
+> **Release Candidate**: Fifteenth RC for v5.0.0 with Skills version detection fix, skill description standardization, and CHANGELOG timing correction.
+
+### Fixed
+- **Skills version detection** (SPEC-015): `checkNewFeatures()` now treats null `installedVersion` as outdated instead of skipping the check
+- **Skills location derivation**: `manifest.skills.location` is now derived from `installations` array during update, preventing legacy/unknown fallback
+- **Reminder multi-source detection**: Skills update reminder uses installations → location → file-system detection chain
+- **Commands version detection**: Same null version fix applied to Commands outdated check
+- **CHANGELOG timing** (SPEC-016): `checkin-standards.md` now correctly states CHANGELOG is updated at pre-release only, not per commit — aligned with `changelog-standards.md`
+
+### Changed
+- **Skill descriptions standardized**: All 30 installed skill descriptions unified to single-line `[UDS]` prefix format (Chinese translation)
+- **zh-TW skill translations**: 26 locale source files synchronized with same format
+- `/dev-workflow` description translated to Traditional Chinese
+
+### Added
+- **README Acknowledgments**: Added attribution section for 8 open-source inspiration sources (Superpowers, GSD, PAUL, CARL, CrewAI, LangGraph, OpenHands, DSPy)
+- **Pre-release checklist**: Added skill description format check to `OPERATION-WORKFLOW.md` §9.1
+- **Retroactive specs**: SPEC-015 (update skills version detection) and SPEC-016 (CHANGELOG timing correction)
+- **Internal confidential docs directory**: `docs/internal/confidential/` excluded via `.gitignore`
+- 跨產品整合策略文件：README.md 生態定位、CLAUDE.md 標準流向說明
+- SPEC-008 新增 DevAP / VibeOps CLI 整合模式規劃（`--target devap/vibeops`）
+
+## [5.0.0-rc.14] - 2026-03-19
+
+> **Release Candidate**: Fourteenth RC for v5.0.0 with workflow enforcement architecture, i18n completeness, and DX improvements.
+
+### Added
+- **Workflow Enforcement Architecture** (SPEC-014): Four-layer enforcement system that transforms UDS workflows from documentation to execution
+  - **P0 — AI-Level**: Pre-Flight Checks in `/sdd`, `/tdd`, `/bdd`, `/commit` skills; new `workflow-enforcement.ai.yaml` standard; all 11 AI agent integration templates updated
+  - **P1 — CLI-Level**: `WorkflowGate` phase transition validator; `workflow-definitions.js` SDD/TDD/BDD phase graphs; session start workflow report
+  - **P2 — Git-Level**: `check-workflow-compliance.sh` pre-commit warning (non-blocking); `check-commit-spec-reference.sh` commit-msg spec suggestion; new `commit-msg` husky hook
+  - **P3 — DX-Level**: `uds check` workflow status display (summary + full mode); `/dev-workflow` context-aware start with phase→command mapping; `pre-release-check.sh` step 16 workflow compliance
+- **Core Standard**: `core/workflow-enforcement.md` — machine-enforceable workflow gates with 3 enforcement modes (enforce/suggest/off)
+- **i18n — Commands Translation Completeness**: 30 zh-TW + 31 zh-CN slash command translations; `check-translation-sync.sh` now verifies commands translation completeness
+- **AC Coverage Assistant** skill and SPEC-AC-COVERAGE
+- **Traditional Chinese commit type options** (`.standards/options/traditional-chinese.ai.yaml`)
+
+### Fixed
+- **Language Switch Bug**: `installSkillsToMultipleAgents` missing `locale` parameter in `config.js` — skills always installed in English regardless of language setting (affects both single-language and 'all' config flows)
+- **i18n Description Prefix**: 7 translated command files missing `[UDS]` prefix in YAML frontmatter description field
+- **Workflow Compliance Script**: Integer comparison error (`grep -c` multi-line output); dual path detection for `.workflow-state/` and `.standards/workflow-state/`
+- **test_levels Migration**: Cover 5.0.0 pre-release versions in migration check
+
+### Changed
+- **Config Menu**: Flattened config menu, advanced settings hidden, test_levels migration
+- **Pre-release Checks**: 17 → 18 steps (added workflow compliance check)
+- **Standards Count**: 49 → 50 core standards (added workflow-enforcement)
+- **Skills**: Regenerated as English locale baseline
+
+## [5.0.0-rc.13] - 2026-03-18
+
+> **Release Candidate**: Thirteenth RC for v5.0.0 with post-restore integration regeneration fix.
+
+### Fixed
+- **Post-restore Integration Regeneration**: Fix CLAUDE.md not being regenerated after restoring missing files during `uds update` — add `regenerateIntegrations()` call after post-update integrity check restore, covering both interactive and `--yes` modes
+
+### Changed
+- **Stats sync**: Update Core Standards count 36→41, AI Skills count 29→30 in README, locales, and uds-manifest.json
+
+## [5.0.0-rc.12] - 2026-03-18
+
+> **Release Candidate**: Twelfth RC for v5.0.0 with new core standards and error codes enhancement.
+
+### Added
+- **API Design Standards** (`core/api-design-standards.md`): New universal standard covering REST, GraphQL, and gRPC API design principles, versioning strategies, pagination, authentication patterns, rate limiting, and RFC 7807 error responses (938 lines)
+- **Database Standards** (`core/database-standards.md`): New universal standard covering schema design, migration strategy, indexing, query optimization, transaction management, SQL vs NoSQL decision matrix, and sensitive data handling (828 lines)
+- **Error Codes v1.2 — API Error Serialization**: RFC 7807 Problem Details format, GraphQL/gRPC error handling patterns, retry and idempotency guidance (+225 lines)
+- **Commands README**: Added 9 missing commands and complete 34-command→skill/standard mapping table
+- **AC Coverage command** (`/ac-coverage`): AC traceability matrix and coverage report generation
+- **Retroactive Specs**: SPEC-STD-03 (API Design), SPEC-STD-04 (Database), SPEC-STD-05 (Error Codes v1.2)
+
+### Changed
+- **Logging YAML**: Synced to v1.2.0 with distributed-tracing and observability-pillars rules
+- **Standards count**: 47 → 49 core standards
+
+## [5.0.0-rc.11] - 2026-03-18
+
+> **Release Candidate**: Eleventh RC for v5.0.0 with integrationConfigs fix and template reference path correction.
+
+### Fixed
+- **Empty integrationConfigs**: Fix `installIntegrations()` not returning `manifestIntegrationConfigs`, causing `uds update --sync-refs` to fail with empty `integrationConfigs: {}`
+- **Stale Template References**: Replace 12 occurrences of `.standards/commit-message-guide.md` → `.standards/commit-message.ai.yaml` in integration generator templates and static integration files
+
+## [5.0.0-rc.10] - 2026-03-17
+
+> **Release Candidate**: Tenth RC for v5.0.0 with update command display fix, stale commandHashes cleanup, and E2E regression tests.
+
+### Fixed
+- **Options Display Path**: Fix `uds update` file list showing `.standards/unit-testing.ai.yaml` instead of `.standards/options/unit-testing.ai.yaml` — use `getStandardTargetDir()` for display
+- **Stale commandHashes Cleanup**: Fix `uds update --commands` not removing old commandHashes entries for renamed/deleted commands — add `replaceCommandHashesForUpdatedAgents()` to clean stale entries before merging
+
+### Added
+- **E2E Regression Tests**: Add 2 regression tests for `uds update` — options display path verification, stale commandHashes cleanup after commands update
+
+## [5.0.0-rc.9] - 2026-03-17
+
+> **Release Candidate**: Ninth RC for v5.0.0 with E2E bug regression tests, options subdirectory fix, and pre-release workflow improvement.
+
+### Added
+- **E2E Bug Regression Tests**: Add 5 regression test cases for `uds update` — options subdirectory, extensions type safety, null source, user content preservation, block hash sync
+- **Pre-release E2E Step**: Split pre-release check Step 16 into Unit Tests (Step 16) + E2E Tests (Step 17), total checks 16→17
+
+### Fixed
+- **Options Subdirectory**: Fix `uds update` installing options standards (e.g., `english.ai.yaml`) to `.standards/` instead of `.standards/options/` via new `getStandardTargetDir()` helper
+
+### Changed
+- **Skills Sync**: Sync documentation-guide to v2.1.0 (Diátaxis classification, LLM discovery, quality metrics), update methodology SDD phase, expand workflows documentation
+- **Gemini Sync**: Align Gemini commands/skills manifests to rc.8, expand `sdd.toml` command
+
+## [5.0.0-rc.8] - 2026-03-17
+
+> **Release Candidate**: Eighth RC for v5.0.0 with Windows compatibility fix and CI stability improvement.
+
+### Fixed
+- **Windows NULL File**: Fix `/dev/null` redirects creating literal `NULL` file on Windows — add EXIT trap cleanup to 12 scripts and `.gitignore` safety net
+- **Windows CI**: Fix `update-checker.test.js` path separator assertion failure on Windows by using `path.join` instead of hardcoded Unix paths
+
+## [5.0.0-rc.7] - 2026-03-17
+
+> **Release Candidate**: Seventh RC for v5.0.0 with auto update notification, documentation standards enhancement, and bug fixes.
+
+### Added
+- **Auto Update Notification**: CLI commands (`init`, `list`, `add`, `config`) now display update notices with 24-hour throttling cache (`~/.uds/update-check.json`)
+- **AI Agent Version Check Rule**: New `version-check-on-uds-operation` rule in `context-aware-loading` — AI agents check npm for UDS updates on first slash command per conversation
+- **Documentation Standards Enhancement**: Diátaxis classification, LLM-friendly guidelines, ADR deep-dive, and quality metrics for documentation standards
+
+### Fixed
+- **Manifest Extensions Handling**: Fix crash when `manifest.extensions` contains non-string items
+
+### Changed
+- **Maintenance Docs Consolidation**: Merge `MAINTENANCE.md` into `OPERATION-WORKFLOW.md` and archive outdated files
+
+## [5.0.0-rc.6] - 2026-03-17
+
+> **Release Candidate**: Sixth RC for v5.0.0 with 12 SDD/workflow improvements inspired by GSD, CrewAI, LangGraph, OpenHands, and DSPy.
+
+### Added
+- **Discuss Phase** (from GSD): New structured discussion stage before SDD proposal — captures gray areas, locks scope, builds `read_first` list
+- **Verification Loop Cap** (from GSD): SDD verify phase capped at 3 iterations; forced human intervention after cap reached
+- **Structured Task Definition** (new standard): 4 required fields (`read_first`, `action`, `acceptance_criteria`, `verification`) for AI task definitions
+- **Workflow State Protocol** (new standard): `.workflow-state/` directory with YAML state files and append-only event logs for cross-session persistence
+- **Wave-Based Execution** (from GSD): Optional `wave` field in methodology schema for parallel step grouping
+- **Validation Pipeline** (from CrewAI/DSPy): Two-layer validation (deterministic + semantic) with fail-fast principle
+- **Agent Signatures** (from DSPy): Optional `signatures` field for structured I/O contracts in agent definitions
+- **Traceability Matrix** (from GSD): REQ→AC→Test→Implementation→Commit mapping during SDD verify phase
+- **Context Budget Tracking** (from CrewAI/GSD): Context window awareness rules (60%/80% thresholds) in context-aware-loading
+- **HITL Interrupt** (from LangGraph): New `interrupt` checkpoint intensity that pauses workflow and saves state
+- **Agent Communication Protocol** (from LangGraph/CrewAI/GSD): Three-layer protocol (artifact passing, reducer patterns, context isolation)
+- **Trace Validation** (from DSPy): Intermediate step quality verification across SDD workflow phases
+
+### Changed
+- **SDD Workflow**: Updated from 5 phases to 6 phases (Discuss → Proposal → Review → Implementation → Verification → Archive)
+- **Core Standards Count**: Updated from 34 to 36 across all CLAUDE.md, GEMINI.md, and translations
+- **Standards Index**: Added `structured-task-definition` and `workflow-state-protocol` to manifest.json, standards-registry.json, CLAUDE.md, GEMINI.md
+
+## [5.0.0-rc.5] - 2026-03-16
+
+> **Release Candidate**: Fifth RC for v5.0.0 with context-aware loading, spec tracking, and 4-layer testing pyramid.
+
+### Added
+- **Context-Aware Loading**: New `core/context-aware-loading.md` standard — 7 domain categories with always-on/on-demand loading mechanism (SPEC-012)
+- **Workflow State Tracking**: `project-context-memory` adds `workflow-state` type for cross-session state persistence (SPEC-013)
+- **AI-Driven Spec Tracking**: `/commit` now assesses spec needs for `feat`/`fix` commits; new `/sdd-retro` command for retroactive spec creation (SPEC-011)
+- **Orphan Spec Detection**: `check-orphan-specs.sh/.ps1` detects specs stuck in non-terminal states (integrated into pre-release step 15)
+- **4-Layer Testing Pyramid**: Upgrade from 3-layer (70/20/10) to 4-layer (70/20/7/3) with System Tests (ST) tier
+- **Test Governance Standard**: New `test-governance` standard with quality goals, completion criteria, and environment management
+- **Test Templates**: Add `test-plan-template.md` and `test-case-template.md` (ISO 29119-3 inspired)
+
+### Fixed
+- **Command Locale Support**: `uds update` now installs slash commands using project locale settings, with `detectLocaleFromStandards()` fallback (#7)
+- **Dev-Workflow Registration**: Register `/dev-workflow` in `AVAILABLE_COMMANDS` and sync usage docs
+- **Bilingual Commit Body**: Upgrade `bilingual-body` rule from recommended to required with 5-step structure guide
+
+### Changed
+- **Spec Reference Footer**: Generalize commit `Spec References` to `Custom Reference Footers` supporting SPEC/JIRA/FEATURE/RFC prefixes
+- **SPEC-012 Cleanup**: Remove redundant `activation` fields, merge REQ-003/004, renumber ACs
+- **SPEC-011 Cleanup**: Remove duplicate technical design sections, consolidate 6 requirements to 4
+
+## [5.0.0-rc.4] - 2026-03-05
+
+> **Release Candidate**: Fourth RC for v5.0.0 with new audit command, file placement guide, and skill inter-linking.
+
+### Added
+- **`uds audit` Command**: New CLI command for UDS health checks and feedback collection (`--health`, `--patterns`, `--friction`, `--report`)
+- **File Placement Decision Guide**: New `core/guides/file-placement-guide.md` — master decision tree, reverse lookup index (30+ file types), code organization deep dive, development artifacts lifecycle
+- **Source Code Organization Terminology**: Added utils/helpers/shared/lib/internal disambiguation to `project-structure.md`
+- **Configuration Files Placement**: Added standard locations for tool configs, app configs, env vars, CI/CD, IaC
+- **Generated Code Placement**: Added `src/generated/` standard with gitignore guidelines
+- **Development Artifacts Directory**: Added `docs/working/` structure with lifecycle management (brainstorms, RFCs, investigations, POCs)
+- **Expanded Document Types Matrix**: Complete file type → destination mapping in `documentation-structure.md`
+- **Audit Assistant Skill**: New `/audit` skill with health check and feedback workflows
+- **Skill Inter-linking**: Added `/audit` next-step suggestions to `/checkin`, `/review`, `/commit`, `/sdd`
+- **Next Steps Guidance**: Added next-step suggestions to 17 existing skills
+
+### Fixed
+- **Config Display Language**: Fix `displayLanguage` not passed to config path
+- **Skills Uninstaller Tests**: Fix tests accidentally deleting user-level directories
+- **Package Name in Docs**: Fix incorrect package name references
+
+### Changed
+- **README Structure**: Extract pre-release info and add config/uninstall/methodology sections
+- **SPEC-AUDIT-01**: Rewritten as user-oriented specification with brainstorm integration
+
+## [5.0.0-rc.2] - 2026-02-13
+
+> **Release Candidate**: Second RC for v5.0.0 with documentation improvements and CLI bug fixes.
+
+### Fixed
+- **Slash Command Deduplication**: Prevent duplicate skill installation when selecting multiple levels for the same agent
+- **Update Command**: Detect and install new standards during `uds update`
+
+### Changed
+- **README Structure**: Restructure all READMEs into modular and AI-optimized format
+
+## [5.0.0-rc.1] - 2026-02-12
+
+> **Release Candidate**: This is the first RC for v5.0.0. All major features are complete; this release focuses on final validation before stable.
+
+### Added
+- **3-Dimension Reverse Engineering**: Evolve `/reverse` to full system archeology with Logic, Data, and Runtime dimensions (`/reverse spec`, `/reverse data`, `/reverse runtime`)
+
+### Fixed
+- **Skills Count**: Fix `sync-manifest.mjs` to count only directories with `SKILL.md` (was 32, now correctly 27)
+- **Missing Command Registration**: Register `/brainstorm` in `AVAILABLE_COMMANDS` and skills README tables
+
+### Changed
+- **Workflow Visualization**: Expand Mermaid diagram in `WORKFLOW-ANALYSIS.md` with 3-dimension reverse engineering sub-nodes and data flow arrows
+
+## [5.0.0-beta.12] - 2026-02-12
+
+### Added
+- **Workflow Prerequisite System**: New `workflow-prerequisites.yaml` registry and `prerequisite-check.md` AI behavior protocol for checking command prerequisites before execution
+- **Workflow Analysis Document**: Comprehensive `docs/WORKFLOW-ANALYSIS.md` with process inventory, decision quick reference, and adoption roadmap
+- **Workflow Gaps Tracker**: `docs/WORKFLOW-GAPS.md` tracking 12 identified gaps (CI/CD, incident response, etc.)
+- **Cross-Command Handoff Guidance**: `/discover`, `/reverse`, `/derive`, `/release` now suggest logical next steps after completion
+- **Doc Generation Tooling**: `scripts/sync-manifest.mjs` and `scripts/generate-docs.mjs` for automated README stats sync
+- **`/brainstorm` Skill**: Structured AI-assisted ideation skill
+
+### Changed
+- **Documentation Sync**: Update all READMEs, MAINTENANCE.md, STANDARDS-MAPPING.md, FEATURE-REFERENCE.md with accurate counts (32 standards, 26 skills, 30 commands)
+- **AI Tool Support Table**: Expanded to include Gemini CLI, Cursor, Cline/Roo Code, Windsurf with detailed feature support
+- **Pre-release Checks**: Add Step 1.5 `docs:sync` to `pre-release-check.sh`
+- **Skill Prerequisites**: `/derive` now declares `spec-approved` prerequisite; `/release` declares `release-check` prerequisite
+
+## [5.0.0-beta.11] - 2026-02-11
+
+### Added
+- **Display Language Setting**: New `uds config` option to set UI display language independently from commit language
+
+### Fixed
+- **Language Resolution Bug**: Fix language detection fallback logic in `uds config` to correctly resolve display language
+- **Release Scripts**: Fix README version update bugs in release scripts
+
+### Changed
+- **README**: Add beta installation guide and sync version display to 5.0.0-beta.10
+
+## [5.0.0-beta.10] - 2026-02-11
+
+### Added
+- **Commit Language Directive**: Integration files now include commit message language instructions, ensuring AI tools always know the expected language even without `commit-message.ai.yaml`
+- **Config i18n**: Trilingual translations (en/zh-tw/zh-cn) for vibe coding presets and config preferences UI
+
+### Fixed
+- **Config Language Detection**: `uds config` now auto-detects UI language from project manifest, matching `uds configure` behavior
+- **Documentation Integrity**: Skip reference sync section when no Reference markers exist
+- **Broken Links**: Fix 153 broken markdown links across 212 files
+
+### Changed
+- **Documentation Integrity Checker**: New script with 4 sub-checks for pre-release validation
+- **Commands Sync Checker**: New script integrated into pre-release checks
+
+## [5.0.0-beta.9] - 2026-02-10
+
+### Added
+- **Missing Command Files**: Create `changelog.md`, `checkin.md`, `discover.md`, `docgen.md` in `skills/commands/` for Gemini CLI TOML conversion
+- **Register `/docs` and `/guide`**: Add to `AVAILABLE_COMMANDS` so all agents can discover these commands
+
+### Changed
+- **Daily Workflow Guide v1.1.0**: Add Phase 0 project discovery section, update decision tree with `/discover` entry point, add `/discover` + `/reverse` as prerequisites in Strategy 3, expand commands reference with `/discover`, `/reverse`, `/refactor`
+- **Translations Synced**: zh-TW and zh-CN DAILY-WORKFLOW-GUIDE.md updated to v1.1.0
+
+## [5.0.0-beta.8] - 2026-02-10
+
+### Added
+- **Deployment Standards**: New core standard for deployment workflows with cross-references (`core/deployment-standards.md`)
+- **`/discover` Skill**: Phase 0 project assessment skill for evaluating project readiness
+- **Skill Harvesting SDD**: Specification for systematic skill extraction from existing workflows
+
+### Changed
+- **`/spec` → `/sdd` Rename**: Renamed `/spec` skill to `/sdd` (Spec-Driven Development), added missing subcommands, synced zh-CN split architecture
+- **SKILL.md Split Architecture**: Skills now use slim command reference + detailed guide structure
+- **`uds configure` → `uds config`**: Merged `uds configure` into `uds config` as unified entry point
+
+### Fixed
+- **Integration File Preservation**: `uds update` now preserves user-customized content in integration files (AGENTS.md, .cursorrules, etc.)
+- **Translation Source Paths**: Fixed 143 broken relative paths in zh-CN and zh-TW translation files
+- **Pre-release Check Script**: `check-docs-sync.sh` now correctly skips `.claude-plugin/` version checks for beta releases
+- **Scope Marker**: Fixed `project-context-memory.md` scope from `Project-Specific (Local)` to `uds-specific`
+
+## [5.0.0-beta.7] - 2026-02-09
+
+### Added
+- **Project Context Memory (PCM)**: New core standard for capturing, retrieving, and enforcing project-specific context, architectural decisions, and domain knowledge (`core/project-context-memory.md`, `.standards/project-context-memory.ai.yaml`)
+- **Developer Persistent Memory (DPM)**: Integration of developer persistent memory standard with Always-On Protocol delivery pipeline (`core/developer-memory.md`, `.standards/developer-memory.ai.yaml`)
+- **Memory Adoption Strategy**: Architecture guide for memory system adoption in `docs/specs/system/`
+- **Initial Project Context**: Bootstrap project context document in `.project-context/uds-architecture.md`
+
+## [5.0.0-beta.6] - 2026-02-06
+
+### Fixed
+- **Init → Integration Standards Passthrough**: Fixed `init` command not passing `installedStandards` to integration installer, causing integration files to use hardcoded default categories
+- **Integration Category Filtering**: Changed integration installer to filter requested categories against actually installed standards, preventing orphaned `Reference:` lines in generated files (AGENTS.md, GEMINI.md, .cursorrules, etc.)
+- **AI YAML Format Recognition**: Added `.ai.yaml` format entries to `STANDARD_TO_CATEGORY` mapping so `uds check` correctly recognizes AI-optimized standard files
+- **Cross-Format Reference Comparison**: Rewrote `compareStandardsWithReferences` to compare at category level, handling `.md` vs `.ai.yaml` format differences correctly
+
+### Added
+- **Regression Tests**: Added 7 targeted tests covering category filtering, `.ai.yaml` format support, and cross-format reference comparison
+
+## [5.0.0-beta.5] - 2026-02-06
+
+### Fixed
+- **Commands Integrity Path Resolution**: Fixed `checkCommandsIntegrity` calling `getCommandsDirForAgent` without `level` parameter, causing all tracked commands to report as "missing"
+- **i18n Skills Labels**: Removed hardcoded `.claude/` paths from `skillsProject`/`skillsGlobal` labels to support multi-agent display correctly
+- **Command Installations Display**: Fixed `commands.installations` objects rendering as `[object Object]` instead of `agent: level` format
+- **AGENTS.md Path Mapping**: Added missing `AGENTS.md → codex` mapping in `getToolFromPath` for OpenAI Codex CLI integration detection
+
+### Added
+- **Regression Tests**: Added 4 targeted regression tests covering all bug fixes above
+
+## [5.0.0-beta.4] - 2026-02-06
+
+### Fixed
+- **Integration Installer Config Resolution**: Fixed `displayLanguage` and `skillsConfig` config resolution in integration installer
+  - Now correctly resolves configuration values when generating AI tool integration files
+
+### Added
+- **Integration Content Matrix Tests**: Added comprehensive data-driven matrix tests for `generateIntegrationContent`
+  - Covers all language × config combinations for integration content generation
+
+## [5.0.0-beta.3] - 2026-02-06
+
+### Fixed
+- **Husky Init Fallback**: Added fallback `.husky` directory creation when `husky init` fails
+  - Ensures pre-commit hooks are properly set up even in environments where `husky init` encounters errors
+
+## [5.0.0-beta.2] - 2026-02-05
+
+### Fixed
+- **E2E Tests**: Updated config-flow tests for new config command JSON API
+  - Config command now outputs JSON format instead of UI labels
+  - Skipped UI language tests pending redesign
+
+## [5.0.0-beta.1] - 2026-02-05
+
+### Added
+- **Marketplace Version Strategy**: Implemented stable-only update policy for `.claude-plugin/` files
+  - Pre-release versions (alpha/beta/rc) no longer update marketplace files
+  - Marketplace users only receive stable, tested releases
+  - Enhanced `check-version-sync.sh` script with pre-release detection
+
+### Fixed
+- **Bundled Path Resolution**: Corrected paths for skills, agents, and workflows installers
+  - Fixed `skills/claude-code/agents` → `skills/agents`
+  - Fixed `skills/claude-code/workflows` → `skills/workflows`
+  - Fixed `skills/claude-code` → `skills`
+- **E2E Test Expectations**: Updated init-flow tests to match actual CLI output format
+  - Level format: `Level: Level 3` instead of `Level: 3`
+  - Removed non-existent integrations summary label
+
+## [5.0.0-alpha.2] - 2026-02-04
+
+### Added
+- **Dual-Layer Architecture**: Introduced Physical Spec (validators) alongside Imagination Layer (guidelines)
+- **Predictive Simulation**: Added `uds simulate` command to preview compliance checks
+- **Auto-Healing**: Added `uds fix` command to automatically resolve violations
+- **Agent-Ready API**: Added `--json` output mode for check, simulate, and fix commands
+- **Pre-commit Integration**: `uds init` now automatically configures Husky hooks
+- **Smart Locator**: Enhanced standard file resolution with fuzzy matching and internal ID verification
+
+### Changed
+- Upgraded `changelog`, `versioning`, `testing`, `security`, `code-review`, `commit-message`, `project-structure` to v2 format with physical specs
+
+## [5.0.0-alpha.1] - 2026-01-29
+
+### Changed
+- **Core Standards Slimming (Token Optimization)**: Major refactoring to reduce AI context load
+  - **Rules vs. Guides Separation**: Split massive standard files into concise "Rules" (for AI) and detailed "Guides" (for Humans/Reference)
+  - **Methodology Relocation**: Moved pure methodology tutorials from `core/` to `methodologies/guides/`
+  - **New Directory Structure**:
+    - `core/`: Contains only actionable rules, checklists, and thresholds (< 10KB each target)
+    - `core/guides/`: Contains detailed explanations, tutorials, and examples
+    - `methodologies/guides/`: Contains full methodology guides (TDD, BDD, SDD, etc.)
+  - **Significant Size Reductions**:
+    - `testing-standards.md`: 141KB → 14KB (90% reduction)
+    - `test-driven-development.md`: 54KB → ~1KB Stub (Moved to methodologies)
+    - `git-workflow.md`: 38KB → ~8KB (Split)
+    - Overall `core/` directory size reduced by ~75%
+
+## [4.3.0-alpha.1] - 2026-01-26
+
+> ⚠️ **Alpha Release**: This is an internal validation release for local testing. Not recommended for production use.
+
+### Changed
+- **Methodology Refactoring**: Major separation of SDD from TDD/BDD/ATDD family
+  - SDD (Spec-Driven Development, 2025) is now positioned as independent AI-era methodology
+  - TDD/BDD/ATDD (1999-2011) classified as Traditional Development Methodologies
+  - Removed incorrect "ATDD → SDD → BDD → TDD" sequence from all documents
+  - Added Methodology Classification section to TDD, BDD, and ATDD standards
+  - Based on literature research: GOOS (Freeman & Pryce), Thoughtworks, Martin Fowler
+
+- **SDD Enhancements** (v2.0.0):
+  - Added SDD as Independent Methodology section with historical context
+  - Added SDD Maturity Levels (Spec-first, Spec-anchored, Spec-as-source) based on Martin Fowler 2025
+  - Added Common Pitfalls section with industry warnings
+  - Added Validation Layer section with theoretical foundation (Design by Contract, Contract Testing)
+  - Added SDD + Testing Integration Model with practical workflow
+  - Added new references: Thoughtworks, GitHub spec-kit, InfoQ, Specmatic
+
+- **Forward Derivation Enhancements** (v1.1.0):
+  - Added contract.json output format for contract verification
+  - Added schema.json output format for schema validation
+  - Added `/derive-contracts` command for verification artifact generation
+
+- **Traditional Methodology Updates**:
+  - TDD (v1.2.0): Added Methodology Classification, replaced Integration Pyramid with Double-Loop TDD (GOOS)
+  - BDD (v1.1.0): Added Methodology Classification, Double-Loop TDD explanation, Collaborative Acceptance
+  - ATDD (v1.1.0): Added Methodology Classification, ATDD as optional collaboration, Two-approach comparison
+
+- **Test Completeness Dimensions**: Updated from 7 dimensions to 8 dimensions
+  - Added dimension 8: AI Test Generation Quality (mutation testing, assertion depth, test purpose)
+  - Updated skills, AI YAML, and integrations to reflect 8-dimension framework
+- **Anti-Hallucination Standards**: Added Unified Tag System
+  - Certainty Tags: For analyzing existing content (`[Confirmed]`, `[Inferred]`, `[Assumption]`, `[Unknown]`, `[Need Confirmation]`)
+  - Derivation Tags: For generating new content (`[Source]`, `[Derived]`, `[Generated]`, `[TODO]`)
+  - Workflow mapping specifies which tag category applies to each workflow type
+
+### Documentation
+- Updated skills for Phase 1-4 consistency synchronization:
+  - `test-coverage-assistant`: 7→8 dimensions
+  - `ai-collaboration-standards`: Added Unified Tag System
+  - `reverse-engineer`: Added Unified Tag System reference
+  - `forward-derivation`: Added Unified Tag System reference
+- Updated AI standards (YAML):
+  - `test-completeness-dimensions.ai.yaml`: Added dimension 8
+  - `anti-hallucination.ai.yaml`: Added Unified Tag System with workflow mapping
+- Updated integrations:
+  - `github-copilot/copilot-instructions.md`: 7→8 dimensions
+
+## [4.2.0] - 2026-01-24
+
+### Added
+- **CLI Specifications**: Published 31 CLI specification documents as Stable
+  - Agent command specifications (2 docs): Overview, Installation
+  - Workflow command specifications (2 docs): Overview, Installation
+  - AI-Context command specifications (2 docs): Overview, Config Generation
+  - Init command specifications (4 docs): Overview, Project Detection, Configuration Flow, Execution Stages
+  - Check command specifications (4 docs): Overview, Integrity Checking, Status Display, Restore Operations
+  - Update command specifications (4 docs): Overview, Version Checking, Standards Update, Feature Detection
+  - Configure command specifications (3 docs): Overview, Option Types, AI Tools Management
+  - Shared module specifications (7 docs): Manifest Schema, File Operations, Hash Tracking, Integration Generation, Skills Installation, AI Agent Paths, Prompts
+  - List command specification (1 doc)
+  - Skills command specification (1 doc)
+
+### Changed
+- **AI Agent Paths**: Updated configurations to match official vendor documentation (2026-01-24)
+  - Cline: Path corrected from `.cline/` to `.clinerules/` per [official docs](https://docs.cline.bot/features/slash-commands/workflows)
+  - Windsurf: Added workflows support with `.windsurf/rules/` path per [official docs](https://docs.windsurf.com/windsurf/cascade/workflows)
+  - Gemini CLI: Added `commandFormat: 'toml'` field to document TOML format requirement
+  - GitHub Copilot: Marked `commands.user` as unsupported (VS Code IDE only)
+
+### Fixed
+- **CLI**: `promptCommandsInstallation` now gracefully handles agents with `commands.user: null`
+  - Skips user-level option for agents that don't support it (e.g., GitHub Copilot CLI)
+
+### Documentation
+- **Claude Code Skills/Commands merger note**: Added documentation explaining that Claude Code v2.1.3+ has merged slash commands and skills
+  - Both `.claude/commands/review.md` and `.claude/skills/review/SKILL.md` create `/review`
+  - Existing commands files continue to work
+  - Other AI tools (OpenCode, Roo Code, Gemini CLI) still use traditional commands format
+- **New Specification**: Added [SHARED-07] AI Agent Paths Update specification (`docs/specs/cli/shared/ai-agent-paths-update.md`)
+
+## [4.1.0] - 2026-01-21
+
+### Added
+- **Refactoring Standards v2.0**: Enhanced with industry best practices
+  - Tactical strategies: Preparatory Refactoring (Kent Beck), Boy Scout Rule (Robert C. Martin)
+  - Strategic strategies: Anti-Corruption Layer (Eric Evans/DDD)
+  - Decision Matrix Summary for quick strategy selection
+- **New `/refactor` command**: Interactive refactoring assistant with decision tree
+  - `/refactor decide` - Run refactor vs. rewrite decision tree
+  - `/refactor tactical` - Suggest daily refactoring strategies
+  - `/refactor strategic` - Guide architectural refactoring
+  - `/refactor legacy` - Legacy code safety strategies
+- **AI Tool Integrations**: Refactoring guidance for non-Claude Code tools
+  - GitHub Copilot Chat prompt templates
+  - Cursor/Windsurf rules sections
+  - Gemini CLI guidelines
+
+### Changed
+- **Refactoring Standards**: Reorganized into three-tier classification
+  - Tactical (daily, minutes-scale operations)
+  - Strategic (architectural, weeks-months scale)
+  - Safety (legacy code protection)
+- **Registry**: `refactoring-standards` upgraded from "reference" to "skill" category with `refactoring-assistant` skill mapping
+
+### Documentation
+- Updated zh-TW translations for refactoring standards (v2.0.0)
+- Updated zh-CN translations for refactoring standards (v2.0.0)
+- New command translations: `/refactor` in zh-TW and zh-CN
+- Updated AI-optimized YAML format for refactoring standards
+
+---
+
+## [4.0.0] - 2026-01-20
+
+### Highlights
+
+**Bidirectional Derivation System**: v4.0 introduces a complete spec-code lifecycle management system:
+- **Forward Derivation**: Generate BDD/TDD/ATDD artifacts from SDD specifications
+- **Reverse Engineering**: Extract specifications from existing code
+- Together they form a bidirectional derivation cycle for maintaining spec-code consistency
+
+### Added
+- **6 New Core Standards**:
+  - `behavior-driven-development.md` - BDD methodology and standards
+  - `acceptance-test-driven-development.md` - ATDD methodology and standards
+  - `reverse-engineering-standards.md` - Reverse engineering standards
+  - `forward-derivation-standards.md` - Forward derivation standards
+  - `ai-instruction-standards.md` - AI instruction writing standards
+  - `refactoring-standards.md` - Refactoring standards and patterns
+- **8 New Skills** (23 total):
+  - `forward-derivation/` - Forward derivation commands (`/derive-bdd`, `/derive-tdd`, `/derive-atdd`, `/derive-all`)
+  - `reverse-engineer/` - Enhanced reverse engineering (`/reverse-sdd`, `/reverse-bdd`, `/reverse-tdd`)
+  - `bdd-assistant/` - BDD workflow assistant (`/bdd`)
+  - `atdd-assistant/` - ATDD workflow assistant (`/atdd`)
+  - `methodology-system/` - Methodology selection (`/methodology`)
+  - `refactoring-assistant/` - Refactoring assistant
+  - `checkin-assistant/` - Check-in assistant
+  - `commands/` - Slash commands collection (`/checkin`, `/methodology`, etc.)
+- **CLI Enhancements**:
+  - Per-tool level selection (User Level or Project Level per AI tool)
+  - `--debug` flag for troubleshooting
+  - Declined features memory
+  - Enhanced file integrity tracking
+  - Commands installation path support for Claude Code
+
+### Changed
+- **Methodology System**: Now production-ready (previously experimental 🧪)
+  - TDD/BDD/SDD/ATDD workflows fully integrated
+  - Removed experimental flags
+- **CLI**: Unified prompt format for Skills and Commands installation
+- **Documentation**: Synced terminology across all components
+
+### Fixed
+- Marketplace detection reliability
+- YAML frontmatter syntax in localized skills
+
+---
+
+## [4.0.0-beta.2] - 2026-01-20
+
+### Added
+- **CLI**: Claude Code Commands path support (`ai-agent-paths.js`)
+  - Added `commands.project` and `commands.user` paths for Claude Code
+  - Enables Commands installation to Claude Code
+
+### Fixed
+- **CLI**: Marketplace detection now only trusts actual installation status
+  - Previously trusted both manifest record and actual status (could be stale)
+  - Now checks `marketplaceInfo?.installed === true` instead of manifest `skills.location`
+  - Fixes issue where stale manifest could cause incorrect marketplace detection
+- **Skills**: YAML frontmatter syntax error in `argument-hint` field
+  - Square brackets `[]` need to be quoted in YAML to avoid array interpretation
+  - Fixed in `locales/zh-TW/` and `locales/zh-CN/` for `methodology.md` and `bdd.md`
+
+## [4.0.0-beta.1] - 2026-01-19
+
+### Added
+- **Core Standard**: Forward Derivation Standards (`core/forward-derivation-standards.md`)
+  - Derives BDD scenarios, TDD test skeletons, and ATDD acceptance tests from approved SDD specs
+  - Complements Reverse Engineering to form bidirectional derivation system
+  - Strict 1:1 AC mapping with anti-hallucination compliance
+  - Certainty framework: `[Source]`, `[Derived]`, `[Generated]`, `[TODO]` tags
+- **Skill**: Forward Derivation skill for Claude Code (`skills/forward-derivation/`)
+  - New commands: `/derive-bdd`, `/derive-tdd`, `/derive-atdd`, `/derive-all`
+  - Multi-language support: TypeScript, Python, Java, Go
+  - AC Parser with Given-When-Then and bullet format support
+- **Specification**: Core Standard Creation Workflow (`docs/specs/system/core-standard-workflow.md`)
+  - Defines 8-phase workflow for creating/updating core standards
+  - File checklist and skill applicability matrix
+  - CLI integration requirements and verification checkpoints
+- **CLI**: Per-tool level selection for Commands installation
+  - Commands now use `{agent, level}` format (consistent with Skills)
+  - User can choose User Level or Project Level per AI tool
+  - Project Level checked by default
+
+### Changed
+- **CLI**: Unified prompt format for Skills and Commands installation
+  - Both use multiSelect with per-tool User/Project level options
+  - `update` command now uses same prompts as `init` for consistency
+- **Documentation**: Slash commands synced with CLI terminology
+  - Adoption levels: Essential/Recommended/Enterprise → Starter/Professional/Complete
+  - Standards scope: Minimal/Full → Lean/Complete
+  - Content mode: Index → Standard
+  - Skills/Commands installation: Simple list → Per-tool multiSelect
+
+### Documentation
+- Updated `core/spec-driven-development.md` with Forward Derivation integration section
+- Updated AI YAML files for Forward Derivation and SDD standards
+
+## [3.5.1-beta.22] - 2026-01-19
+
+### Added
+- **CLI**: New `--debug` flag for `uds update` command
+  - Shows detailed debug output for Skills/Commands detection
+  - Helps diagnose why certain AI tools may not appear in installation prompts
+  - Outputs: aiTools list, declined features, config checks, installation status
+
+## [3.5.1-beta.21] - 2026-01-19
+
+### Fixed
+- **CLI**: Skills installation now works correctly with `--skills-location` option
+  - Bug fix: Changed property name from `location` to `level` to match `installSkillsToMultipleAgents` API
+  - Previously reported success but no files were created
+
+## [3.5.1-beta.20] - 2026-01-19
+
+### Added
+- **CLI**: New `--skills-location` option for `uds configure` command
+  - Allows specifying Skills installation level (project/user) in non-interactive mode
+  - Example: `uds configure --type skills --ai-tool opencode --skills-location user`
+
+### Changed
+- **Commands**: `/update` Step 4 rewritten with multi-stage AskUserQuestion flow
+  - Step 4a: Detect missing Skills
+  - Step 4b: Ask which AI tools to install (multiSelect)
+  - Step 4c: Ask installation location (project/user)
+  - Step 4d-e: Similar flow for Commands
+  - Addresses AskUserQuestion option limit (max 4) constraint
+
+### Documentation
+- **Commands**: `/config` command updated with `--skills-location` option examples
+
+## [3.5.1-beta.19] - 2026-01-19
+
+### Fixed
+- **Skills**: Sync slash commands with CLI behavior
+  - `/update`: Add declined features handling, outdated Skills update flow, project/user level selection, checkbox multi-select interface
+  - `/init`: Align step order with CLI (AI Tools → Skills → Commands → ...), expand to 9 AI tools, add missing configuration steps
+  - `/config`: Add skills/commands config types, `--ai-tool` option for non-interactive installation, declined features handling
+  - `/check`: Add Interactive mode documentation, Skills/Commands integrity checks, remove obsolete manual verification steps
+
+## [3.5.1-beta.18] - 2026-01-19
+
+### Added
+- **CLI**: Remember declined Skills/Commands choices
+  - New `declinedFeatures` field in manifest stores declined items
+  - `uds update` excludes previously declined Skills/Commands from prompts
+  - `uds configure` shows declined items with option to reinstall
+  - Supports both Skills and Commands tracking independently
+- **CLI**: Dynamic Marketplace installation detection
+  - `uds check` dynamically detects Marketplace Skills regardless of manifest
+  - `uds configure` shows Marketplace status in Skills configuration
+  - `uds update` shows "(already via Marketplace)" hint for Claude Code
+  - Default unchecked for file-based installation when Marketplace detected
+  - Adds coexistence note: file-based and Marketplace can work together
+
+## [3.5.1-beta.17] - 2026-01-18
+
+### Added
+- **CLI**: Smart apply feature for `uds config` command
+  - Auto-prompts to regenerate integration files after config changes
+  - New `--yes` flag for non-interactive config changes
+  - Extracted `regenerateIntegrations()` as reusable function from update.js
+- **CLI**: Auto-sync mechanism for E2E test specification
+  - New `npm run generate:e2e-spec` script generates E2E-TEST-CASES.md from test files
+  - `--check` mode for CI verification that spec is up-to-date
+  - Parses test files to extract describe/it blocks and CLI options
+- **CLI**: Enhanced file tracking system for Skills, Commands, and Integration blocks
+  - New `skillHashes` field in manifest tracks individual skill file integrity
+  - New `commandHashes` field in manifest tracks slash command file integrity
+  - New `integrationBlockHashes` field tracks UDS marker block content separately from user customizations
+  - `uds check` now verifies integrity of Skills, Commands, and Integration UDS blocks
+  - Users can modify content outside UDS markers without triggering warnings
+- **Utils**: New hash computation functions in `hasher.js`
+  - `computeIntegrationBlockHash()`: Computes hash for UDS marker block content only
+  - `compareIntegrationBlockHash()`: Compares block hash, detects if markers removed
+  - `computeDirectoryHashes()`: Recursively computes hashes for all files in directory
+- **Tests**: Comprehensive E2E test coverage
+  - 73 E2E tests across 6 commands (init, config, check, update, list, skills)
+  - E2E-TEST-CASES.md specification document with option coverage matrix
+
+### Changed
+- **CLI**: Manifest version upgraded to `3.3.0` to mark enhanced file tracking feature
+- **CLI**: `writeIntegrationFile()` now returns `blockHashInfo` with UDS block hash
+- **CLI**: `installSkillsForAgent()` and `installCommandsForAgent()` now return `fileHashes`
+- **CLI**: `installSkillsToMultipleAgents()` and `installCommandsToMultipleAgents()` aggregate hashes in `allFileHashes`
+
+### Fixed
+- **CLI**: Integration file path now returns relative path for manifest consistency
+- **CLI**: `uds check` now tracks all installed standards correctly
+
+## [3.5.1-beta.16] - 2026-01-16
+
+### Added
+- **Commands**: Add Skills verification diagnostics to `/check` command
+  - Shows actual directory contents for each AI tool
+  - Helps identify false positives in Skills installation reporting
+  - Add `Bash(ls:*)` to allowed-tools
+
+### Fixed
+- **Commands**: `/update` now shows specific version type (Alpha/Beta/RC)
+  - Option displays "更新至 Beta" instead of generic "更新至 Pre-release"
+  - Includes stability indicators (🔴🟡🟢) in descriptions
+
+## [3.5.1-beta.15] - 2026-01-16
+
+### Added
+- **Commands**: Add pre-release version types explanation to `/update` command
+  - New section explains alpha, beta, rc stability levels (🔴🟡🟢)
+  - Includes version comparison: `alpha < beta < rc < stable`
+  - Links to `core/versioning.md` for detailed standards
+
+## [3.5.1-beta.14] - 2026-01-16
+
+### Fixed
+- **Commands**: `/update` now shows correct version type in AskUserQuestion
+  - Stable versions show "latest stable version X.Y.Z"
+  - Pre-release versions show "pre-release version X.Y.Z-tag.N"
+  - Fixes misleading "stable version 3.5.1-beta.13" description
+
+## [3.5.1-beta.13] - 2026-01-16
+
+### Changed
+- **Commands**: Slash commands now use `AskUserQuestion` for interactive prompts
+  - `/update` Step 4: Asks user to select Skills/Commands installation options
+  - `/init` Step 3: Asks user to select AI tools for Skills/Commands installation
+  - Design principle: "CLI prompts should be mirrored in slash commands"
+
+### Added
+- **CLI**: New `--ai-tool` option for `uds configure` command
+  - Enables non-interactive Skills/Commands installation for specific tools
+  - Usage: `uds configure --type skills --ai-tool claude-code`
+  - Supports: claude-code, opencode, copilot, gemini-cli, roo-code, cursor, windsurf, cline, codex
+
+## [3.5.1-beta.12] - 2026-01-16
+
+### Changed
+- **Commands**: Update `/update` command documentation
+  - Reflects CLI's automatic Skills/Commands installation in Step 4
+  - Adds `uds configure` to allowed-tools for non-TTY fallback
+  - Documents checkbox multi-select interface for AI tool selection
+  - Provides `uds configure` commands for non-TTY environments
+
+## [3.5.1-beta.11] - 2026-01-16
+
+### Changed
+- **CLI**: `check` command is now read-only
+  - No longer prompts to install missing Skills/Commands
+  - Shows hint: "Run `uds update` to install missing Skills/Commands"
+  - Follows single responsibility principle: check reports, update installs
+
+### Removed
+- **CLI**: Removed installation prompt from `check` command
+  - `promptSkillsCommandsInstallation()` function removed
+  - Unused imports cleaned up
+
+## [3.5.1-beta.10] - 2026-01-16
+
+### Fixed
+- **Commands**: Quote `argument-hint` values in YAML frontmatter
+  - Fixes YAML parsing error in OpenCode and other strict YAML parsers
+  - Square brackets in values now properly quoted
+  - Affected 16 command files
+- **CLI**: Add TTY check before showing interactive prompts in check command
+  - Prevents "ERR_USE_AFTER_CLOSE: readline was closed" error
+  - Check command now only prompts when stdin/stdout are TTY
+  - Fixes crash when running from non-interactive environments (e.g., Claude Code skills)
+
+## [3.5.1-beta.9] - 2026-01-16
+
+### Changed
+- **CLI**: Skills/Commands installation now uses checkbox multi-select instead of yes/no
+  - `uds update`: Users can now select specific AI tools to install Skills/Commands for
+  - `uds check`: Added installation prompt for missing Skills/Commands after status display
+  - All options default to checked (opt-out behavior)
+  - Skip option available with validation
+
+### Added
+- **i18n**: New message keys for checkbox prompts in English, Traditional Chinese, and Simplified Chinese
+  - `selectSkillsToInstall`, `selectCommandsToInstall`
+  - `skipSkillsInstallation`, `skipCommandsInstallation`
+  - `skipValidationError`
+
+## [3.5.1-beta.8] - 2026-01-16
+
+### Fixed
+- **CLI**: Empty skills directory no longer detected as installed
+  - `getInstalledSkillsInfoForAgent` now checks for actual `SKILL.md` files
+  - `uds update` Step 4 correctly prompts to install Skills for OpenCode, GitHub Copilot, etc.
+  - Resolves issue where empty `.claude/skills/`, `.github/skills/`, `.opencode/skills/` directories were falsely reported as having skills installed
+
+### Added
+- **Tests**: 2 new unit tests for empty directory detection
+  - Tests empty skills directory returns `null`
+  - Tests skills directory with empty subdirectories returns `null`
+
+## [3.5.1-beta.7] - 2026-01-16
+
+### Fixed
+- **CLI**: Non-interactive mode (`--yes`) now correctly saves configuration to manifest
+  - `aiTools` field now populated with detected AI tools (was empty `[]`)
+  - `options` field now saves workflow, merge strategy, commit language, test levels (was all `null`)
+  - Commands auto-installed for agents that support file-based commands (opencode, copilot, etc.)
+
+### Added
+- **Docs**: Testing Workflow section in CLAUDE.md
+  - Documents when to run tests (development, pre-commit, pre-PR, CI/CD)
+  - Lists git hook automated checks
+  - Provides manual testing command reference
+- **Tests**: 11 new tests for non-interactive mode bug fixes
+  - 8 unit tests in `init.test.js`
+  - 3 E2E tests in `init-flow.test.js`
+
+## [3.5.1-beta.6] - 2026-01-16
+
+### Fixed
+- **CLI**: Skills and Commands now properly bundled in npm package
+  - Added `skills/` to `prepack.mjs` bundle directories
+  - `skills-installer.js` now prioritizes bundled path over development path
+  - Resolves issue where "Installed commands for X AI tools" showed success but directories were empty
+- **CLI**: Registered `--skills` and `--commands` options in update command
+  - Options were implemented in code but not exposed to users
+  - `uds update --skills` and `uds update --commands` now work correctly
+
+## [3.5.1-beta.5] - 2026-01-16
+
+### Changed
+- **Skills**: `/update` slash command now prompts for Skills/Commands installation
+  - Added Step 4 to check if Skills/Commands are installed after update
+  - Uses AskUserQuestion to prompt user for installation
+  - Ensures consistent behavior with CLI interactive mode
+
+## [3.5.1-beta.4] - 2026-01-16
+
+### Added
+- **CLI**: New feature detection during update
+  - `uds update` now detects AI tools in manifest that haven't installed Skills/Commands
+  - Interactive mode prompts users to install missing features
+  - `--yes` mode shows a hint instead of auto-installing (conservative behavior)
+  - Supports all skills-compatible tools: Claude Code, OpenCode, Cursor, Copilot, etc.
+
+## [3.5.1-beta.3] - 2026-01-16
+
+### Fixed
+- **CLI**: npm package now bundles standard files
+  - Added `prepack` script to bundle `core/` and `locales/` directories
+  - New `getSourcePath()` function prioritizes bundled files over GitHub download
+  - Resolves 404 errors when updating standards via npm-installed CLI
+  - Improved error messages for file download failures
+
+## [3.5.1-beta.2] - 2026-01-16
+
+### Added
+- **Scripts**: Documentation sync check for pre-release
+  - New `check-docs-sync.sh/.ps1` scripts
+  - Validates CHANGELOG.md has entry for current version
+  - Verifies version sync in plugin.json, marketplace.json, README.md
+  - Provides reminder list for docs that may need updating
+  - Pre-release check now runs 8 checks (7 with --skip-tests)
+
+### Removed
+- **Skills**: Deprecated installation scripts
+  - Removed `skills/install.sh` and `install.ps1`
+  - Removed `scripts/check-install-scripts-sync.sh` and `.ps1`
+  - Plugin Marketplace is now the primary installation method
+
+### Changed
+- **Docs**: Updated all documentation to use Plugin Marketplace installation
+  - Updated README.md (en, zh-TW, zh-CN)
+  - Updated all adoption guides and checklists
+  - Updated skills README files
+
+## [3.5.1-beta.1] - 2026-01-15
+
+### Added
+- **CLI**: Multi-Agent Skills Installation
+  - Support installing Skills to multiple AI agents simultaneously
+  - Checkbox selection for target agents (Claude Code, OpenCode, Cline, Roo Code, etc.)
+  - User-level and project-level installation paths for each agent
+- **CLI**: Gemini CLI TOML Command Conversion
+  - Auto-convert markdown commands to TOML format for Gemini CLI
+  - Support `{{args}}` placeholder for command arguments
+  - Proper TOML string escaping
+- **CLI**: Slash Commands Installation
+  - Install commands to agents that support them (OpenCode, Roo Code, Copilot, Gemini CLI)
+  - `uds update --skills` and `uds update --commands` options
+- **CLI**: Centralized AI Agent Path Configuration
+  - New `src/config/ai-agent-paths.js` module
+  - Unified path management for all 10 supported AI agents
+- **Tests**: Comprehensive unit tests
+  - `ai-agent-paths.test.js` (29 tests)
+  - `skills-installer.test.js` (23 tests)
+  - Total: 400 tests passing
+
+### Changed
+- **Docs**: Updated AI-AGENT-ROADMAP.md to v2.2.0
+  - Added Multi-Agent Installation and Gemini CLI TOML to Feature Enhancement Roadmap
+- **Docs**: Updated CLI-INIT-OPTIONS.md to v3.5.1
+  - New multi-agent Skills installation section
+  - Updated Skills paths table for all agents
+- **Docs**: Updated README.md
+  - New AI Tool Extensions table with Skills and Commands columns
+  - Added Multi-Agent Skills and Gemini CLI TOML to What's New
+
+## [3.5.0] - 2026-01-15
+
+### Added
+- **i18n**: Complete internationalization support
+  - Simplified Chinese (zh-CN) localization for all 18 core standards, 20+ skills, adoption guides
+  - CLI i18n: `--ui-lang` option (`en`, `zh-tw`, `zh-cn`, `auto`)
+  - All 6 CLI commands and 8 interactive prompts support 3 languages
+  - Environment variable detection (`LANG`, `LC_ALL`)
+- **Methodology System** `[Experimental]`: Development methodology support
+  - Built-in methodologies: TDD, BDD, SDD, ATDD
+  - YAML-based definitions with JSON Schema validation
+  - `/methodology`, `/tdd`, `/bdd` commands with phase tracking
+  - CLI integration in `uds init` and `uds configure` (requires `-E` flag)
+- **CLI**: Enhanced AI tool integration
+  - Support 9 AI tools: Claude Code, Cursor, Windsurf, Cline, GitHub Copilot, Google Antigravity, OpenAI Codex, Gemini CLI, OpenCode
+  - Content mode selection: `full`, `index` (recommended), `minimal`
+  - Auto-generate Standards Compliance Instructions and Standards Index
+- **CLI**: Enhanced commands
+  - `uds configure`: AI Tools, Adoption Level, Content Mode options
+  - `uds update`: `--integrations-only`, `--standards-only`, `--sync-refs`, `--beta` flags
+  - `uds check`: AI Tool Integration Status, Reference Sync Status, Marketplace Skills version detection
+  - `uds init/configure`: `-E, --experimental` flag for experimental features
+- **Skills**: New `/config` slash command for standards configuration
+- **Skills**: Interactive mode with AskUserQuestion for `/init`, `/config`, `/update`
+- **Core**: New `ai-instruction-standards.md` (18th core standard)
+- **Docs**: Windows PowerShell support for all adoption guides (33 files)
+- **Docs**: Comprehensive CLI init options guide (`docs/CLI-INIT-OPTIONS.md`)
+- **Docs**: Usage modes comparison (`docs/USAGE-MODES-COMPARISON.md`)
+- **Docs**: 18 human-readable markdown files for `options/` directory
+- **Docs**: LOCALIZATION-ROADMAP.md for future 10-language expansion
+- **Scripts**: Unified pre-release check (`scripts/pre-release-check.sh`)
+- **Scripts**: Standards consistency check (`scripts/check-standards-sync.sh`)
+- **Scripts**: Version sync check (`scripts/check-version-sync.sh`)
+- **CI**: Pre-release validation in GitHub Actions publish workflow
+
+### Changed
+- **CLI**: Manifest version upgraded to 3.2.0
+  - New `fileHashes` field for integrity checking
+  - New `integrationConfigs` field for integration settings
+- **CLI**: Improved interactive prompt descriptions with bilingual support
+- **CLI**: Integration files use index mode by default
+- **Skills**: Slash command descriptions simplified to English-only
+- **Skills**: Update install scripts to include methodology-system (16 skills total)
+
+### Fixed
+- **CLI**: Windows path separator issue in untracked file detection
+- **CLI**: `require()` error in ES Module (init.js)
+- **CLI**: Skills version detection showing stale version
+- **CLI**: Version mismatch in `standards-registry.json`
+- **CLI**: Missing AI tool detection (now detects all 9 tools)
+- **CLI**: Registry references for `.ai.yaml` files in Compact format
+
+### Removed
+- **CLI**: Untracked file scanning from `uds check`
+
+## [3.4.2] - 2026-01-08
+
+### Fixed
+- **Plugin**: Sync version numbers across all configuration files
+  - `.claude-plugin/plugin.json`: 3.3.0 → 3.4.2
+  - `.claude-plugin/marketplace.json`: 3.3.0 → 3.4.2
+  - `.claude-plugin/README.md`: 3.2.0 → 3.4.2
+  - `adoption/standards-registry.json`: 3.2.0 → 3.4.2
+- **Plugin**: Fix `adoption/standards-registry.json` still referencing deprecated `universal-dev-skills` repo
+  - Now correctly points to `skills` in main repository
+
+## [3.4.1] - 2026-01-08
+
+### Fixed
+- **CLI**: Fix `uds update` suggesting downgrade from newer versions
+  - Added proper semantic version comparison with prerelease support (alpha/beta/rc)
+  - Now correctly identifies when current version is newer than registry version
+  - Shows informative message when user has a newer version than the registry
+- **CLI**: Update `standards-registry.json` versions to match package.json
+
+## [3.4.0] - 2026-01-08
+
+### Added
+- **CLI**: Hash-based file integrity checking for `uds check`
+  - Detects modified files by comparing SHA-256 hashes
+  - New options: `--diff`, `--restore`, `--restore-missing`, `--no-interactive`, `--migrate`
+  - Interactive mode: prompts for action when issues detected (view diff, restore, keep, skip)
+  - Legacy manifest migration: `uds check --migrate` upgrades to hash-based tracking
+- **CLI**: File hashes stored in manifest (version 3.1.0)
+  - `uds init` computes and stores file hashes at installation
+  - `uds update` recomputes hashes after updating files
+- **Utils**: New `hasher.js` utility module for SHA-256 file hashing
+
+### Changed
+- **CLI**: Manifest version upgraded from 3.0.0 to 3.1.0
+  - New `fileHashes` field tracks file integrity
+  - Backward compatible with legacy manifests
+
+### Fixed
+- **CLI**: Fix `uds check` incorrectly showing "Skills marked as installed but not found" warning
+  - Now correctly recognizes Plugin Marketplace installation paths (`~/.claude/plugins/cache/`)
+- **CLI**: Fix `uds update` command failing with "undefined" errors
+  - Added missing `await` for async `copyStandard()` and `copyIntegration()` calls
+
+## [3.3.0] - 2026-01-08
+
+### Added
+- **Skills**: Add 9 slash commands for manual workflow triggers
+  - `/commit` - Generate conventional commit messages
+  - `/review` - Perform systematic code review
+  - `/release` - Guide through release process
+  - `/changelog` - Update CHANGELOG.md
+  - `/requirement` - Write user stories and requirements
+  - `/sdd` - Create specification documents
+  - `/tdd` - Test-Driven Development workflow
+  - `/docs` - Create/update documentation
+  - `/coverage` - Analyze test coverage
+- **Core**: Add Test-Driven Development (TDD) standard
+  - New `core/test-driven-development.md` covering Red-Green-Refactor cycle
+  - SDD + TDD integration workflow guidance
+- **Skills**: Add `tdd-assistant` skill for Claude Code (skill #15)
+
+### Changed
+- **Skills**: Simplify slash command format from `/uds:xxx` to `/xxx`
+  - Remove `uds:` namespace prefix for cleaner command invocation
+- **Plugin Marketplace**: Rename marketplace from `universal-dev-standards` to `asia-ostrich`
+  - New install command: `/plugin install universal-dev-standards@asia-ostrich`
+
+### Fixed
+- **CLI**: `uds skills` now prioritizes new `@asia-ostrich` marketplace
+- **CLI**: Add `tdd-assistant` to standards-registry.json
+
+### Migration
+If you installed via the old marketplace name, please migrate:
+
+```bash
+/plugin uninstall universal-dev-standards@universal-dev-standards
+/plugin install universal-dev-standards@asia-ostrich
+```
+
+## [3.3.0-beta.5] - 2026-01-07
+
+### Added
+- **Skills**: Add 9 slash commands for manual workflow triggers
+  - `/commit` - Generate conventional commit messages
+  - `/review` - Perform systematic code review
+  - `/release` - Guide through release process
+  - `/changelog` - Update CHANGELOG.md
+  - `/requirement` - Write user stories and requirements
+  - `/sdd` - Create specification documents
+  - `/tdd` - Test-Driven Development workflow
+  - `/docs` - Create/update documentation
+  - `/coverage` - Analyze test coverage
+  - Commands vs Skills: Commands are manually triggered (`/command`), Skills are automatic (context-based)
+
+### Fixed
+- **CLI**: `uds skills` now prioritizes new `@asia-ostrich` marketplace
+  - Adds migration notice when legacy `@universal-dev-standards` marketplace is detected
+  - Ensures compatibility during migration period
+
+## [3.3.0-beta.4] - 2026-01-07
+
+### Changed
+- **Plugin Marketplace**: Rename marketplace from `universal-dev-standards` to `asia-ostrich`
+  - New install command: `/plugin install universal-dev-standards@asia-ostrich`
+  - This provides better brand consistency with the AsiaOstrich organization
+
+### Migration
+If you installed via the old marketplace name, please migrate:
+
+```bash
+# 1. Uninstall old version
+/plugin uninstall universal-dev-standards@universal-dev-standards
+
+# 2. Install new version
+/plugin install universal-dev-standards@asia-ostrich
+```
+
+## [3.3.0-beta.3] - 2026-01-07
+
+### Fixed
+- **CLI**: Add `tdd-assistant` to standards-registry.json
+  - Add skill files list and standard entry for TDD
+  - `uds skills` now correctly shows 15/15 skills
+
+## [3.3.0-beta.2] - 2026-01-07
+
+### Added
+- **Core**: Add Test-Driven Development (TDD) standard
+  - New `core/test-driven-development.md` covering Red-Green-Refactor cycle, FIRST principles, TDD vs BDD vs ATDD
+  - SDD + TDD integration workflow guidance
+  - ML testing boundaries (model accuracy vs data engineering)
+  - Golden Master Testing for legacy systems
+- **Skills**: Add `tdd-assistant` skill for Claude Code (skill #15)
+  - `skills/tdd-assistant/SKILL.md` - TDD workflow guidance
+  - `skills/tdd-assistant/tdd-workflow.md` - Step-by-step TDD process
+  - `skills/tdd-assistant/language-examples.md` - 6 language examples (JS/TS, Python, C#, Go, Java, Ruby)
+  - Complete zh-TW translations for all TDD files
+
+### Changed
+- **Core Standards**: Update cross-references in related standards
+  - `spec-driven-development.md` - Add TDD integration reference
+  - `testing-standards.md` - Add TDD cross-reference
+  - `test-completeness-dimensions.md` - Add TDD cross-reference
+- **Release Workflow**: Expand pre-release checklist with comprehensive file verification
+  - Add Version Files Checklist with all version-related files
+  - Rename to Documentation Verification Checklist with accuracy verification
+  - Add Content Accuracy Verification section with grep commands
+  - Use `locales/*` pattern for all locale files
+
+## [3.2.2] - 2026-01-06
+
+### Added
+- **CLI**: Add `uds skills` command to list installed Claude Code skills
+  - Shows installations from Plugin Marketplace, user-level, and project-level
+  - Displays version, path, and skill count for each installation
+  - Warns about deprecated manual installations
+- **CLI**: Improve Skills update instructions based on installation location
+
+### Deprecated
+- **Skills**: Manual installation via `install.sh` / `install.ps1` is now deprecated
+  - Recommended: Use Plugin Marketplace for automatic updates
+  - Scripts will show deprecation warning and prompt for confirmation
+  - Will be removed in a future major version
+
+### Changed
+- **CLI**: `uds update` now shows deprecation warning for manual Skills installations
+  - Recommends migration to Plugin Marketplace
+- **Skills**: Update README.md to mark manual installation as deprecated
+
+### Fixed
+- **CLI**: Update standards-registry version to 3.2.2
+
+## [3.2.2-beta.2] - 2026-01-05
+
+### Added
+- **CLI**: Improve Skills update instructions based on installation location
+  - Marketplace: Guide to update via Plugin Marketplace UI
+  - User-level: `cd ~/.claude/skills/... && git pull`
+  - Project-level: `cd .claude/skills/... && git pull`
+
+### Fixed
+- **CLI**: Update standards-registry version to 3.2.2
+  - Enables `uds update` to detect new versions for existing projects
+
+## [3.2.2-beta.1] - 2026-01-05
+
+### Added
+- **Skills**: Add Release Workflow Guide for comprehensive release process
+  - New `skills/release-standards/release-workflow.md` with step-by-step release instructions
+  - Covers beta, alpha, rc, and stable release workflows
+  - Includes npm dist-tag strategy, troubleshooting, and AI assistant guidelines
+  - Add Release Process section in CLAUDE.md for AI assistants
+- **CLI**: Add conversation language setting to AI tool integrations
+  - All AI tool integration files now include conversation language directive
+  - Supports English, Traditional Chinese, and Bilingual modes
+  - Generates CLAUDE.md for Claude Code users with language setting
+- **CLI**: Add comprehensive tests for prompts and utils modules
+  - Test coverage improved from 42.78% to 72.7%
+  - Total tests increased from 94 to 210
+
+### Fixed
+- **CLI**: Only prompt Skills when Claude Code is the only selected AI tool
+  - Fixes bug where selecting multiple AI tools with Skills could cause other tools to miss full standards
+- **CI/CD**: Fix npm publish workflow to correctly tag beta/alpha/rc versions
+  - Add automatic version detection in `.github/workflows/publish.yml`
+  - Beta versions now publish with `@beta` tag instead of `@latest`
+  - Users can now install beta versions with `npm install -g universal-dev-standards@beta`
+
+### Changed
+- **Core Standards**: Add industry reference standards to 5 core documents
+  - `error-code-standards.md` v1.0.0 → v1.1.0: RFC 7807, RFC 9457, HTTP Status Codes
+  - `logging-standards.md` v1.0.0 → v1.1.0: OWASP Logging, RFC 5424, OpenTelemetry, 12 Factor App
+  - `code-review-checklist.md` v1.1.0 → v1.2.0: SWEBOK v4.0 Ch.10 (Software Quality)
+  - `checkin-standards.md` v1.2.5 → v1.3.0: SWEBOK v4.0 Ch.6 (Configuration Management)
+  - `spec-driven-development.md` v1.1.0 → v1.2.0: IEEE 830-1998, SWEBOK v4.0 Ch.1 (Requirements)
+- **Testing Standards**: Add SWEBOK v4.0 reference and new sections
+  - `testing-standards.md` v2.0.0 → v2.1.0: Testing Fundamentals, Test-Related Measures, Pairwise/Data Flow Testing
+- **Documentation**: Update MAINTENANCE.md with npm dist-tag strategy
+  - Add dist-tag table for different version patterns
+  - Add manual tag correction commands
+
+## [3.2.1-beta.1] - 2026-01-02
+
+### Added
+- **CLI**: Add Plugin Marketplace support to Skills installation flow
+  - New "Plugin Marketplace (Recommended)" option in Skills installation prompt
+  - CLI tracks marketplace-installed Skills in manifest without attempting local installation
+  - `uds check` command now displays marketplace installation status
+
+### Fixed
+- **CLI**: Fix wildcard path handling in standards registry causing 404 errors
+  - Replace `templates/requirement-*.md` wildcard with explicit file paths
+  - Add explicit entries for requirement-checklist.md, requirement-template.md, requirement-document-template.md
+- **CLI**: Fix process hanging after `uds init`, `uds configure`, and `uds update` commands
+  - Add explicit `process.exit(0)` to prevent inquirer readline interface from blocking termination
+
+## [3.2.0] - 2026-01-02
+
+### Added
+- **Claude Code Plugin Marketplace Support**: Enable distribution via Plugin Marketplace
+  - Add `.claude-plugin/plugin.json` - Plugin manifest with metadata
+  - Add `.claude-plugin/marketplace.json` - Marketplace configuration for plugin distribution
+  - Add `.claude-plugin/README.md` - Plugin documentation and maintenance guide
+  - Update `skills/README.md` with Method 1: Marketplace Installation (Recommended)
+
+### Benefits
+- Users can install all 14 skills with a single command: `/plugin install universal-dev-standards@universal-dev-standards`
+- Automatic updates when new versions are released
+- Better discoverability through Claude Code marketplace
+- Maintains backward compatibility with script installation (Method 2 and 3)
+
+### Changed
+- Add conversation language requirement (Traditional Chinese) to `CLAUDE.md` for AI assistants
+
+### Fixed
+- Fix CLI version reading to use `package.json` instead of hardcoded value
+
+## [3.1.0] - 2025-12-30
+
+### Added
+- **Simplified Chinese (zh-CN) Translation**: Complete localization for Simplified Chinese users
+  - Add `locales/zh-CN/README.md` - Full README translation
+  - Add `locales/zh-CN/CLAUDE.md` - Project guidelines translation
+  - Add `locales/zh-CN/docs/WINDOWS-GUIDE.md` - Windows guide translation
+- Add language switcher links across all README versions (EN, zh-TW, zh-CN)
+
+- **Full Windows Support**: Complete cross-platform compatibility for Windows users
+  - Add `.gitattributes` for consistent line endings across platforms
+  - Add `scripts/check-translation-sync.ps1` - PowerShell version of translation checker
+  - Add `skills/install.ps1` - PowerShell version of skills installer
+  - Add `scripts/setup-husky.js` - Cross-platform Husky setup script
+  - Add `docs/WINDOWS-GUIDE.md` - Comprehensive Windows development guide
+- **5 New Claude Code Skills**: Expand skill library from 9 to 14 skills
+  - `spec-driven-dev` - SDD workflow guidance (triggers: spec, proposal)
+  - `test-coverage-assistant` - 7-dimension test completeness framework (triggers: test coverage, dimensions)
+  - `changelog-guide` - Changelog writing standards (triggers: changelog, release notes)
+  - `error-code-guide` - Error code design patterns (triggers: error code)
+  - `logging-guide` - Structured logging standards (triggers: logging, log level)
+- Add **Hybrid Standards** category to `STATIC-DYNAMIC-GUIDE.md` - Standards with both static and dynamic components
+- Add **Dynamic vs Static Classification** section to `MAINTENANCE.md` - Guidelines for categorizing standards
+- Add `checkin-standards` core rules to `CLAUDE.md` as static standard
+- Add complete zh-TW translations for all 5 new skills (10 files total)
+
+### Changed
+- Update `cli/package.json` prepare script to use cross-platform `setup-husky.js`
+- Update `README.md`, `cli/README.md`, `CLAUDE.md` with Windows installation instructions
+- Update `STATIC-DYNAMIC-GUIDE.md` to v1.1.0 - Introduce Hybrid Standards concept, update to 14 skills
+- Update `MAINTENANCE.md` - Add cross-reference to `STATIC-DYNAMIC-GUIDE.md`, expand Workflow 4 with classification checklist
+- Update skills table in `MAINTENANCE.md` from 9 to 14 skills (35 skill files + 10 shared/README = 45 files)
+- Sync zh-TW translations for `MAINTENANCE.md` and `STATIC-DYNAMIC-GUIDE.md`
+
+## [3.0.0] - 2025-12-30
+
+### Added
+- **AI-Optimized Standards Architecture**: Add dual-format support with `.ai.yaml` files
+- Add `ai/standards/` directory with 15 AI-optimized standard files
+- Add `ai/options/` directory with language-specific and workflow options
+- Add `MAINTENANCE.md` - Project maintenance guide with file structure overview
+- Add `ai/MAINTENANCE.md` - AI standards maintenance workflow guide
+- Add `STANDARDS-MAPPING.md` - Standards to skills mapping matrix
+- Add 6 new AI-optimized standards:
+  - `anti-hallucination.ai.yaml` - AI collaboration standards
+  - `checkin-standards.ai.yaml` - Code check-in standards
+  - `documentation-writing-standards.ai.yaml` - Documentation writing guide
+  - `spec-driven-development.ai.yaml` - SDD workflow
+  - `test-completeness-dimensions.ai.yaml` - 7-dimension test framework
+  - `versioning.ai.yaml` - Semantic versioning standards
+- Add complete zh-TW translations for all new standards and skills (78 files total)
+
+### Changed
+- Standardize version format in core standards to `**Version**: x.x.x`
+- Add `source` field to all zh-TW translation YAML front matter for sync tracking
+- Update translation sync script with improved validation
+
+### Fixed
+- Fix version format inconsistency in `core/error-code-standards.md` and `core/logging-standards.md`
+- Fix source paths in zh-TW skills translations
+
+## [2.3.0] - 2025-12-25
+
+### Added
+- **Multilingual Support**: Add `locales/` directory structure for internationalization
+- Add Traditional Chinese (zh-TW) translations for all documentation (44 files)
+  - `locales/zh-TW/core/` - 13 core standard translations
+  - `locales/zh-TW/skills/` - 25 skill file translations
+  - `locales/zh-TW/adoption/` - 5 adoption guide translations
+  - `locales/zh-TW/README.md` - Complete Chinese README
+- Add language switcher to all English documentation files
+- Add `scripts/check-translation-sync.sh` - Translation synchronization checker
+- Add Static vs Dynamic standards classification to Skills documentation
+- Add `templates/CLAUDE.md.template` - Ready-to-use template for static standards
+- Add `adoption/STATIC-DYNAMIC-GUIDE.md` - Detailed classification guide
+
+### Changed
+- Separate bilingual content into dedicated language files (~50% token reduction for AI tools)
+- English versions now contain English-only content with language switcher
+- Update `skills/README.md` - Add Static vs Dynamic section with trigger keywords
+
+## [2.2.0] - 2025-12-24
+
+### Added
+- Add standard sections to all Skills documentation (23 files)
+  - 8 SKILL.md files: Added Purpose, Related Standards, Version History, License sections
+  - 15 supporting docs: Added bilingual titles, metadata, and standard sections
+
+### Changed
+- Align Skills documentation format with Core standards
+- Add cross-references between Skills and Core documents
+
+## [2.1.0] - 2025-12-24
+
+### Added
+- **Integrated Skills**: Merge `universal-dev-skills` into `skills/` directory
+- Add `skills/` - All Claude Code Skills now included in main repo
+- Add `skills/_shared/` - Shared templates for multi-AI tool support
+- Add placeholder directories for future AI tools: `skills/cursor/`, `skills/windsurf/`, `skills/cline/`, `skills/copilot/`
+
+### Changed
+- CLI now installs skills from local `skills/` instead of fetching from remote repository
+- Update `standards-registry.json` to reflect integrated skills architecture
+
+### Migration Guide
+- If you previously used `universal-dev-skills` separately, you can now use the skills included in this repo
+- Run `cd skills && ./install.sh` to reinstall skills from the integrated location
+
+## [2.0.0] - 2025-12-24
+
+### Changed
+
+**BREAKING CHANGE**: Project renamed from `universal-doc-standards` to `universal-dev-standards`
+
+This reflects the project's expanded scope covering all development standards, not just documentation.
+
+#### Migration Guide
+
+- Re-clone from the new repository: `git clone https://github.com/AsiaOstrich/universal-dev-standards.git`
+- Re-run `npm link` in the CLI directory if using global installation
+- Use `npx universal-dev-standards` instead of `npx universal-doc-standards`
+- The `uds` command remains unchanged
+
+### Added
+- Add `extensions/languages/php-style.md` - PHP 8.1+ coding style guide based on PSR-12
+- Add `extensions/frameworks/fat-free-patterns.md` - Fat-Free Framework v3.8+ development patterns
+
+## [1.3.1] - 2025-12-19
+
+### Added
+- Add Mock Limitations section to `testing-standards.md` - Guidelines for when mocks require integration tests
+- Add Test Data Management patterns to `testing-standards.md` - Distinct identifiers and composite key guidelines
+- Add "When Integration Tests Are Required" table to `testing-standards.md` - 6 scenarios requiring integration tests
+
+## [1.3.0] - 2025-12-16
+
+### Added
+- Add `changelog-standards.md` - Comprehensive changelog writing guide
+- Add decision tree and selection matrix to `git-workflow.md` for workflow strategy selection
+- Add language selection guide to `commit-message-guide.md` for choosing commit message language
+
+### Changed
+- Update `versioning.md` - Add cross-reference to changelog-standards.md
+- Update `git-workflow.md` - Add CHANGELOG update guidance in release preparation
+- Update `zh-tw.md` - Add terminology for Changelog, Release Notes, Breaking Change, Deprecate, Semantic Versioning
+- Update `changelog-standards.md` - Align exclusion rules with versioning.md, add cross-reference
+- Update `checkin-standards.md` - Clarify CHANGELOG updates apply to user-facing changes only
+- Update `code-review-checklist.md` - Align CHANGELOG section with changelog-standards.md
+
+### Fixed
+- Fix inconsistent header format in `commit-message-guide.md` and `documentation-writing-standards.md`
+- Standardize cross-references to use markdown link format instead of backticks
+
+## [1.2.0] - 2025-12-11
+
+### Added
+- Add `project-structure.md` - Project directory conventions
+- Add Physical DFD layer to `documentation-structure.md`
+
+### Changed
+- Update `documentation-structure.md` - Clarify flows/diagrams separation, improve file naming conventions
+- Update `checkin-standards.md` - Add directory hygiene guidelines
+- Improve universality by replacing project-specific examples with generic placeholders
+
+## [1.1.0] - 2025-12-05
+
+### Added
+- Add `testing-standards.md` - Comprehensive testing pyramid (UT/IT/ST/E2E)
+- Add `documentation-writing-standards.md` - Documentation content requirements
+
+### Changed
+- Update `anti-hallucination.md` - Enhance source attribution guidelines
+- Update `zh-tw.md` - Sync with commit-message-guide.md v1.2.0
+
+## [1.0.0] - 2025-11-12
+
+### Added
+- Initial release with core standards
+- Core standards: `anti-hallucination.md`, `checkin-standards.md`, `commit-message-guide.md`, `git-workflow.md`, `code-review-checklist.md`, `versioning.md`, `documentation-structure.md`
+- Extensions: `csharp-style.md`, `zh-tw.md`
+- Templates: Requirement document templates
+- Integrations: OpenSpec framework
+
+[Unreleased]: https://github.com/AsiaOstrich/universal-dev-standards/compare/v6.0.0...HEAD
+[6.0.0]: https://github.com/AsiaOstrich/universal-dev-standards/compare/v5.17.0...v6.0.0
+[5.7.2]: https://github.com/AsiaOstrich/universal-dev-standards/compare/v5.7.1...v5.7.2
+[5.7.1]: https://github.com/AsiaOstrich/universal-dev-standards/compare/v5.7.0...v5.7.1
+[5.7.0]: https://github.com/AsiaOstrich/universal-dev-standards/compare/v5.6.0...v5.7.0
+[4.3.0-alpha.1]: https://github.com/AsiaOstrich/universal-dev-standards/compare/v4.2.0...v4.3.0-alpha.1
+[4.2.0]: https://github.com/AsiaOstrich/universal-dev-standards/compare/v4.1.0...v4.2.0
+[4.1.0]: https://github.com/AsiaOstrich/universal-dev-standards/compare/v4.0.0...v4.1.0
+[4.0.0]: https://github.com/AsiaOstrich/universal-dev-standards/compare/v3.5.0...v4.0.0
+[3.5.0]: https://github.com/AsiaOstrich/universal-dev-standards/compare/v3.4.0...v3.5.0
+[3.4.0]: https://github.com/AsiaOstrich/universal-dev-standards/compare/v3.3.0...v3.4.0
+[3.0.0]: https://github.com/AsiaOstrich/universal-dev-standards/compare/v2.3.0...v3.0.0
+[2.3.0]: https://github.com/AsiaOstrich/universal-dev-standards/compare/v2.2.0...v2.3.0
+[2.2.0]: https://github.com/AsiaOstrich/universal-dev-standards/compare/v2.1.0...v2.2.0
+[2.1.0]: https://github.com/AsiaOstrich/universal-dev-standards/compare/v2.0.0...v2.1.0
+[2.0.0]: https://github.com/AsiaOstrich/universal-dev-standards/compare/v1.3.1...v2.0.0
+[1.3.1]: https://github.com/AsiaOstrich/universal-dev-standards/compare/v1.3.0...v1.3.1
+[1.3.0]: https://github.com/AsiaOstrich/universal-dev-standards/compare/v1.2.0...v1.3.0
+[1.2.0]: https://github.com/AsiaOstrich/universal-dev-standards/compare/v1.1.0...v1.2.0
+[1.1.0]: https://github.com/AsiaOstrich/universal-dev-standards/compare/v1.0.0...v1.1.0
+[1.0.0]: https://github.com/AsiaOstrich/universal-dev-standards/releases/tag/v1.0.0

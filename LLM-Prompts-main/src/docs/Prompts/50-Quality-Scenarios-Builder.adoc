@@ -1,0 +1,10 @@
+:jbake-title: Quality Scenarios Builder
+
+== Quality Scenarios Builder
+
+ifndef::projectRootDir[:projectRootDir: ../../..]
+
+[source, markdown]
+----
+include::{projectRootDir}/prompts/Quality-Scenarios-Builder.md[]
+----

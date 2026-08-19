@@ -1,0 +1,78 @@
+---
+source: ../../../../skills/project-discovery/SKILL.md
+source_version: 1.0.0
+translation_version: 1.0.0
+last_synced: 2026-02-10
+status: current
+description: "[UDS] 在既有程式碼庫新增功能前的 Phase 0 評估，評估專案健康度與風險"
+name: discover
+allowed-tools: Read, Grep, Glob, Bash(npm test:*), Bash(npm audit:*), Bash(npm outdated:*)
+scope: universal
+argument-hint: "[feature area | 功能範圍]"
+disable-model-invocation: true
+---
+
+# 專案現況評估
+
+> **語言**: [English](../../../../skills/project-discovery/SKILL.md) | 繁體中文
+
+在既有程式碼庫新增功能前的 Phase 0 評估。評估專案健康度、架構與風險。
+
+## 評估維度
+
+| 維度 | 檢查項目 |
+|------|----------|
+| **架構** | 模組結構、相依圖、進入點 |
+| **相依套件** | 過時套件、已知漏洞、授權風險 |
+| **測試覆蓋率** | 現有測試、覆蓋率缺口、測試品質 |
+| **安全性** | `npm audit` 結果、硬編碼密鑰、暴露端點 |
+| **技術債** | TODO 標記、程式碼重複、複雜度熱點 |
+
+## 工作流程
+
+1. **掃描專案** - 讀取 package.json、目錄結構、設定檔
+2. **分析架構** - 繪製模組、相依性和資料流圖
+3. **檢查相依套件** - 執行 `npm outdated`、`npm audit` 取得健康信號
+4. **評估風險** - 識別複雜度熱點、缺失測試、安全問題
+5. **產生報告** - 輸出健康分數與可執行的建議
+
+## 輸出格式
+
+```
+專案健康報告
+=====================
+總分：7.2 / 10
+
+| 維度           | 分數  | 狀態    | 主要發現                |
+|----------------|-------|---------|------------------------|
+| 架構           | 8/10  | 良好    | 模組邊界清晰            |
+| 相依套件       | 6/10  | 警告    | 5 個過時、1 個重大問題   |
+| 測試覆蓋率     | 7/10  | 尚可    | 72% 行覆蓋率            |
+| 安全性         | 8/10  | 良好    | 無重大漏洞              |
+| 技術債         | 6/10  | 警告    | 23 個 TODO、3 個熱點    |
+
+建議：
+1. [高] 更新 lodash 以修復 CVE-2024-XXXX
+2. [中] 為 src/payments/ 新增測試（0% 覆蓋率）
+3. [低] 解決 src/utils/ 中的 TODO 積壓
+```
+
+## 使用方式
+
+- `/discover` - 完整專案健康度評估
+- `/discover auth` - 針對 auth 相關模組進行評估
+- `/discover payments` - 在新增支付功能前評估風險
+
+## 下一步引導
+
+`/discover` 完成後，AI 助手應根據評估結果建議：
+
+> **根據評估結果，建議下一步：**
+> - **新功能** → 執行 `/sdd` 建立規格
+> - **遺留程式碼** → 執行 `/reverse spec` 提取現有行為
+> - **重構** → 執行 `/refactor decide` 選擇策略
+> - **快速修復** → 執行 `/tdd` 撰寫針對性測試並修復
+
+## 參考
+
+- 詳細指南：[guide.md](./guide.md)

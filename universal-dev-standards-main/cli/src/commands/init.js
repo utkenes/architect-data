@@ -1,0 +1,651 @@
+import chalk from 'chalk';
+import ora from 'ora';
+import { execSync } from 'child_process';
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'fs';
+import { basename, join } from 'path';
+import {
+  manifestExists as isInitialized
+} from '../core/manifest.js';
+import { t, detectLanguage } from '../i18n/messages.js';
+import { detectAll } from '../utils/detector.js';
+import { promptConfirm } from '../prompts/init.js';
+import { runInitFlow } from '../flows/init-flow.js';
+import { installStandards } from '../installers/standards-installer.js';
+import { installIntegrations, generateUniversalAgentsMd } from '../installers/integration-installer.js';
+import { installSkills, installCommands } from '../installers/skills-installer.js';
+import { writeFinalManifest } from '../installers/manifest-installer.js';
+import {
+  getInstalledSkillsInfo,
+  getProjectInstalledSkillsInfo,
+  getAgentConfig,
+  getAgentDisplayName
+} from '../utils/github.js';
+import { displayLanguageToLocale } from '../utils/locale.js';
+import { generateReleaseConfig, RELEASE_MODE_LABELS } from '../utils/release-config.js';
+import { guardAgainstSelfAdoption } from '../utils/detect-self-adoption.js';
+import { readInstallYaml } from '../utils/config-manager.js';
+import { getToolFilePath } from '../utils/integration-generator.js';
+import { withFileTransaction } from '../utils/transaction.js';
+
+/**
+ * Init command - initialize standards in current project
+ * @param {Object} options - Command options
+ */
+export async function initCommand(options) {
+  const projectPath = process.cwd();
+  let msg = t().commands.init;
+  let common = t().commands.common;
+
+  // Refuse to run inside the UDS source repo itself.
+  // See DEC-044 / XSPEC-071 — UDS source repo already ships its standards;
+  // running `uds init` here is nonsensical. `--force` bypasses.
+  guardAgainstSelfAdoption('init', options, projectPath);
+
+  console.log();
+  console.log(chalk.bold(msg.title));
+  console.log(chalk.gray('─'.repeat(50)));
+
+  // STEP 1: Check if already initialized
+  if (isInitialized(projectPath)) {
+    console.log(chalk.yellow(msg.alreadyInitialized));
+    console.log(chalk.gray(`  ${msg.useUpdateOrDelete}`));
+    return;
+  }
+
+  // STEP 2: Detect project characteristics
+  const spinner = ora(msg.detectingProject).start();
+  const detected = detectAll(projectPath);
+  spinner.succeed(msg.analysisComplete);
+
+  // Show detected info
+  const detectedLangs = Object.entries(detected.languages).filter(([, v]) => v).map(([k]) => k);
+  const detectedFrameworks = Object.entries(detected.frameworks).filter(([, v]) => v).map(([k]) => k);
+  const detectedTools = Object.entries(detected.aiTools).filter(([, v]) => v).map(([k]) => k);
+
+  if (detectedLangs.length > 0) console.log(chalk.gray(`  ${msg.languages}: ${detectedLangs.join(', ')}`));
+  if (detectedFrameworks.length > 0) console.log(chalk.gray(`  ${msg.frameworks}: ${detectedFrameworks.join(', ')}`));
+  if (detectedTools.length > 0) console.log(chalk.gray(`  ${msg.aiTools}: ${detectedTools.join(', ')}`));
+  console.log();
+
+  // Configuration object
+  let config;
+
+  if (!options.yes) {
+    // Interactive Mode
+    config = await runInitFlow(options, detected, projectPath);
+    if (!config) return; // Flow cancelled or exited
+    // Re-fetch translations after language selection in flow
+    msg = t().commands.init;
+    common = t().commands.common;
+  } else {
+    // Non-interactive Mode (Defaults/Flags)
+    config = buildNonInteractiveConfig(options, detected, projectPath);
+  }
+
+  // Show Configuration Summary
+  displaySummary(config, msg, common);
+
+  // Confirm Installation
+  if (!options.yes) {
+    const confirmed = await promptConfirm(msg.proceedInstall);
+    if (!confirmed) {
+      console.log(chalk.yellow(msg.installCancelled));
+      return;
+    }
+  }
+
+  // ===== Execute Installation (transactional — T11 / XSPEC-292 §9.2) =====
+  console.log();
+
+  // Files/dirs `init` owns and must tear down if the install fails partway.
+  // `.standards/` (and release-config.yaml beneath it) plus the per-tool
+  // integration files at the project root. Skills/commands install into shared
+  // agent dirs (e.g. ~/.claude/skills, .opencode/) that may already hold
+  // unrelated content, so they are intentionally NOT tracked here — re-running
+  // `uds init` re-installs them idempotently.
+  const ownedPaths = [join(projectPath, '.standards')];
+  for (const tool of (config.integrations || config.aiTools || [])) {
+    const file = getToolFilePath(tool);
+    if (file) ownedPaths.push(join(projectPath, file));
+  }
+  if (config.generateAgentsMd) ownedPaths.push(join(projectPath, 'AGENTS.md'));
+
+  let combinedResults;
+  // Captured inside apply() so the catch block can report which installers
+  // failed even though the verification error itself is generic.
+  let installErrors = [];
+  try {
+    const tx = await withFileTransaction(
+      ownedPaths,
+      {
+        apply: async () => {
+          // 1. Install Standards
+          const standardsResults = await installStandards(config, projectPath);
+          config.installedStandards = standardsResults.standards.map(s => basename(s));
+
+          // 1.5. Generate release-config.yaml if non-default mode selected
+          if (config.releaseMode && config.releaseMode !== 'ci-cd') {
+            const releaseConfigData = generateReleaseConfig(config.releaseMode);
+            const releaseConfigPath = join(projectPath, '.standards', 'release-config.yaml');
+            const yaml = (await import('js-yaml')).default;
+            mkdirSync(join(projectPath, '.standards'), { recursive: true });
+            writeFileSync(releaseConfigPath, yaml.dump(releaseConfigData), 'utf-8');
+            console.log(chalk.green(`  ✓ release-config.yaml (${config.releaseMode})`));
+          }
+
+          // 2. Install Integrations
+          const integrationResults = await installIntegrations(config, projectPath);
+
+          // 2.5. Generate universal AGENTS.md if requested
+          const agentsMdResult = await generateUniversalAgentsMd(config, integrationResults, projectPath);
+          if (agentsMdResult.path) {
+            integrationResults.integrations.push(agentsMdResult.path);
+            if (agentsMdResult.blockHashInfo) {
+              integrationResults.integrationBlockHashes[agentsMdResult.path] = {
+                ...agentsMdResult.blockHashInfo,
+                installedAt: new Date().toISOString()
+              };
+            }
+          }
+
+          // 3. Install Skills & Commands
+          const skillsResults = {
+            skills: [],
+            commands: [],
+            errors: [],
+            skillHashes: {},
+            commandHashes: {}
+          };
+          await installSkills(config.skillsConfig, projectPath, msg, skillsResults);
+          await installCommands(config.skillsConfig, projectPath, msg, skillsResults);
+
+          // Combine results
+          installErrors = [
+            ...standardsResults.errors,
+            ...integrationResults.errors,
+            ...skillsResults.errors
+          ];
+          return {
+            standards: standardsResults.standards,
+            extensions: standardsResults.extensions,
+            integrations: integrationResults.integrations,
+            skills: skillsResults.skills,
+            commands: skillsResults.commands,
+            errors: installErrors,
+            fileHashes: standardsResults.fileHashes,
+            skillHashes: skillsResults.skillHashes,
+            commandHashes: skillsResults.commandHashes,
+            integrationBlockHashes: integrationResults.integrationBlockHashes,
+            manifestIntegrationConfigs: integrationResults.manifestIntegrationConfigs
+          };
+        },
+        // A half-installed project must never be committed: if any installer
+        // reported an error, fail verification → roll back → no manifest written.
+        verify: (results) => results.errors.length === 0
+      },
+      { label: 'uds init' }
+    );
+    combinedResults = tx.result;
+  } catch (err) {
+    console.log();
+    console.log(chalk.red(
+      (msg.installFailed || 'Installation failed and was rolled back: {error}')
+        .replace('{error}', err.message)
+    ));
+    for (const e of installErrors) {
+      console.log(chalk.gray(`    ${e}`));
+    }
+    if (err.rolledBack === false) {
+      console.log(chalk.yellow(
+        (msg.rollbackFailed || 'Rollback also failed: {error}. Manual cleanup may be required.')
+          .replace('{error}', err.rollbackError?.message || 'unknown')
+      ));
+    }
+    process.exit(1);
+    return;
+  }
+
+  // 4. Write Manifest & Display Summary (commit point — only reached when the
+  //    install verified clean; this is the "initialized" marker for the project)
+  writeFinalManifest(config, combinedResults, projectPath);
+
+  // 4.5. Generate layered CLAUDE.md (if --content-layout layered)
+  if (config.contentLayout === 'layered') {
+    const { generateLayeredClaudeMd } = await import('../generators/layered-claudemd.js');
+    const layeredResult = generateLayeredClaudeMd(projectPath);
+    if (layeredResult.fallback) {
+      console.log(chalk.yellow('  ⚠ No matchable subdirectories found, using flat mode'));
+    } else {
+      console.log(chalk.green(`  ✓ Layered CLAUDE.md generated (${layeredResult.generatedFiles.length} files)`));
+    }
+  }
+
+  // 4.6. Install enforcement hooks (if --with-hooks)
+  if (config.withHooks) {
+    const { installHooks } = await import('../installers/hooks-installer.js');
+    const hookResult = installHooks(projectPath);
+    if (hookResult.installed) {
+      console.log(chalk.green(`  ✓ Enforcement hooks installed (${hookResult.scriptsCount} scripts)`));
+    }
+  }
+
+  // 5. Setup Pre-commit Hook
+  await setupHuskyHook(projectPath);
+
+  process.exit(0);
+}
+
+/**
+ * Configure pre-commit hook (language-aware)
+ * - Node.js projects: use husky
+ * - Non-Node.js projects: write native .git/hooks/pre-commit
+ */
+export async function setupHuskyHook(projectPath, { allowInTest = false } = {}) {
+  // 2026-07-30：本函式在跑測試時改寫了 universal-dev-standards 自己
+  // ——`npm install --save-dev husky`、改 package.json、建 .husky/pre-commit。
+  //
+  // 路徑是：測試呼叫 `initCommand({...})`（三個 init 測試檔都沒帶路徑、
+  // 也沒 mock child_process）→ `init.js` 取 `process.cwd()` → 走到這裡。
+  // 而下面那個 `.git` 是唯一的守衛，它只問「cwd 是不是一個 repo」：
+  //   從 `cli/` 跑 → cwd 沒有 .git → 提早 return，無害；
+  //   從 repo root 跑 → cwd **有** .git → 照跑，動到開發者自己的 repo。
+  // 同一批測試、不同 cwd，一個無害一個會寫檔。
+  //
+  // 守衛用顯式 opt-in 而非「偵測到測試就一律跳過」：`init.husky.test.js` 有十幾條
+  // 測試是**刻意**在暫存目錄裡驗這個函式的行為，一律跳過會把它們變成永遠通過的空測試。
+  if (process.env.VITEST && !allowInTest) return;
+
+  const hasGit = existsSync(join(projectPath, '.git'));
+  if (!hasGit) return;
+
+  const isNodeProject = existsSync(join(projectPath, 'package.json'));
+
+  if (isNodeProject) {
+    console.log(chalk.cyan('Configuring Pre-commit Hook (Husky)...'));
+
+    // Every edit we make to the adopter's package.json, reported at the end.
+    // `uds init` writes ~70 files; a one-line change to package.json is invisible
+    // in that diff unless we say it out loud (XSPEC-341 R1).
+    const pkgChanges = [];
+
+    // 1. Install husky if needed
+    try {
+      const pkgPath = join(projectPath, 'package.json');
+      const pkg = JSON.parse(readFileSync(pkgPath, 'utf-8'));
+      const hasHusky = pkg.devDependencies?.husky || pkg.dependencies?.husky;
+
+      if (!hasHusky) {
+        console.log(chalk.gray('  Installing husky...'));
+        // stdio: 'pipe' rather than 'ignore' — the error text belongs in the
+        // message below, not in /dev/null.
+        execSync('npm install --save-dev husky', { stdio: 'pipe', cwd: projectPath });
+        pkgChanges.push('devDependencies.husky — added');
+      }
+    } catch (e) {
+      console.log(chalk.yellow(`  ⚠ Failed to check/install husky: ${e.message}`));
+      return;
+    }
+
+    // 2. Wire husky's `prepare` script ourselves.
+    //
+    // We deliberately do NOT run `npx husky init` (XSPEC-341 R1). That command is a
+    // one-time bootstrap for a NEW project, not an idempotent operation: it sets
+    // `"prepare": "husky"` unconditionally, destroying whatever was there. For a
+    // published package whose `prepare` is its build step — `"prepare": "tsup"` with
+    // no prepack/prepublishOnly and `files: ["dist"]` — that silently breaks the next
+    // `npm publish`, and the failure surfaces at release time, far from this command.
+    // (It also seeds .husky/pre-commit with `npm test`, a gate the adopter never asked
+    // for.) Adopting a standards library must never rewrite the adopter's build.
+    const huskyDir = join(projectPath, '.husky');
+    try {
+      const pkgPath = join(projectPath, 'package.json');
+      const raw = readFileSync(pkgPath, 'utf-8');
+      const pkg = JSON.parse(raw);
+      pkg.scripts = pkg.scripts || {};
+      const existing = pkg.scripts.prepare;
+
+      if (!existing) {
+        pkg.scripts.prepare = 'husky';
+        pkgChanges.push('scripts.prepare — added: "husky"');
+      } else if (!/\bhusky\b/.test(existing)) {
+        // Chain, never clobber. The adopter's command runs first and keeps its
+        // exit code meaningful.
+        pkg.scripts.prepare = `${existing} && husky`;
+        pkgChanges.push(`scripts.prepare — "${existing}" → "${pkg.scripts.prepare}"`);
+      }
+
+      if (pkg.scripts.prepare !== existing) {
+        // Preserve the file's trailing newline convention.
+        const indent = raw.match(/^\{\n(\s+)"/)?.[1]?.length ?? 2;
+        writeFileSync(pkgPath, JSON.stringify(pkg, null, indent) + (raw.endsWith('\n') ? '\n' : ''), 'utf-8');
+      }
+    } catch (e) {
+      console.log(chalk.yellow(`  ⚠ Failed to configure the prepare script: ${e.message}`));
+    }
+
+    // 3. Ensure .husky directory exists
+    if (!existsSync(huskyDir)) {
+      try {
+        mkdirSync(huskyDir, { recursive: true });
+      } catch (e) {
+        console.log(chalk.red(`  ✗ Failed to create .husky directory: ${e.message}`));
+        return;
+      }
+    }
+
+    // 4. Add pre-commit hook
+    const preCommitPath = join(huskyDir, 'pre-commit');
+    const udsCmd = 'npx uds check';
+
+    try {
+      // husky v9 hooks are plain shell scripts: no shebang, no `_/husky.sh` sourcing
+      // (that is v8 syntax, deprecated in v9 and removed in v10). We install husky
+      // ^9, so a fresh hook must be v9-shaped. Existing files are appended to, never
+      // rewritten — their contents are the adopter's, not ours.
+      const content = existsSync(preCommitPath) ? readFileSync(preCommitPath, 'utf-8') : '';
+
+      if (!content.includes('uds check')) {
+        const sep = content && !content.endsWith('\n') ? '\n' : '';
+        writeFileSync(preCommitPath, `${content}${sep}\n# UDS Standard Check\n${udsCmd}\n`, 'utf-8');
+        try {
+          execSync(`chmod +x ${preCommitPath}`);
+        } catch {
+          // Ignore chmod failures on systems that don't support it
+        }
+        console.log(chalk.green('  ✓ Adding uds check to pre-commit hook'));
+      } else {
+        console.log(chalk.gray('  ✓ Pre-commit hook already configured'));
+      }
+    } catch (e) {
+      console.log(chalk.red(`  ✗ Failed to configure pre-commit hook: ${e.message}`));
+    }
+
+    // 5. Say what we changed in their package.json.
+    if (pkgChanges.length > 0) {
+      console.log(chalk.cyan('  package.json modified:'));
+      for (const change of pkgChanges) {
+        console.log(chalk.gray(`    • ${change}`));
+      }
+    }
+  } else {
+    // Non-Node.js: write native .git/hooks/pre-commit
+    console.log(chalk.cyan('Configuring Pre-commit Hook (native git hook)...'));
+
+    const hookDir = join(projectPath, '.git', 'hooks');
+    const hookPath = join(hookDir, 'pre-commit');
+
+    try {
+      if (!existsSync(hookDir)) {
+        mkdirSync(hookDir, { recursive: true });
+      }
+
+      if (existsSync(hookPath) && readFileSync(hookPath, 'utf-8').includes('uds check')) {
+        console.log(chalk.gray('  ✓ Pre-commit hook already configured'));
+      } else {
+        const hookContent = `#!/bin/sh
+# UDS pre-commit hook
+# Auto-generated by uds init
+
+echo "Running UDS pre-commit checks..."
+
+# Run lint if available
+if [ -f pyproject.toml ] || [ -f requirements.txt ]; then
+  python -m ruff check . 2>/dev/null || true
+elif [ -f go.mod ]; then
+  go vet ./... 2>/dev/null || true
+elif [ -f Cargo.toml ]; then
+  cargo clippy 2>/dev/null || true
+fi
+
+# UDS Standard Check
+uds check 2>/dev/null || true
+
+echo "Pre-commit checks passed"
+`;
+        writeFileSync(hookPath, hookContent, { mode: 0o755 });
+        console.log(chalk.green('  ✓ Installed .git/hooks/pre-commit (native git hook)'));
+      }
+    } catch (e) {
+      console.log(chalk.red(`  ✗ Failed to configure pre-commit hook: ${e.message}`));
+    }
+  }
+  console.log();
+}
+
+/**
+ * Build configuration for non-interactive mode
+ */
+function buildNonInteractiveConfig(options, detected, projectPath) {
+  // Locale resolution order (XSPEC-239 §Req-3):
+  //   CLI --locale > .uds/install.yaml locale: > UDS_LOCALE env > LANG > 'en'
+  // detectLanguage() handles UDS_LOCALE + LANG fallback internally (P1-CLI-3).
+  const installYaml = readInstallYaml(projectPath);
+  const displayLanguage = options.locale
+    || installYaml.locale
+    || detectLanguage(null);
+  
+  // Determine AI tools
+  const detectedAiTools = Object.keys(detected.aiTools).filter(k => detected.aiTools[k]);
+  const aiToolsNormalized = detectedAiTools.map(k => {
+    if (k === 'claudeCode') return 'claude-code';
+    if (k === 'geminiCli') return 'gemini-cli';
+    return k;
+  });
+
+  // Skills Configuration Logic
+  const hasSkillsCompatibleTool = aiToolsNormalized.some(t => t === 'claude-code' || t === 'opencode');
+  const onlySkillsCompatibleTools = aiToolsNormalized.every(t => t === 'claude-code' || t === 'opencode');
+  
+  let skillsLocationFlag = options.skillsLocation;
+  if (!skillsLocationFlag) {
+    skillsLocationFlag = (hasSkillsCompatibleTool && onlySkillsCompatibleTools) ? 'marketplace' : 'none';
+  }
+
+  const contentModeFlag = options.contentMode || 'auto';
+  let skillsConfig = {};
+
+  if (skillsLocationFlag === 'marketplace') {
+    skillsConfig = {
+      installed: true,
+      location: 'marketplace',
+      needsInstall: false,
+      updateTargets: [],
+      standardsScope: 'minimal',
+      contentMode: contentModeFlag
+    };
+  } else if (skillsLocationFlag === 'none') {
+    skillsConfig = {
+      installed: false,
+      location: null,
+      needsInstall: false,
+      updateTargets: [],
+      standardsScope: 'full',
+      contentMode: contentModeFlag
+    };
+  } else {
+    // Determine location (project vs user)
+    const userSkillsInfo = getInstalledSkillsInfo();
+    const projectSkillsInfo = getProjectInstalledSkillsInfo(projectPath);
+    let location = 'user';
+    
+    if (skillsLocationFlag === 'project' || projectSkillsInfo?.installed) {
+      location = 'project';
+    }
+
+    skillsConfig = {
+      installed: true,
+      location,
+      needsInstall: skillsLocationFlag === 'project' || skillsLocationFlag === 'user' || (!userSkillsInfo?.installed && !projectSkillsInfo?.installed),
+      updateTargets: [location],
+      standardsScope: 'minimal',
+      contentMode: contentModeFlag
+    };
+  }
+
+  // Auto-install commands
+  const commandsSupportedAgents = aiToolsNormalized.filter(tool => {
+    const config = getAgentConfig(tool);
+    return config?.commands !== null;
+  });
+
+  if (commandsSupportedAgents.length > 0) {
+    skillsConfig.commandsInstallations = commandsSupportedAgents.map(agent => ({
+      agent,
+      level: 'project'
+    }));
+  }
+
+  skillsConfig.locale = displayLanguageToLocale(displayLanguage);
+
+  // AGENTS.md: default to true in --yes mode unless codex/opencode selected or --no-agents-md
+  // When codex/opencode is selected, they already generate AGENTS.md — no need for universal output
+  const hasAgentsMdTool = aiToolsNormalized.includes('codex') || aiToolsNormalized.includes('opencode');
+  const generateAgentsMd = hasAgentsMdTool
+    ? false // codex/opencode handles AGENTS.md, skip universal output
+    : (options.agentsMd !== undefined ? !!options.agentsMd : true);
+
+  return {
+    languages: options.lang ? [options.lang] : Object.keys(detected.languages).filter(k => detected.languages[k]),
+    frameworks: options.framework ? [options.framework] : Object.keys(detected.frameworks).filter(k => detected.frameworks[k]),
+    displayLanguage,
+    format: options.format || 'ai',
+    standardOptions: {
+      workflow: options.workflow || 'github-flow',
+      merge_strategy: options.mergeStrategy || 'squash',
+      output_language: options.outputLang || 'english',
+      test_levels: options.testLevels ? options.testLevels.split(',') : ['unit-testing', 'integration-testing', 'system-testing', 'e2e-testing'],
+      coverage_model: options.coverageModel || 'full-coverage'
+    },
+    skillsConfig,
+    aiTools: aiToolsNormalized,
+    integrations: [...aiToolsNormalized],
+    contentMode: skillsConfig.contentMode || 'minimal',
+    methodology: null,
+    generateAgentsMd,
+    releaseMode: options.releaseMode || 'ci-cd',
+    withHooks: !!options.withHooks,
+    contentLayout: options.contentLayout || 'flat'
+  };
+}
+
+/**
+ * Get label for a value from translation labels object
+ * Tries to find in messages.js labels, falls back to original value
+ * @param {string} key - The translation key (e.g., 'gitWorkflow', 'mergeStrategy', 'level')
+ * @param {string|number} value - The value to look up
+ * @returns {string} The label or the original value if not found
+ */
+function getValueLabel(key, value) {
+  const translations = t();
+  // Try direct key lookup (e.g., t().gitWorkflow.labels)
+  const labels = translations[key]?.labels;
+  if (labels?.[value]) {
+    return labels[value];
+  }
+  // Try commands.init labels for nested structures
+  const initLabels = translations.commands?.init?.[key + 'Labels'];
+  if (initLabels?.[value]) {
+    return initLabels[value];
+  }
+  return String(value);
+}
+
+/**
+ * Display configuration summary
+ * Order follows init-flow.js question sequence for consistency
+ */
+function displaySummary(config, msg, common) {
+  console.log(chalk.cyan(msg.configSummary));
+
+  // 1. Display Language (STEP 1)
+  const displayLangLabel = config.displayLanguage === 'zh-tw' ? '繁體中文' : config.displayLanguage === 'zh-cn' ? '简体中文' : 'English';
+  console.log(chalk.gray(`  ${msg.displayLanguageLabel || 'Display Language'}: ${displayLangLabel}`));
+
+  // 2. AI Tools (STEP 2) - Use getAgentDisplayName for readable names
+  const aiToolNames = config.aiTools.map(id => getAgentDisplayName(id) || id);
+  console.log(chalk.gray(`  ${common.aiTools}: ${aiToolNames.length > 0 ? aiToolNames.join(', ') : common.none}`));
+
+  // 3. Skills Installation (STEP 4)
+  if (config.skillsConfig.installed) {
+    let skillsStatusText;
+    if (config.skillsConfig.location === 'marketplace') {
+      skillsStatusText = msg.skillsMarketplace;
+    } else if (config.skillsConfig.location === 'multiple') {
+      // Handle multiple installation locations
+      const count = config.skillsConfig.skillsInstallations?.length || 0;
+      skillsStatusText = (msg.skillsInstalledToCount || '{count} locations').replace('{count}', count);
+    } else {
+      skillsStatusText = config.skillsConfig.needsInstall
+        ? msg.skillsInstallTo.replace('{location}', config.skillsConfig.location)
+        : msg.skillsUsingExisting.replace('{location}', config.skillsConfig.location);
+    }
+    console.log(chalk.gray(`  ${msg.skillsLabel}: ${skillsStatusText}`));
+  }
+
+  // 3b. Commands Installation (STEP 5)
+  if (config.skillsConfig.commandsInstallations?.length > 0) {
+    const count = config.skillsConfig.commandsInstallations.length;
+    const commandsStatusText = (msg.commandsInstalledToCount || '{count} locations').replace('{count}', count);
+    console.log(chalk.gray(`  ${msg.commandsLabel || 'Slash Commands'}: ${commandsStatusText}`));
+  }
+
+  // 4. Standards Format (STEP 6)
+  const formatLabels = t().format?.labels || { ai: 'Compact', human: 'Detailed', both: 'Both' };
+  console.log(chalk.gray(`  ${common.format}: ${formatLabels[config.format]}`));
+
+  // 5. Standard Options (STEP 7) - use labels for human-readable values
+  if (config.standardOptions.workflow) {
+    console.log(chalk.gray(`  ${msg.gitWorkflow}: ${getValueLabel('gitWorkflow', config.standardOptions.workflow)}`));
+  }
+  if (config.releaseMode) {
+    const releaseModeLabels = RELEASE_MODE_LABELS;
+    console.log(chalk.gray(`  ${msg.releaseMode || 'Release Mode'}: ${releaseModeLabels[config.releaseMode] || config.releaseMode}`));
+  }
+  if (config.standardOptions.merge_strategy) {
+    console.log(chalk.gray(`  ${msg.mergeStrategy}: ${getValueLabel('mergeStrategy', config.standardOptions.merge_strategy)}`));
+  }
+  if (config.standardOptions.output_language) {
+    console.log(chalk.gray(`  ${msg.outputLanguage}: ${getValueLabel('outputLanguage', config.standardOptions.output_language)}`));
+  }
+  if (config.standardOptions.test_levels?.length > 0) {
+    const testLabels = config.standardOptions.test_levels.map(level => getValueLabel('testLevels', level));
+    console.log(chalk.gray(`  ${msg.testLevels}: ${testLabels.join(', ')}`));
+  }
+
+  // 6. Language Extensions (STEP 8)
+  console.log(chalk.gray(`  ${msg.languages}: ${config.languages.length > 0 ? config.languages.join(', ') : common.none}`));
+
+  // 7. Framework Extensions (STEP 9)
+  console.log(chalk.gray(`  ${msg.frameworks}: ${config.frameworks.length > 0 ? config.frameworks.join(', ') : common.none}`));
+
+  // 8. Integration Config (STEP 10)
+  if (config.skillsConfig.integrationConfigs && Object.keys(config.skillsConfig.integrationConfigs).length > 0) {
+    // Get the first config (shared config)
+    const firstConfigKey = Object.keys(config.skillsConfig.integrationConfigs)[0];
+    const integrationConfig = config.skillsConfig.integrationConfigs[firstConfigKey];
+
+    if (integrationConfig && integrationConfig.mode) {
+      const modeLabels = t().integration?.mode?.labels || { default: 'Default', custom: 'Custom', merge: 'Merge' };
+      const modeLabel = modeLabels[integrationConfig.mode] || integrationConfig.mode;
+      console.log(chalk.gray(`  ${msg.integrationConfigLabel || 'Integration Config'}: ${modeLabel}`));
+
+      // If custom mode, show selected categories
+      if (integrationConfig.mode === 'custom' && integrationConfig.categories?.length > 0) {
+        const categoryLabels = t().integration?.categoryLabels || {};
+        const categoryNames = integrationConfig.categories.map(cat => categoryLabels[cat] || cat);
+        console.log(chalk.gray(`  ${msg.ruleCategoriesLabel || 'Rule Categories'}: ${categoryNames.join(', ')}`));
+      }
+    }
+  }
+
+  // 9. Content Mode (STEP 11)
+  const contentModeLabels = t().contentMode?.labels || { index: 'Standard', full: 'Full', minimal: 'Minimal' };
+  console.log(chalk.gray(`  ${msg.contentModeLabel}: ${contentModeLabels[config.contentMode] || config.contentMode}`));
+
+  // 10. Methodology (STEP 12, experimental)
+  if (config.skillsConfig.methodology) {
+    console.log(chalk.gray(`  ${common.methodology}: ${config.skillsConfig.methodology} ${chalk.yellow('[Experimental]')}`));
+  }
+
+  console.log();
+}

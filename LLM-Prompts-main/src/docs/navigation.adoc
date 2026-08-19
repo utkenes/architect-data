@@ -1,0 +1,103 @@
+++++
+<nav class="navbar navbar-expand-lg navbar-dark bg-primary sticky-top">
+    <div class="container-fluid">
+        <a class="navbar-brand" href="10-Intro.html">
+            <i class="fas fa-brain me-2"></i>LLM Architecture Prompts
+        </a>
+        
+        <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarNav">
+            <span class="navbar-toggler-icon"></span>
+        </button>
+        
+        <div class="collapse navbar-collapse" id="navbarNav">
+            <ul class="navbar-nav me-auto">
+                <li class="nav-item dropdown">
+                    <a class="nav-link dropdown-toggle" href="#" role="button" data-bs-toggle="dropdown">
+                        <i class="fas fa-tools me-1"></i>Core Tools
+                    </a>
+                    <ul class="dropdown-menu">
+                        <li><a class="dropdown-item" href="20-ACC.html">
+                            <i class="fas fa-canvas-area me-2"></i>Architecture Communication Canvas
+                        </a></li>
+                        <li><a class="dropdown-item" href="30-ADR.html">
+                            <i class="fas fa-decision-tree me-2"></i>Architecture Decision Record
+                        </a></li>
+                        <li><a class="dropdown-item" href="40-arc42-Chapter-Generator.html">
+                            <i class="fas fa-sitemap me-2"></i>arc42 Chapter Generator
+                        </a></li>
+                    </ul>
+                </li>
+                
+                <li class="nav-item dropdown">
+                    <a class="nav-link dropdown-toggle" href="#" role="button" data-bs-toggle="dropdown">
+                        <i class="fas fa-quality me-1"></i>Quality & Risk
+                    </a>
+                    <ul class="dropdown-menu">
+                        <li><a class="dropdown-item" href="50-Quality-Scenarios-Builder.html">
+                            <i class="fas fa-gauge-high me-2"></i>Quality Scenarios Builder
+                        </a></li>
+                        <li><a class="dropdown-item" href="60-Risk-Assessment-Matrix.html">
+                            <i class="fas fa-exclamation-triangle me-2"></i>Risk Assessment Matrix
+                        </a></li>
+                        <li><a class="dropdown-item" href="70-Technical-Debt-Tracker.html">
+                            <i class="fas fa-bug me-2"></i>Technical Debt Tracker
+                        </a></li>
+                    </ul>
+                </li>
+                
+                <li class="nav-item dropdown">
+                    <a class="nav-link dropdown-toggle" href="#" role="button" data-bs-toggle="dropdown">
+                        <i class="fas fa-diagram-project me-1"></i>Specialized
+                    </a>
+                    <ul class="dropdown-menu">
+                        <li><a class="dropdown-item" href="80-Stakeholder-Analysis.html">
+                            <i class="fas fa-users-gear me-2"></i>Stakeholder Analysis
+                        </a></li>
+                        <li><a class="dropdown-item" href="90-Context-Diagram-Generator.html">
+                            <i class="fas fa-diagram-project me-2"></i>Context Diagram Generator
+                        </a></li>
+                        <li><a class="dropdown-item" href="100-Solution-Strategy-Planner.html">
+                            <i class="fas fa-lightbulb me-2"></i>Solution Strategy Planner
+                        </a></li>
+                        <li><a class="dropdown-item" href="110-Deployment-View-Creator.html">
+                            <i class="fas fa-server me-2"></i>Deployment View Creator
+                        </a></li>
+                    </ul>
+                </li>
+            </ul>
+            
+            <ul class="navbar-nav">
+                <li class="nav-item">
+                    <a class="nav-link" href="999-consolidated-system-prompt.html">
+                        <i class="fas fa-layers me-1"></i>Consolidated Prompt
+                    </a>
+                </li>
+                <li class="nav-item">
+                    <a class="nav-link" href="https://github.com/docToolchain/LLM-Prompts" target="_blank">
+                        <i class="fab fa-github me-1"></i>GitHub
+                    </a>
+                </li>
+            </ul>
+        </div>
+    </div>
+</nav>
+
+<style>
+.navbar-brand {
+    font-weight: 600;
+}
+
+.dropdown-item {
+    transition: background-color 0.2s ease;
+}
+
+.dropdown-item:hover {
+    background-color: var(--bs-primary);
+    color: white;
+}
+
+.navbar {
+    box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+}
+</style>
+++++

@@ -1,0 +1,44 @@
+{
+  "devDependencies": {
+    "@commitlint/cli": "^21.2.1",
+    "@commitlint/config-conventional": "^21.2.0",
+    "opencc-js": "^1.4.1",
+    "tsx": "^4.23.1"
+  },
+  "scripts": {
+    "commitlint": "commitlint --edit",
+    "uds:check": "node cli/bin/uds.js check",
+    "uds:update": "node cli/bin/uds.js update",
+    "uds:skills": "node cli/bin/uds.js skills",
+    "docs:manifest": "node scripts/sync-manifest.mjs",
+    "docs:generate": "node scripts/generate-docs.mjs",
+    "docs:sync": "npm run docs:manifest && npm run docs:generate",
+    "docs:generate-index": "tsx scripts/generate-skill-index.ts",
+    "docs:check-index": "tsx scripts/check-skill-index.ts",
+    "docs:locale-coverage": "node scripts/generate-locale-coverage.mjs",
+    "docs:refresh-translation-hash": "tsx scripts/refresh-translation-hash.ts",
+    "test:scripts": "tests/bats/bin/bats --print-output-on-failure tests/scripts/",
+    "check:ai-behavior": "tsx scripts/check-ai-behavior-sync.ts",
+    "check:commit-spec": "tsx scripts/check-commit-spec-reference.ts",
+    "check:flow-gate": "tsx scripts/check-flow-gate-report.ts",
+    "check:integration-commands": "tsx scripts/check-integration-commands-sync.ts",
+    "check:registry": "tsx scripts/check-registry-completeness.ts",
+    "check:drift-override-clean": "tsx scripts/check-drift-override-clean.ts",
+    "check:release-signoff": "tsx scripts/check-release-readiness-signoff.ts",
+    "check:workflow-compliance": "tsx scripts/check-workflow-compliance.ts",
+    "check:skill-integrity": "tsx scripts/check-skill-structural-integrity.ts",
+    "check:content-coverage": "tsx scripts/check-skill-content-coverage.ts",
+    "sdd:analyze": "tsx scripts/sdd-analyze.ts",
+    "split-bilingual": "tsx scripts/split-bilingual.ts",
+    "check:naming-refs": "tsx scripts/check-naming-and-refs.ts",
+    "check:liveness": "tsx scripts/check-integration-liveness.ts",
+    "sync:standard": "tsx scripts/sync-standard.ts",
+    "check:ai-yaml": "node scripts/check-ai-yaml-parses.mjs",
+    "check:model-pins": "tsx scripts/check-model-pin-freshness.ts",
+    "check:model-pins:self-test": "tsx scripts/check-model-pin-freshness.ts --self-test"
+  },
+  "type": "module",
+  "dependencies": {
+    "@asiaostrich/telemetry-client": "^0.1.0"
+  }
+}

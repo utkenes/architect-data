@@ -1,0 +1,287 @@
+# Packaging Standards
+
+> **Language**: English | [繁體中文](../locales/zh-TW/core/packaging-standards.md)
+
+**Version**: 1.1.0
+**Last Updated**: 2026-05-26
+**Applicability**: Projects using a UDS-aware toolchain
+**Scope**: universal
+
+---
+
+## Purpose
+
+This standard defines a Recipe-based packaging framework that enables user projects to declare packaging targets in their packaging config (file path is adoption-layer specific). UDS provides the Recipe definitions and built-in Recipe library; the adoption-layer runtime executes the orchestration at pipeline time.
+
+The framework separates concerns:
+- **User project**: declares *what* to package (targets + config overrides)
+- **UDS**: defines *how* to package (Recipe structure + built-in Recipes)
+- **Adoption-layer pipeline**: executes *when* to package (pipeline stage between Review and Deploy)
+
+---
+
+## Core Principles
+
+| Principle | Description |
+|-----------|-------------|
+| **Recipe-based** | Every packaging target references a named Recipe; no ad-hoc scripts in pipeline YAML |
+| **Declarative targets** | Projects declare targets in their packaging config (file path adoption-layer specific); the runtime resolves and executes |
+| **Customizable** | Four customization layers allow config overrides, hook injection, custom Recipes, and escape hatches |
+| **Pipeline-integrated** | Packaging runs as a named stage between Review and Deploy in the adoption-layer pipeline |
+
+---
+
+## Recipe Structure
+
+A Recipe is a YAML file that defines how to package a project. The following fields are defined:
+
+```yaml
+# Recipe: <name>.yaml
+name: <string>            # REQUIRED — unique recipe identifier (kebab-case)
+description: <string>     # OPTIONAL — human-readable description
+requires:                 # OPTIONAL — files that must exist before execution
+  - <file-path>
+steps:                    # REQUIRED — ordered list of build/package steps
+  - run: <shell-command>
+    description: <string> # OPTIONAL — human-readable step description
+config:                   # OPTIONAL — default configuration values (overridable)
+  <key>: <value>
+hooks:                    # OPTIONAL — lifecycle hooks (null = no-op)
+  preBuild: ~
+  postBuild: ~
+  prePublish: ~
+  postPublish: ~
+```
+
+### Required vs Optional Fields
+
+| Field | Required | Description |
+|-------|----------|-------------|
+| `name` | Yes | Unique recipe identifier, kebab-case |
+| `steps` | Yes | At least one step must be defined |
+| `description` | No | Human-readable description |
+| `requires` | No | Pre-condition file checks |
+| `config` | No | Default config values; all keys are overridable by user project |
+| `hooks` | No | Lifecycle hook points; `~` means no-op |
+
+### Step Variables
+
+Config values and runtime context are available as `{variable}` placeholders in `run` commands:
+
+| Variable | Source | Example |
+|----------|--------|---------|
+| `{registry}` | `config.registry` | `ghcr.io` |
+| `{name}` | `package.json#name` or `config.name` | `my-app` |
+| `{version}` | `package.json#version` or `config.version` | `1.2.3` |
+| `{platforms}` | `config.platforms` | `linux/amd64,linux/arm64` |
+| `{output_dir}` | `config.output_dir` | `dist/installers` |
+
+---
+
+## Built-in Recipes
+
+UDS ships four built-in Recipes located in the `recipes/` directory:
+
+| Recipe | File | Use Case |
+|--------|------|----------|
+| `npm-library` | `recipes/npm-library.yaml` | npm package without a binary entry point |
+| `npm-cli` | `recipes/npm-cli.yaml` | npm package with a `bin` field (CLI tool) |
+| `docker-service` | `recipes/docker-service.yaml` | Docker container image build and push |
+| `windows-installer` | `recipes/windows-installer.yaml` | Windows installer (.msi / .exe) via user script |
+
+### When to Use Each Recipe
+
+```
+Is the output an npm package?
+├── Yes → Does package.json contain a "bin" field?
+│         ├── Yes → npm-cli
+│         └── No  → npm-library
+└── No  → Is the output a container image?
+          ├── Yes → docker-service
+          └── No  → Is the output a Windows installer?
+                    ├── Yes → windows-installer
+                    └── No  → write a custom recipe (see Customization Layers)
+```
+
+---
+
+## Customization Layers
+
+Projects that need to deviate from built-in Recipe defaults should use the lowest applicable layer:
+
+| Layer | Mechanism | When to Use |
+|-------|-----------|-------------|
+| **L1 — Config Override** | `config:` block in `.uds/packaging.yaml` | Change default values (registry URL, tag, output dir) |
+| **L2 — Hook Injection** | `hooks:` block in `.uds/packaging.yaml` | Run extra commands before/after build or publish |
+| **L3 — Custom Recipe** | New `.yaml` file in project's `.uds/recipes/` | Entirely different build process; built-ins don't apply |
+| **L4 — Escape Hatch** | `script:` key replacing `recipe:` in target definition | Raw shell script when no Recipe abstraction is suitable |
+
+### L1 Example — Config Override
+
+```yaml
+# .uds/packaging.yaml
+targets:
+  - name: publish-npm
+    recipe: npm-library
+    config:
+      registry: https://npm.pkg.github.com
+      access: restricted
+      tag: beta
+```
+
+### L2 Example — Hook Injection
+
+```yaml
+# .uds/packaging.yaml
+targets:
+  - name: docker-push
+    recipe: docker-service
+    hooks:
+      postPush: |
+        curl -X POST https://hooks.example.com/deploy-notify \
+          -d "{\"version\": \"{version}\"}"
+```
+
+### L3 Example — Custom Recipe
+
+```yaml
+# .uds/recipes/electron-app.yaml
+name: electron-app
+description: Build Electron desktop application
+requires:
+  - package.json
+  - electron-builder.yml
+steps:
+  - run: npm run build
+  - run: npx electron-builder --publish never
+config:
+  output_dir: dist
+```
+
+### L4 Example — Escape Hatch
+
+```yaml
+# .uds/packaging.yaml
+targets:
+  - name: legacy-bundle
+    script: |
+      ./scripts/legacy-bundle.sh
+      mv output/ dist/bundle/
+```
+
+---
+
+## Acceptance Criteria for Packaging
+
+A packaging run is considered **successful** when ALL of the following conditions are met:
+
+| Criterion | Threshold | Notes |
+|-----------|-----------|-------|
+| All `requires` files exist | 100% | Checked before any step runs |
+| All steps exit with code 0 | 100% | Any non-zero exit fails the run |
+| `postBuild` artifact exists | Present in expected path | Verified by the adoption-layer runtime after build step |
+| Hook commands exit with code 0 | 100% | Hook failure propagates as step failure |
+| Published artifact is retrievable | HTTP 200 / registry query succeeds | Verified by the adoption-layer runtime post-publish smoke check |
+
+### Failure Handling
+
+| Failure Type | Action | Retry? |
+|--------------|--------|--------|
+| Missing `requires` file | Fail immediately, report missing path | No |
+| Step non-zero exit | Fail immediately, run `postBuild` hook if defined | Configurable (default: no) |
+| Hook non-zero exit | Fail immediately | No |
+| Publish unreachable | Retry up to 3 times with exponential backoff | Yes (3×) |
+
+---
+
+## Archive Format Integrity
+
+When a packaging step produces an archive (`.zip`, `.tar.gz`, `.tar.bz2`, etc.) that will be consumed by a deploy script, the **real binary format MUST match the file extension**. A file named `.zip` MUST be a real ZIP archive (PKZip magic `PK\x03\x04`), not a renamed tar archive.
+
+> **Why mandatory:** mismatched archive formats trigger silent failures downstream. PowerShell's `Expand-Archive` and `[System.IO.Compression.ZipFile]::ExtractToDirectory()` accept tar-renamed-to-`.zip` **without raising an error** — the file is read, nothing is extracted, no exception. If the next step of the deploy script is destructive (e.g., "delete current install directory"), the live install is destroyed with nothing to replace it.
+
+### Verification before publish
+
+Every packaging step that produces an archive **MUST** include format verification before declaring success. Minimum verification:
+
+| Format | Verification one-liner |
+|---|---|
+| `.zip` | `python -c "import zipfile; zipfile.ZipFile('out.zip').namelist()"` must succeed |
+| `.zip` (Unix) | `file out.zip` must report `Zip archive data`, **NOT** `POSIX tar archive` |
+| `.tar.gz` | `tar -tzf out.tar.gz >/dev/null` must succeed |
+| any | optional: hash a manifest of expected files and compare |
+
+Verification failure MUST abort the packaging pipeline before publish.
+
+### Platform-specific recipes
+
+**Windows — DO use:**
+
+```powershell
+# Option A: PowerShell built-in (produces real ZIP)
+Compress-Archive -Path "publish\*" -DestinationPath "dist\patch.zip" -Force
+
+# Option B: .NET API (produces real ZIP)
+Add-Type -Assembly System.IO.Compression.FileSystem
+[System.IO.Compression.ZipFile]::CreateFromDirectory(
+    "publish", "dist\patch.zip", "Optimal", $false
+)
+```
+
+**Windows — DO NOT use:**
+
+```bash
+# ❌ git-bash / busybox tar -a -cf is UNRELIABLE on Windows
+# The -a "auto by extension" flag produces a POSIX tar archive with .zip extension.
+# `file patch.zip` → "POSIX tar archive (GNU)"  (not "Zip archive data")
+cd publish && tar -a -cf "../dist/patch.zip" api/
+```
+
+**Unix-like — DO use:**
+
+```bash
+# Use 'zip' for ZIP archives (BSD/Linux)
+zip -r dist/patch.zip publish/
+
+# Use 'tar -czf' (without -a) for tar.gz archives — explicit, deterministic
+tar -czf dist/patch.tar.gz publish/
+
+# Verify before publishing
+file dist/patch.zip            # expect "Zip archive data"
+python -c "import zipfile; zipfile.ZipFile('dist/patch.zip').namelist()"
+```
+
+### Consumer-side defense
+
+Producers cannot guarantee that consumers verify. Consumers (deploy scripts) **MUST** verify archive integrity before any destructive action. See [Deployment Standards — Defensive Deployment Ordering](deployment-standards.md#defensive-deployment-ordering) for the consumer-side requirement.
+
+### Failure mode reference (real incident)
+
+A Windows IIS production deploy script (2026-05-24) used `tar -a -cf patch.zip api/` in git-bash to produce its release archive. The consumer-side PowerShell deploy script then ran `Expand-Archive` (silent no-op on the tar-renamed file), proceeded to `Remove-Item -Recurse` the live `apiDir`, then `Copy-Item` from a source that did not exist (because nothing had been extracted). The live install was wiped, AppPool stopped, and production was down for ~3 minutes until backup-based rollback completed.
+
+The combination of (a) producer using auto-extension tar and (b) consumer not verifying extract output destroyed the running install with no error raised at any step.
+
+---
+
+## Related Standards
+
+- [Deployment Standards](deployment-standards.md) — Deploy stage that follows packaging
+- [Pipeline Integration Standards](pipeline-integration-standards.md) — CI/CD pipeline configuration
+- [Checkin Standards](checkin-standards.md) — Quality gates before packaging
+- [Versioning Standards](versioning.md) — Version numbers used in package artifacts
+- [Supply Chain Attestation](supply-chain-attestation.md) — SBOM / SLSA provenance / signing of the packaged artifact (format integrity here is archive-level; attestation adds source-to-artifact provenance)
+
+---
+
+## Version History
+
+| Version | Date | Changes |
+|---------|------|---------|
+| 1.1.0 | 2026-05-26 | Added: Archive Format Integrity section — real-format-must-match-extension rule, verification one-liners, Windows recipe DO/DON'T list, real incident reference (XSPEC-231 / closes issue #113) |
+| 1.0.0 | 2026-04-15 | Initial release — XSPEC-034 Phase 1 |
+
+---
+
+## License
+
+This standard is released under [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/).

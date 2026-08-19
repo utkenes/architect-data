@@ -1,0 +1,16 @@
+#!/bin/sh
+#
+# UDS Pre-Commit Hook (thin shim → scripts/pre-commit.mjs)
+# 預提交鉤子（薄殼層，呼叫 Node.js 實作）
+#
+# Cross-platform: works on macOS / Linux / Windows (via Git's bundled sh).
+# Real logic lives in scripts/pre-commit.mjs (Node.js, no bash dependencies).
+#
+# To install: node scripts/install-hooks.mjs
+#
+
+# Resolve repository root robustly (POSIX sh, no BASH_SOURCE).
+REPO_ROOT="$(git rev-parse --show-toplevel 2>/dev/null)"
+[ -z "$REPO_ROOT" ] && exit 0  # Not in a git repo, nothing to check.
+
+exec node "$REPO_ROOT/scripts/pre-commit.mjs"

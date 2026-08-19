@@ -1,0 +1,1618 @@
+import chalk from 'chalk';
+import { select, confirm as inquirerConfirm } from '@inquirer/prompts';
+import ora from 'ora';
+import { unlinkSync, existsSync, writeFileSync, mkdirSync } from 'fs';
+import { join, basename } from 'path';
+import { config } from '../utils/config-manager.js';
+import { msg, t as getMessages, setLanguage, isLanguageExplicitlySet } from '../i18n/messages.js';
+import {
+  getOptionSource,
+  findOption,
+  getAllStandards
+} from '../utils/registry.js';
+import {
+  copyStandard,
+  readManifest,
+  writeManifest,
+  isInitialized
+} from '../utils/copier.js';
+import {
+  promptFormat,
+  promptGitWorkflow,
+  promptMergeStrategy,
+  promptOutputLanguage,
+  promptTestLevels,
+  promptConfirm,
+  promptManageAITools,
+  promptContentModeChange,
+  handleAgentsMdSharing,
+  promptAgentsMd,
+  promptMethodology,
+  promptSkillsInstallLocation,
+  promptCommandsInstallation,
+  promptDisplayLanguage
+} from '../prompts/init.js';
+import {
+  installSkillsToMultipleAgents,
+  installCommandsToMultipleAgents,
+  getInstalledSkillsInfoForAgent,
+  getInstalledCommandsForAgent
+} from '../utils/skills-installer.js';
+import {
+  getAgentConfig,
+  getAgentDisplayName
+} from '../config/ai-agent-paths.js';
+import { displayLanguageToLocale } from '../utils/locale.js';
+import {
+  writeIntegrationFile,
+  getToolFilePath
+} from '../utils/integration-generator.js';
+import { getMarketplaceSkillsInfo } from '../utils/github.js';
+import { regenerateIntegrations } from './update.js';
+import { mergeInstalledNames } from '../core/manifest.js';
+
+/**
+ * Get localized message with fallback (for config-specific keys)
+ */
+function t(key, fallback) {
+  return msg(key) || fallback;
+}
+
+/**
+ * Vibe mode presets for different development styles
+ */
+const VIBE_PRESETS = {
+  relaxed: {
+    name: 'Relaxed (Prototype/Hackathon)',
+    description: 'Maximum speed, minimal interrupts. Good for rapid prototyping.',
+    settings: {
+      'hitl.threshold': 4,
+      'vibe-coding.enabled': true,
+      'vibe-coding.micro-specs.require-confirmation': false,
+      'vibe-coding.auto-sweep.enabled': true,
+      'vibe-coding.auto-sweep.trigger': 'session-end',
+      'vibe-coding.standards-injection.mode': 'soft'
+    }
+  },
+  balanced: {
+    name: 'Balanced (Recommended)',
+    description: 'Good balance between speed and safety. Confirms critical actions.',
+    settings: {
+      'hitl.threshold': 2,
+      'vibe-coding.enabled': true,
+      'vibe-coding.micro-specs.require-confirmation': true,
+      'vibe-coding.auto-sweep.enabled': true,
+      'vibe-coding.auto-sweep.trigger': 'session-end',
+      'vibe-coding.standards-injection.mode': 'soft'
+    }
+  },
+  strict: {
+    name: 'Strict (Production)',
+    description: 'Maximum safety. Confirms most actions. Good for production code.',
+    settings: {
+      'hitl.threshold': 1,
+      'vibe-coding.enabled': true,
+      'vibe-coding.micro-specs.require-confirmation': true,
+      'vibe-coding.auto-sweep.enabled': true,
+      'vibe-coding.auto-sweep.trigger': 'commit-hook',
+      'vibe-coding.standards-injection.mode': 'strict'
+    }
+  }
+};
+
+/**
+ * Handle config command — unified entry point
+ * @param {string} action - list, get, set, init
+ * @param {string} key - Config key
+ * @param {string} value - Config value
+ * @param {Object} options - Command options
+ */
+/**
+ * Schema for known config keys (T12 input validation, XSPEC-292 §9).
+ * Unknown keys are allowed (forward-compatible); known keys are constrained.
+ */
+const CONFIG_SCHEMAS = {
+  'hitl.threshold': { type: 'number', enum: [0, 1, 2, 3, 4] },
+};
+
+/**
+ * Validate a config value against CONFIG_SCHEMAS.
+ * Returns an error message string, or null if valid / no schema.
+ */
+export function validateConfigValue(key, value) {
+  const schema = CONFIG_SCHEMAS[key];
+  if (!schema) return null;
+  if (schema.type === 'number' && typeof value !== 'number') {
+    return `${key} must be a number`;
+  }
+  if (schema.enum && !schema.enum.includes(value)) {
+    return `${key} must be one of: ${schema.enum.join(', ')}`;
+  }
+  return null;
+}
+
+export async function configCommand(action, key, value, options) {
+  // Initialize config manager
+  const currentConfig = config.init();
+
+  // Handle 'list' action explicitly
+  if (action === 'list') {
+    console.log(chalk.bold('Current Configuration:'));
+    console.log(JSON.stringify(currentConfig, null, 2));
+    return;
+  }
+
+  // Handle 'get' action
+  if (action === 'get') {
+    if (!key) {
+      console.error(chalk.red('Error: Key is required for get command'));
+      return;
+    }
+    const val = config.get(key);
+    console.log(val !== undefined ? val : chalk.gray('undefined'));
+    return;
+  }
+
+  // Handle 'set' action
+  if (action === 'set') {
+    if (!key || value === undefined) {
+      console.error(chalk.red('Error: Key and value are required for set command'));
+      return;
+    }
+
+    // Type inference
+    let typedValue = value;
+    if (value === 'true') typedValue = true;
+    if (value === 'false') typedValue = false;
+    if (!isNaN(Number(value))) typedValue = Number(value);
+
+    // T12 input validation: enforce schema for known config keys
+    const schemaError = validateConfigValue(key, typedValue);
+    if (schemaError) {
+      console.error(chalk.red(`Error: ${schemaError}`));
+      return;
+    }
+
+    const scope = options.global ? 'global' : 'project';
+    config.set(key, typedValue, scope);
+
+    console.log(chalk.green(`Configuration updated (${scope}): ${key} = ${typedValue}`));
+    return;
+  }
+
+  // Handle 'init' action — backward compatible
+  if (action === 'init') {
+    if (options.vibeMode) {
+      await initVibeMode(options);
+      return;
+    }
+    // Treat as no-action: route to flat menu or limited menu
+    const projectPath = process.cwd();
+    const initialized = isInitialized(projectPath);
+    if (initialized) {
+      return runProjectConfiguration(options);
+    } else {
+      await handleLimitedConfig(options);
+      return;
+    }
+  }
+
+  // No action: check for --type (direct project configuration) or show interactive menu
+  if (!action) {
+    // --type provided: go directly to project configuration
+    if (options.type) {
+      return runProjectConfiguration(options);
+    }
+
+    // --yes flag with no action: non-interactive mode, show JSON config
+    if (options.yes) {
+      console.log(chalk.bold('Current Configuration:'));
+      console.log(JSON.stringify(currentConfig, null, 2));
+      return;
+    }
+
+    // No arguments at all: route based on initialization state
+    const projectPath = process.cwd();
+    const initialized = isInitialized(projectPath);
+
+    if (initialized) {
+      return runProjectConfiguration(options);
+    } else {
+      await handleLimitedConfig(options);
+      return;
+    }
+  }
+
+  console.error(chalk.red(`Unknown action: ${action}`));
+}
+
+/**
+ * Handle limited config menu when project is not initialized.
+ * Shows only: Display Language (global), Vibe Coding, Show config.
+ * @param {Object} options - Command options
+ */
+async function handleLimitedConfig(options) {
+  // Set language from global config if available
+  if (!isLanguageExplicitlySet()) {
+    const globalLang = config.get('ui.language') || 'en';
+    setLanguage(globalLang);
+  }
+
+  console.log('');
+  console.log(chalk.bold(t('config.initTitle', 'UDS Configuration Setup')));
+  console.log(chalk.gray(t('config.notInitializedHint', 'Project not initialized. Run `uds init` for full configuration.')));
+  console.log('');
+
+  const initType = await select({
+    message: t('config.initQuestion', 'What would you like to configure?'),
+    choices: [
+      {
+        name: t('config.displayLanguageOption', 'Display Language - Change UI language'),
+        value: 'display_language'
+      },
+      {
+        name: t('config.vibeMode', 'Vibe Coding Mode - For AI-assisted development'),
+        value: 'vibe'
+      },
+      {
+        name: t('config.menuShowConfig', 'Show current configuration (JSON)'),
+        value: 'show'
+      }
+    ]
+  });
+
+  if (initType === 'display_language') {
+    await handleDisplayLanguageChange();
+    return;
+  } else if (initType === 'vibe') {
+    await initVibeMode(options);
+  } else if (initType === 'show') {
+    const currentConfig = config.init();
+    console.log(chalk.bold('Current Configuration:'));
+    console.log(JSON.stringify(currentConfig, null, 2));
+  }
+}
+
+/**
+ * Handle display language change with cascade:
+ * 1. Update manifest + setLanguage
+ * 2. Auto-prompt output_language
+ * 3. If skills/commands installed → confirm reinstall with new locale
+ * 4. If AI tools → confirm regenerate integrations
+ * 5. Copy output_language option file if changed
+ * 6. Write manifest once at end
+ */
+/**
+ * Infer installation level from existing installations (majority vote, default 'project').
+ */
+function inferInstallationLevel(installations) {
+  if (!installations || installations.length === 0) return 'project';
+  const levels = installations.map(i => (typeof i === 'string' ? 'project' : (i.level || 'project')));
+  const userCount = levels.filter(l => l === 'user').length;
+  return userCount > levels.length / 2 ? 'user' : 'project';
+}
+
+async function handleDisplayLanguageChange() {
+  const projectPath = process.cwd();
+  const initialized = isInitialized(projectPath);
+
+  // Determine effective current language using the same priority chain as preAction:
+  // 1. Project manifest options.display_language (authoritative for initialized projects)
+  // 2. ~/.udsrc ui.language
+  // 3. Default 'en'
+  let currentLang = 'en';
+  let manifestHasDisplayLang = false;
+
+  if (initialized) {
+    const manifest = readManifest(projectPath);
+    if (manifest?.options?.display_language) {
+      currentLang = manifest.options.display_language;
+      manifestHasDisplayLang = true;
+    }
+  }
+
+  if (!manifestHasDisplayLang) {
+    // manifest missing display_language — fall back to ~/.udsrc
+    currentLang = config.get('ui.language') || 'en';
+  }
+
+  const langNames = { en: 'English', 'zh-tw': '繁體中文', 'zh-cn': '简体中文' };
+  console.log(chalk.gray(`  ${t('config.currentLanguage', 'Current language')}: ${langNames[currentLang] || currentLang}`));
+
+  const newLang = await promptDisplayLanguage();
+
+  // Only skip if the manifest already has the desired language persisted.
+  // If manifest lacks display_language (even when ~/.udsrc matches), we must
+  // still write the manifest so the project picks up the setting correctly.
+  if (newLang === currentLang && manifestHasDisplayLang) {
+    console.log(chalk.gray(t('config.noLanguageChange', 'Language unchanged.')));
+    return;
+  }
+
+  // Save to global config regardless of initialization
+  config.set('ui.language', newLang, 'global');
+
+  if (!initialized) {
+    // Not initialized: save to global config only
+    setLanguage(newLang);
+    console.log(chalk.green(t('config.languageUpdated', 'Display language updated!')));
+    return;
+  }
+
+  const manifest = readManifest(projectPath);
+  if (!manifest) return;
+
+  // Update manifest display_language and switch UI
+  manifest.options = manifest.options || {};
+  manifest.options.display_language = newLang;
+  setLanguage(newLang);
+
+  // Cascade 1: Auto-prompt output_language
+  const oldOutputLang = manifest.options.output_language;
+  const newOutputLang = await promptOutputLanguage(newLang);
+  manifest.options.output_language = newOutputLang;
+
+  // Copy output_language option file if changed
+  if (newOutputLang !== oldOutputLang) {
+    const standards = getAllStandards();
+    const formatsToUse = manifest.format === 'both' ? ['ai', 'human'] : [manifest.format || 'human'];
+    for (const std of standards) {
+      if (std.id === 'commit-message' && std.options) {
+        for (const targetFormat of formatsToUse) {
+          const option = findOption(std, 'output_language', newOutputLang);
+          if (option) {
+            const sourcePath = getOptionSource(option, targetFormat);
+            await copyStandard(sourcePath, '.standards/options', projectPath);
+          }
+        }
+      }
+    }
+  }
+
+  // Cascade 2: Reinstall skills/commands with new locale if installed
+  const hasSkillInstalls = manifest.skills?.installations?.length > 0;
+  const hasCommandInstalls = manifest.commands?.installations?.length > 0;
+  if (hasSkillInstalls || hasCommandInstalls) {
+    const confirmReinstall = await inquirerConfirm({
+      message: t('config.reinstallWithNewLocale', 'Reinstall Skills/Commands with new language?'),
+      default: true
+    });
+
+    if (confirmReinstall) {
+      const cmdLocale = displayLanguageToLocale(newLang);
+      if (hasSkillInstalls) {
+        const spinner = ora(t('config.reinstallingSkills', 'Reinstalling Skills...')).start();
+        await installSkillsToMultipleAgents(manifest.skills.installations, null, projectPath, cmdLocale);
+        spinner.succeed(t('config.skillsReinstalled', 'Skills reinstalled'));
+      }
+      if (hasCommandInstalls) {
+        const spinner = ora(t('config.reinstallingCommands', 'Reinstalling Commands...')).start();
+        await installCommandsToMultipleAgents(manifest.commands.installations, null, projectPath, cmdLocale);
+        spinner.succeed(t('config.commandsReinstalled', 'Commands reinstalled'));
+      }
+    }
+  }
+
+  // Cascade 3: Regenerate integrations if AI tools configured
+  if (manifest.aiTools?.length > 0) {
+    const confirmRegen = await inquirerConfirm({
+      message: t('config.regenerateForLanguage', 'Regenerate AI tool integrations with new language?'),
+      default: true
+    });
+
+    if (confirmRegen) {
+      const spinner = ora(t('config.applyingPreset', 'Applying...')).start();
+      regenerateIntegrations(projectPath, manifest);
+      spinner.succeed(t('config.integrationsRegenerated', 'Integrations regenerated'));
+    }
+  }
+
+  // Single write at the end
+  writeManifest(manifest, projectPath);
+  console.log(chalk.green(t('config.languageUpdated', 'Display language updated!')));
+}
+
+/**
+ * Initialize Vibe Coding mode
+ * @param {Object} options - Command options
+ */
+async function initVibeMode(options) {
+  console.log(chalk.bold(t('config.vibeModeTitle', 'Vibe Coding Configuration')));
+  console.log(chalk.gray(t('config.vibeModeDesc', 'Configure UDS for natural language-driven development')));
+  console.log('');
+
+  // Select preset
+  let preset;
+  if (options.yes) {
+    preset = 'balanced';
+  } else {
+    const selectedPreset = await select({
+      message: t('config.selectPreset', 'Select a preset:'),
+      choices: Object.entries(VIBE_PRESETS).map(([key, value]) => ({
+        name: `${t(`config.presets.${key}.name`, value.name)}\n     ${chalk.gray(t(`config.presets.${key}.description`, value.description))}`,
+        value: key,
+        short: t(`config.presets.${key}.name`, value.name)
+      }))
+    });
+    preset = selectedPreset;
+  }
+
+  const presetConfig = VIBE_PRESETS[preset];
+  const scope = options.global ? 'global' : 'project';
+
+  // Show what will be set
+  console.log('');
+  const presetName = t(`config.presets.${preset}.name`, presetConfig.name);
+  console.log(chalk.cyan(`${t('config.applyingPreset', 'Applying preset:')} ${presetName}`));
+  console.log(chalk.gray('─'.repeat(50)));
+
+  for (const [key, value] of Object.entries(presetConfig.settings)) {
+    console.log(`  ${key}: ${chalk.yellow(value)}`);
+  }
+  console.log(chalk.gray('─'.repeat(50)));
+
+  // Confirm unless --yes
+  if (!options.yes) {
+    const confirmApply = await inquirerConfirm({
+      message: t('config.confirmApply', 'Apply these settings?'),
+      default: true
+    });
+
+    if (!confirmApply) {
+      console.log(chalk.gray(t('config.cancelled', 'Configuration cancelled.')));
+      return;
+    }
+  }
+
+  // Apply settings
+  for (const [key, value] of Object.entries(presetConfig.settings)) {
+    config.set(key, value, scope);
+  }
+
+  console.log('');
+  console.log(chalk.green(t('config.vibeEnabled', 'Vibe Coding mode enabled!')));
+  console.log('');
+  console.log(chalk.gray(t('config.nextSteps', 'Next steps:')));
+  console.log(chalk.gray(`  • ${t('config.useSpec', 'Generate specs:')} uds spec create "your idea"`));
+  console.log(chalk.gray(`  • ${t('config.useSweep', 'Clean up code:')} /sweep (AI assistant skill)`));
+  console.log(chalk.gray(`  • ${t('config.useQuickstart', 'Explore recipes:')} uds quickstart`));
+}
+
+/**
+ * Run project configuration (formerly configureCommand)
+ * @param {Object} options - Command options
+ */
+export async function runProjectConfiguration(options) {
+  const projectPath = process.cwd();
+
+  // Check if initialized first
+  if (!isInitialized(projectPath)) {
+    const common = getMessages().commands.common;
+    console.log(chalk.red(common.notInitialized));
+    console.log(chalk.gray(`  ${common.runInit}`));
+    return;
+  }
+
+  // Read manifest and set language before using getMessages()
+  const manifest = readManifest(projectPath);
+  if (!manifest) {
+    const common = getMessages().commands.common;
+    console.log(chalk.red(common.couldNotReadManifest));
+    return;
+  }
+
+  // Set UI language based on display_language setting
+  // Only override if user didn't explicitly set --ui-lang flag
+  if (!isLanguageExplicitlySet()) {
+    const uiLang = manifest.options?.display_language || 'en';
+    setLanguage(uiLang);
+  }
+
+  // Now get localized messages
+  const msgObj = getMessages().commands.configure;
+  const common = getMessages().commands.common;
+
+  console.log();
+  console.log(chalk.bold(msgObj.title));
+  console.log(chalk.gray('─'.repeat(50)));
+
+  console.log();
+  console.log(chalk.cyan(msgObj.currentConfig));
+  const langNames = { en: 'English', 'zh-tw': '繁體中文', 'zh-cn': '简体中文' };
+  const displayLang = manifest.options?.display_language || 'en';
+  console.log(chalk.gray(`  ${t('config.displayLanguageLabel', 'Display Language')}: ${langNames[displayLang] || displayLang}`));
+  console.log(chalk.gray(`  ${common.format}: ${manifest.format || 'human'}`));
+  console.log(chalk.gray(`  ${common.contentMode}: ${manifest.contentMode || 'minimal'}`));
+  console.log(chalk.gray(`  ${common.aiTools}: ${manifest.aiTools?.length > 0 ? manifest.aiTools.join(', ') : common.none}`));
+  // Only show methodology with -E flag (completely hidden otherwise)
+  if (options.experimental && manifest.methodology?.active) {
+    console.log(chalk.gray(`  ${common.methodology}: ${manifest.methodology.active.toUpperCase()}`) + chalk.yellow(` ${msgObj.experimental}`));
+  }
+  if (manifest.options) {
+    if (manifest.options.workflow) {
+      console.log(chalk.gray(`  ${msgObj.gitWorkflow}: ${manifest.options.workflow}`));
+    }
+    if (manifest.options.release_mode) {
+      const { RELEASE_MODE_LABELS: releaseModeLabels } = await import('../utils/release-config.js');
+      console.log(chalk.gray(`  ${msgObj.releaseMode || 'Release Mode'}: ${releaseModeLabels[manifest.options.release_mode] || manifest.options.release_mode}`));
+    }
+    if (manifest.options.merge_strategy) {
+      console.log(chalk.gray(`  ${msgObj.mergeStrategy}: ${manifest.options.merge_strategy}`));
+    }
+    if (manifest.options.output_language) {
+      console.log(chalk.gray(`  ${msgObj.outputLanguage}: ${manifest.options.output_language}`));
+    }
+    if (manifest.options.test_levels && manifest.options.test_levels.length > 0) {
+      console.log(chalk.gray(`  ${msgObj.testLevels}: ${manifest.options.test_levels.join(', ')}`));
+    }
+  }
+  console.log();
+
+  // Determine what to configure based on options or interactive mode
+  let configType = options.type || null;
+
+  if (!configType) {
+    const { select: dynamicSelect, Separator: DynSeparator } = await import('@inquirer/prompts');
+
+    // Build flat menu matching init step order
+    const baseChoices = [
+      { name: t('config.displayLanguageOption', 'Display Language - Change UI language'), value: 'display_language' },
+      new DynSeparator(),
+      { name: chalk.cyan(msgObj.optionAITools), value: 'ai_tools' },
+      { name: chalk.cyan(msgObj.optionSkills || 'Manage Skills installations'), value: 'skills' },
+      { name: chalk.cyan(msgObj.optionCommands || 'Manage Commands installations'), value: 'commands' },
+      new DynSeparator()
+    ];
+
+    // Format, Merge Strategy, Content Mode: only show with -E flag (advanced)
+    if (options.experimental) {
+      baseChoices.push({ name: `${msgObj.optionFormat} ${chalk.yellow(msgObj.experimental)}`, value: 'format' });
+    }
+
+    baseChoices.push(
+      { name: msgObj.optionWorkflow, value: 'workflow' },
+      { name: msgObj.optionReleaseMode || 'Release Mode', value: 'release_mode' }
+    );
+
+    if (options.experimental) {
+      baseChoices.push({ name: `${msgObj.optionMergeStrategy} ${chalk.yellow(msgObj.experimental)}`, value: 'merge_strategy' });
+    }
+
+    baseChoices.push(
+      { name: msgObj.optionOutputLanguage, value: 'output_language' }
+    );
+
+    // Test Levels, Content Mode and Methodology: only with -E flag (advanced)
+    if (options.experimental) {
+      baseChoices.push(
+        { name: `${msgObj.optionTestLevels} ${chalk.yellow(msgObj.experimental)}`, value: 'test_levels' },
+        new DynSeparator(),
+        { name: `${chalk.cyan(msgObj.optionContentMode)} ${chalk.yellow(msgObj.experimental)}`, value: 'content_mode' },
+        { name: `${chalk.cyan(msgObj.optionMethodology)} ${chalk.yellow(msgObj.experimental)}`, value: 'methodology' }
+      );
+    }
+
+    baseChoices.push(
+      new DynSeparator(),
+      { name: t('config.projectContractOption', 'Project Command Contract (uds.project.yaml)'), value: 'project_contract' },
+      new DynSeparator(),
+      { name: t('config.vibeMode', 'Vibe Coding Mode'), value: 'vibe_coding' },
+      new DynSeparator(),
+      { name: msgObj.optionAll, value: 'all' },
+      { name: t('config.menuShowConfig', 'Show current configuration (JSON)'), value: 'show' }
+    );
+
+    const type = await dynamicSelect({
+      message: msgObj.selectOption,
+      choices: baseChoices
+    });
+    configType = type;
+  }
+
+  // Handle display_language (flat menu item)
+  if (configType === 'display_language') {
+    await handleDisplayLanguageChange();
+    process.exit(0);
+  }
+
+  // Handle vibe_coding (flat menu item)
+  if (configType === 'vibe_coding') {
+    await initVibeMode(options);
+    process.exit(0);
+  }
+
+  // Handle project_contract — guided uds.project.yaml creation (XSPEC-029 Phase 3)
+  if (configType === 'project_contract') {
+    const { promptProjectCommandContract } = await import('../prompts/init.js');
+    await promptProjectCommandContract(projectPath);
+    process.exit(0);
+  }
+
+  // Handle show (flat menu item)
+  if (configType === 'show') {
+    const currentConfig = config.init();
+    console.log(chalk.bold('Current Configuration:'));
+    console.log(JSON.stringify(currentConfig, null, 2));
+    process.exit(0);
+  }
+
+  // Collect new options
+  const newOptions = { ...manifest.options };
+  let newFormat = manifest.format;
+  let newContentMode = manifest.contentMode || 'minimal';
+  let newAITools = [...(manifest.aiTools || [])];
+  let needsIntegrationRegeneration = false;
+
+  // Handle AI Tools configuration
+  if (configType === 'ai_tools') {
+    const result = await promptManageAITools(manifest.aiTools || []);
+
+    if (result.action === 'add' && result.tools.length > 0) {
+      // Handle AGENTS.md sharing
+      const toolsWithSharing = handleAgentsMdSharing(result.tools);
+      newAITools = [...new Set([...newAITools, ...toolsWithSharing])];
+      needsIntegrationRegeneration = true;
+
+      // Prompt for AGENTS.md universal output if no codex/opencode in final set
+      const hasAgentsMdTool = newAITools.includes('codex') || newAITools.includes('opencode');
+      if (!hasAgentsMdTool && !manifest.generateAgentsMd) {
+        const wantAgentsMd = await promptAgentsMd(newAITools);
+        if (wantAgentsMd) {
+          manifest.generateAgentsMd = true;
+        }
+      }
+    } else if (result.action === 'remove' && result.tools.length > 0) {
+      newAITools = newAITools.filter(tool => !result.tools.includes(tool));
+
+      // Remove integration files for removed tools
+      const spinner = ora(msgObj.removingIntegrations).start();
+      for (const tool of result.tools) {
+        const filePath = join(projectPath, getToolFilePath(tool));
+        if (existsSync(filePath)) {
+          try {
+            unlinkSync(filePath);
+            console.log(chalk.gray(`  ${msgObj.removed}: ${getToolFilePath(tool)}`));
+          } catch {
+            console.log(chalk.yellow(`  ${msgObj.couldNotRemove}: ${getToolFilePath(tool)}`));
+          }
+        }
+
+        // Clean up manifest metadata for the removed tool
+        // Remove from skills.installations
+        if (manifest.skills?.installations) {
+          manifest.skills.installations = manifest.skills.installations.filter(
+            inst => inst.agent !== tool
+          );
+        }
+
+        // Remove from commands.installations
+        if (manifest.commands?.installations) {
+          manifest.commands.installations = manifest.commands.installations.filter(
+            inst => inst.agent !== tool
+          );
+        }
+
+        // Remove matching skillHashes (keyed by "toolName/...")
+        if (manifest.skillHashes) {
+          for (const key of Object.keys(manifest.skillHashes)) {
+            if (key.startsWith(`${tool}/`)) {
+              delete manifest.skillHashes[key];
+            }
+          }
+        }
+
+        // Remove matching commandHashes (keyed by "toolName/...")
+        if (manifest.commandHashes) {
+          for (const key of Object.keys(manifest.commandHashes)) {
+            if (key.startsWith(`${tool}/`)) {
+              delete manifest.commandHashes[key];
+            }
+          }
+        }
+
+        // Remove from integrationBlockHashes (keyed by tool file path)
+        const toolFileName = getToolFilePath(tool);
+        if (manifest.integrationBlockHashes?.[toolFileName]) {
+          delete manifest.integrationBlockHashes[toolFileName];
+        }
+
+        // Remove from integrationConfigs
+        if (manifest.integrationConfigs?.[tool]) {
+          delete manifest.integrationConfigs[tool];
+        }
+        if (manifest.integrationConfigs?.[toolFileName]) {
+          delete manifest.integrationConfigs[toolFileName];
+        }
+      }
+      spinner.succeed(msgObj.integrationsRemoved);
+    } else if (result.action === 'view' || result.action === 'cancel') {
+      console.log(chalk.gray(msgObj.noChanges));
+      process.exit(0);
+    }
+  }
+
+  // Handle Skills configuration
+  if (configType === 'skills') {
+    await handleSkillsConfiguration(manifest, projectPath, msgObj, common, options.aiTool, options.skillsLocation);
+    process.exit(0);
+  }
+
+  // Handle Commands configuration
+  if (configType === 'commands') {
+    await handleCommandsConfiguration(manifest, projectPath, msgObj, common, options.aiTool);
+    process.exit(0);
+  }
+
+  // Handle Content Mode configuration
+  if (configType === 'content_mode') {
+    newContentMode = await promptContentModeChange(manifest.contentMode || 'minimal');
+    if (newContentMode !== manifest.contentMode) {
+      needsIntegrationRegeneration = true;
+    }
+  }
+
+  // Handle Methodology configuration
+  let newMethodology = manifest.methodology?.active || null;
+  if (configType === 'methodology') {
+    newMethodology = await promptMethodology();
+  }
+
+  // For 'all': prompt display_language first, then format and the rest
+  let allDisplayLanguageChanged = false;
+  if (configType === 'all') {
+    const oldDisplayLang = manifest.options?.display_language || 'en';
+    const newDisplayLang = await promptDisplayLanguage();
+    if (newDisplayLang !== oldDisplayLang) {
+      newOptions.display_language = newDisplayLang;
+      manifest.options = manifest.options || {};
+      manifest.options.display_language = newDisplayLang;
+      setLanguage(newDisplayLang);
+      config.set('ui.language', newDisplayLang, 'global');
+      allDisplayLanguageChanged = true;
+    } else {
+      newOptions.display_language = oldDisplayLang;
+    }
+  }
+
+  // Handle traditional options
+  // Format: only prompt with -E or direct --type format (advanced setting)
+  if (configType === 'format' || (configType === 'all' && options.experimental)) {
+    newFormat = await promptFormat();
+  }
+
+  if (configType === 'all' || configType === 'workflow') {
+    newOptions.workflow = await promptGitWorkflow();
+  }
+
+  if (configType === 'all' || configType === 'release_mode') {
+    const { promptReleaseMode } = await import('../prompts/init.js');
+    newOptions.release_mode = await promptReleaseMode();
+  }
+
+  // Merge strategy: only prompt with -E or direct --type merge_strategy (advanced setting)
+  if (configType === 'merge_strategy' || (configType === 'all' && options.experimental)) {
+    newOptions.merge_strategy = await promptMergeStrategy();
+  }
+
+  if (configType === 'all' || configType === 'output_language') {
+    const displayLanguage = manifest.options?.display_language || 'en';
+    newOptions.output_language = await promptOutputLanguage(displayLanguage);
+  }
+
+  // Test levels: only prompt with -E or direct --type test_levels (advanced setting)
+  if (configType === 'test_levels' || (configType === 'all' && options.experimental)) {
+    newOptions.test_levels = await promptTestLevels();
+  }
+
+  // Content mode: only prompt with -E or direct --type content_mode (advanced setting)
+  if (configType === 'content_mode') {
+    newContentMode = await promptContentModeChange(manifest.contentMode || 'minimal');
+    if (newContentMode !== manifest.contentMode) {
+      needsIntegrationRegeneration = true;
+    }
+  } else if (configType === 'all' && options.experimental) {
+    newContentMode = await promptContentModeChange(manifest.contentMode || 'minimal');
+    if (newContentMode !== manifest.contentMode) {
+      needsIntegrationRegeneration = true;
+    }
+  }
+
+  // Show changes
+  console.log();
+  console.log(chalk.cyan(msgObj.newConfig));
+  console.log(chalk.gray(`  ${common.format}: ${newFormat}`));
+  console.log(chalk.gray(`  ${common.contentMode}: ${newContentMode}`));
+  console.log(chalk.gray(`  ${common.aiTools}: ${newAITools.length > 0 ? newAITools.join(', ') : common.none}`));
+  if (newMethodology) {
+    console.log(chalk.gray(`  ${common.methodology}: ${newMethodology.toUpperCase()}`));
+  }
+  if (newOptions.workflow) {
+    console.log(chalk.gray(`  ${msgObj.gitWorkflow}: ${newOptions.workflow}`));
+  }
+  if (newOptions.release_mode) {
+    const releaseModeLabels = { 'ci-cd': 'CI/CD', manual: 'Manual (RC)', hybrid: 'Hybrid' };
+    console.log(chalk.gray(`  ${msgObj.releaseMode || 'Release Mode'}: ${releaseModeLabels[newOptions.release_mode] || newOptions.release_mode}`));
+  }
+  if (newOptions.merge_strategy) {
+    console.log(chalk.gray(`  ${msgObj.mergeStrategy}: ${newOptions.merge_strategy}`));
+  }
+  if (newOptions.output_language) {
+    console.log(chalk.gray(`  ${msgObj.outputLanguage}: ${newOptions.output_language}`));
+  }
+  if (newOptions.test_levels && newOptions.test_levels.length > 0) {
+    console.log(chalk.gray(`  ${msgObj.testLevels}: ${newOptions.test_levels.join(', ')}`));
+  }
+  console.log();
+
+  // Confirm (skip if --yes flag is provided)
+  if (!options.yes) {
+    const confirmed = await promptConfirm(msgObj.applyChanges);
+    if (!confirmed) {
+      console.log(chalk.yellow(msgObj.configCancelled));
+      process.exit(0);
+    }
+  }
+
+  // Apply changes
+  const spinner = ora(msgObj.updatingConfig).start();
+
+  const results = {
+    copied: [],
+    generated: [],
+    errors: []
+  };
+
+  const standards = getAllStandards();
+  const formatsToUse = newFormat === 'both' ? ['ai', 'human'] : [newFormat];
+
+  // Helper to copy option files
+  const copyOptionFile = async (std, optionCategory, optionId, targetFormat) => {
+    const option = findOption(std, optionCategory, optionId);
+    if (option) {
+      const sourcePath = getOptionSource(option, targetFormat);
+      const result = await copyStandard(sourcePath, '.standards/options', projectPath);
+      if (result.success) {
+        results.copied.push(sourcePath);
+      } else {
+        results.errors.push(`${sourcePath}: ${result.error}`);
+      }
+    }
+  };
+
+  // Copy new option files
+  for (const std of standards) {
+    if (!std.options) continue;
+
+    for (const targetFormat of formatsToUse) {
+      // Git workflow
+      if (std.id === 'git-workflow') {
+        if (newOptions.workflow && newOptions.workflow !== manifest.options?.workflow) {
+          await copyOptionFile(std, 'workflow', newOptions.workflow, targetFormat);
+        }
+        if (newOptions.merge_strategy && newOptions.merge_strategy !== manifest.options?.merge_strategy) {
+          await copyOptionFile(std, 'merge_strategy', newOptions.merge_strategy, targetFormat);
+        }
+      }
+
+      // Commit message
+      if (std.id === 'commit-message') {
+        if (newOptions.output_language && newOptions.output_language !== manifest.options?.output_language) {
+          await copyOptionFile(std, 'output_language', newOptions.output_language, targetFormat);
+        }
+      }
+
+      // Testing
+      if (std.id === 'testing' && newOptions.test_levels) {
+        for (const level of newOptions.test_levels) {
+          if (!manifest.options?.test_levels?.includes(level)) {
+            await copyOptionFile(std, 'test_level', level, targetFormat);
+          }
+        }
+      }
+    }
+  }
+
+  // Regenerate integration files if needed
+  if (needsIntegrationRegeneration && newAITools.length > 0) {
+    const intSpinner = ora(msgObj.regeneratingIntegrations).start();
+
+    // Build installed standards list
+    // Raw, not basename()d. Resolution needs the registry (an ID is not a
+    // filename) and the `/options/` segment (it is what classifies an entry).
+    // basename() removes both. See resolveStandardFilename.
+    const installedStandardsList = manifest.standards || [];
+
+    // Determine language setting
+    let commonLanguage = 'en';
+    if (newOptions.output_language === 'bilingual') {
+      commonLanguage = 'bilingual';
+    } else if (newOptions.output_language === 'traditional-chinese') {
+      commonLanguage = 'zh-tw';
+    }
+
+    // Track generated files to handle AGENTS.md sharing
+    const generatedFiles = new Set();
+
+    for (const tool of newAITools) {
+      const targetFile = getToolFilePath(tool);
+      if (generatedFiles.has(targetFile)) {
+        continue; // Skip if already generated (AGENTS.md sharing)
+      }
+
+      const toolConfig = {
+        tool,
+        categories: ['anti-hallucination', 'commit-standards', 'code-review'],
+        language: commonLanguage,
+        installedStandards: installedStandardsList,
+        standardsFormat: manifest.format || 'ai',
+        contentMode: newContentMode,
+        // Pass output_language for dynamic commit standards generation
+        outputLanguage: newOptions.output_language || 'english'
+      };
+
+      const result = writeIntegrationFile(tool, toolConfig, projectPath);
+      if (result.success) {
+        results.generated.push(result.path);
+        generatedFiles.add(targetFile);
+      } else {
+        results.errors.push(`${tool}: ${result.error}`);
+      }
+    }
+    intSpinner.succeed(msgObj.regeneratedIntegrations.replace('{count}', results.generated.length));
+  }
+
+  // Cascade: Auto-install Skills/Commands for newly added AI tools
+  if (configType === 'ai_tools' && needsIntegrationRegeneration) {
+    const oldTools = manifest.aiTools || [];
+    const addedTools = newAITools.filter(t => !oldTools.includes(t));
+
+    if (addedTools.length > 0) {
+      const cmdLocale = displayLanguageToLocale(
+        newOptions.display_language || manifest.options?.display_language || 'en'
+      );
+
+      // Skills cascade
+      const hasExistingSkills = manifest.skills?.installations?.length > 0;
+      if (hasExistingSkills) {
+        const skillCapableTools = addedTools.filter(tool => {
+          const cfg = getAgentConfig(tool);
+          return cfg?.supportsSkills && cfg?.skills;
+        });
+
+        if (skillCapableTools.length > 0) {
+          const level = inferInstallationLevel(manifest.skills.installations);
+          const toolNames = skillCapableTools.map(t => getAgentDisplayName(t)).join(', ');
+          const confirmSkills = options.yes || await inquirerConfirm({
+            message: t('config.autoInstallSkillsForNewTools', `Install Skills for ${toolNames}? (${level} level)`),
+            default: true
+          });
+
+          if (confirmSkills) {
+            const newInstallations = skillCapableTools.map(agent => ({ agent, level }));
+            const spinner = ora(t('config.installingSkillsForNewTools', 'Installing Skills for new tools...')).start();
+            const skillResult = await installSkillsToMultipleAgents(newInstallations, null, projectPath, cmdLocale);
+            spinner.succeed(t('config.skillsInstalledForNewTools', 'Skills installed for new tools'));
+
+            manifest.skills = manifest.skills || {};
+            manifest.skills.installations = manifest.skills.installations || [];
+            for (const inst of newInstallations) {
+              if (!manifest.skills.installations.find(i => i.agent === inst.agent)) {
+                manifest.skills.installations.push(inst);
+              }
+            }
+            manifest.skills.names = mergeInstalledNames(manifest.skills.names, skillResult);
+            if (skillResult.allFileHashes) {
+              manifest.skillHashes = { ...(manifest.skillHashes || {}), ...skillResult.allFileHashes };
+            }
+          }
+        }
+      }
+
+      // Commands cascade
+      const hasExistingCommands = manifest.commands?.installations?.length > 0;
+      if (hasExistingCommands) {
+        const commandCapableTools = addedTools.filter(tool => {
+          const cfg = getAgentConfig(tool);
+          return cfg?.commands !== null && cfg?.commands !== undefined;
+        });
+
+        if (commandCapableTools.length > 0) {
+          const level = inferInstallationLevel(manifest.commands.installations);
+          const toolNames = commandCapableTools.map(t => getAgentDisplayName(t)).join(', ');
+          const confirmCmds = options.yes || await inquirerConfirm({
+            message: t('config.autoInstallCommandsForNewTools', `Install Commands for ${toolNames}? (${level} level)`),
+            default: true
+          });
+
+          if (confirmCmds) {
+            const newCmdInstallations = commandCapableTools.map(agent => ({ agent, level }));
+            const spinner = ora(t('config.installingCommandsForNewTools', 'Installing Commands for new tools...')).start();
+            const cmdResult = await installCommandsToMultipleAgents(newCmdInstallations, null, projectPath, cmdLocale);
+            spinner.succeed(t('config.commandsInstalledForNewTools', 'Commands installed for new tools'));
+
+            manifest.commands = manifest.commands || {};
+            manifest.commands.installations = manifest.commands.installations || [];
+            for (const inst of newCmdInstallations) {
+              if (!manifest.commands.installations.find(i => i.agent === inst.agent)) {
+                manifest.commands.installations.push(inst);
+              }
+            }
+            manifest.commands.names = mergeInstalledNames(manifest.commands.names, cmdResult);
+            if (cmdResult.allFileHashes) {
+              manifest.commandHashes = { ...(manifest.commandHashes || {}), ...cmdResult.allFileHashes };
+            }
+          }
+        }
+      }
+    }
+  }
+
+  // Update manifest
+  manifest.format = newFormat;
+  manifest.options = newOptions;
+  manifest.contentMode = newContentMode;
+  manifest.aiTools = newAITools;
+  manifest.version = '3.2.0';
+
+  // Update methodology
+  if (newMethodology) {
+    manifest.methodology = {
+      active: newMethodology,
+      available: ['tdd', 'bdd', 'sdd', 'atdd'],
+      config: {
+        checkpointsEnabled: true,
+        reminderIntensity: 'suggest',
+        skipLimit: 3
+      }
+    };
+  } else if (configType === 'methodology' && !newMethodology) {
+    // User explicitly chose "None"
+    manifest.methodology = null;
+  }
+
+  writeManifest(manifest, projectPath);
+
+  // Generate or remove release-config.yaml based on release mode
+  if (newOptions.release_mode && newOptions.release_mode !== 'ci-cd') {
+    const { generateReleaseConfig } = await import('../utils/release-config.js');
+    const yaml = (await import('js-yaml')).default;
+    const releaseConfigData = generateReleaseConfig(newOptions.release_mode);
+    const releaseConfigPath = join(projectPath, '.standards', 'release-config.yaml');
+    mkdirSync(join(projectPath, '.standards'), { recursive: true });
+    writeFileSync(releaseConfigPath, yaml.dump(releaseConfigData), 'utf-8');
+  } else if (newOptions.release_mode === 'ci-cd') {
+    const releaseConfigPath = join(projectPath, '.standards', 'release-config.yaml');
+    try {
+      if (existsSync(releaseConfigPath)) {
+        unlinkSync(releaseConfigPath);
+      }
+    } catch {
+      // Ignore deletion errors — file may already be removed
+    }
+  }
+
+  spinner.succeed(msgObj.configUpdated);
+
+  // Summary
+  console.log();
+  console.log(chalk.green(msgObj.configSuccess));
+  if (results.copied.length > 0) {
+    console.log(chalk.gray(`  ${msgObj.newOptionsCopied.replace('{count}', results.copied.length)}`));
+  }
+  if (results.generated.length > 0) {
+    console.log(chalk.gray(`  ${msgObj.integrationsRegenerated.replace('{count}', results.generated.length)}`));
+  }
+
+  if (results.errors.length > 0) {
+    console.log();
+    console.log(chalk.yellow(msgObj.errorsOccurred.replace('{count}', results.errors.length)));
+    for (const err of results.errors) {
+      console.log(chalk.gray(`    ${err}`));
+    }
+  }
+
+  // Smart apply: offer to regenerate integrations if config changed but not already regenerated
+  // Skip for types that have their own flow or don't affect integrations
+  const skipApplyTypes = ['skills', 'commands', 'methodology'];
+  const alreadyRegenerated = results.generated.length > 0;
+  const shouldOfferApply = !skipApplyTypes.includes(configType) &&
+                           newAITools.length > 0 &&
+                           !alreadyRegenerated;
+
+  if (shouldOfferApply) {
+    console.log();
+
+    if (options.yes) {
+      // --yes flag: auto-apply without prompting
+      const applySpinner = ora(msgObj.applyingChanges).start();
+      const applyResults = regenerateIntegrations(projectPath, manifest);
+      applySpinner.succeed(msgObj.changesApplied || msgObj.regeneratedIntegrations.replace('{count}', applyResults.updated.length));
+
+      // Update manifest with new file hashes
+      writeManifest(manifest, projectPath);
+
+      if (applyResults.errors.length > 0) {
+        console.log(chalk.yellow(msgObj.errorsOccurred.replace('{count}', applyResults.errors.length)));
+        for (const err of applyResults.errors) {
+          console.log(chalk.gray(`    ${err}`));
+        }
+      }
+    } else {
+      // Interactive mode: prompt user
+      const { confirm: dynConfirm } = await import('@inquirer/prompts');
+      const apply = await dynConfirm({
+        message: msgObj.applyChangesNow,
+        default: true
+      });
+
+      if (apply) {
+        const applySpinner = ora(msgObj.applyingChanges).start();
+        const applyResults = regenerateIntegrations(projectPath, manifest);
+        applySpinner.succeed(msgObj.changesApplied || msgObj.regeneratedIntegrations.replace('{count}', applyResults.updated.length));
+
+        // Update manifest with new file hashes
+        writeManifest(manifest, projectPath);
+
+        if (applyResults.errors.length > 0) {
+          console.log(chalk.yellow(msgObj.errorsOccurred.replace('{count}', applyResults.errors.length)));
+          for (const err of applyResults.errors) {
+            console.log(chalk.gray(`    ${err}`));
+          }
+        }
+      } else {
+        console.log(chalk.gray(msgObj.runUpdateLater));
+      }
+    }
+  }
+
+  // For 'all' flow: if display_language changed, reinstall skills/commands with new locale
+  if (configType === 'all' && allDisplayLanguageChanged) {
+    const hasSkillInstalls = manifest.skills?.installations?.length > 0;
+    const hasCommandInstalls = manifest.commands?.installations?.length > 0;
+    if (hasSkillInstalls || hasCommandInstalls) {
+      const cmdLocale = displayLanguageToLocale(newOptions.display_language);
+      if (hasSkillInstalls) {
+        const skillSpinner = ora(t('config.reinstallingSkills', 'Reinstalling Skills...')).start();
+        await installSkillsToMultipleAgents(manifest.skills.installations, null, projectPath, cmdLocale);
+        skillSpinner.succeed(t('config.skillsReinstalled', 'Skills reinstalled'));
+      }
+      if (hasCommandInstalls) {
+        const cmdSpinner = ora(t('config.reinstallingCommands', 'Reinstalling Commands...')).start();
+        await installCommandsToMultipleAgents(manifest.commands.installations, null, projectPath, cmdLocale);
+        cmdSpinner.succeed(t('config.commandsReinstalled', 'Commands reinstalled'));
+      }
+    }
+  }
+
+  console.log();
+
+  // Exit explicitly to prevent hanging
+  process.exit(0);
+}
+
+/**
+ * Handle Skills configuration
+ * @param {Object} manifest - Project manifest
+ * @param {string} projectPath - Project path
+ * @param {Object} msgObj - i18n messages
+ * @param {Object} common - Common i18n messages
+ * @param {string} [specificTool] - Specific AI tool to install (non-interactive mode)
+ * @param {string} [skillsLocation] - Skills installation location (project, user) for non-interactive mode
+ */
+async function handleSkillsConfiguration(manifest, projectPath, msgObj, common, specificTool, skillsLocation) {
+  const { select: dynSelect } = await import('@inquirer/prompts');
+  const aiTools = manifest.aiTools || [];
+
+  // Non-interactive mode: install for specific tool
+  if (specificTool) {
+    const agentCfg = getAgentConfig(specificTool);
+    if (!agentCfg) {
+      console.log(chalk.red(`Unknown AI tool: ${specificTool}`));
+      console.log(chalk.gray('  Available tools: claude-code, opencode, copilot, gemini-cli, roo-code, cursor, windsurf, cline, codex'));
+      return;
+    }
+    if (!agentCfg.supportsSkills) {
+      console.log(chalk.yellow(`${getAgentDisplayName(specificTool)} does not support Skills`));
+      return;
+    }
+
+    // Validate skillsLocation if provided
+    const validLocations = ['project', 'user'];
+    const level = skillsLocation && validLocations.includes(skillsLocation) ? skillsLocation : 'project';
+
+    // Install to specified level (defaults to project)
+    const installations = [{ agent: specificTool, level }];
+    const spinner = ora(`Installing Skills for ${getAgentDisplayName(specificTool)} (${level} level)...`).start();
+    const result = await installSkillsToMultipleAgents(installations, null, projectPath);
+    spinner.stop();
+
+    if (result.success) {
+      console.log(chalk.green(`Skills installed for ${getAgentDisplayName(specificTool)}`));
+    } else {
+      console.log(chalk.yellow('Skills installation completed with issues'));
+    }
+
+    // Update manifest
+    manifest.skills = manifest.skills || {};
+    manifest.skills.installations = manifest.skills.installations || [];
+    const existing = manifest.skills.installations.findIndex(i => i.agent === specificTool);
+    if (existing >= 0) {
+      manifest.skills.installations[existing] = installations[0];
+    } else {
+      manifest.skills.installations.push(installations[0]);
+    }
+    manifest.skills.names = mergeInstalledNames(manifest.skills.names, result);
+    writeManifest(manifest, projectPath);
+    return;
+  }
+
+  // Interactive mode
+  if (aiTools.length === 0) {
+    console.log(chalk.yellow(msgObj.noAiToolsConfigured || 'No AI tools configured'));
+    console.log(chalk.gray(`  ${msgObj.addAiToolsFirst || 'Add AI tools first with: uds config --type ai_tools'}`));
+    return;
+  }
+
+  // Get declined skills from manifest
+  const declinedSkills = manifest.declinedFeatures?.skills || [];
+
+  // Check if Skills are installed via marketplace (Claude Code only)
+  const marketplaceInfo = getMarketplaceSkillsInfo();
+  const hasMarketplaceSkills = marketplaceInfo?.installed;
+
+  // Show current Skills status
+  console.log(chalk.cyan(msgObj.currentSkillsStatus || 'Current Skills status:'));
+
+  // Show marketplace status if applicable
+  if (hasMarketplaceSkills && aiTools.includes('claude-code')) {
+    console.log(chalk.green(`  ✓ ${msgObj.viaMarketplace || 'Via Marketplace'}: ${marketplaceInfo.version || 'installed'}`));
+  }
+
+  for (const tool of aiTools) {
+    const agentCfg = getAgentConfig(tool);
+    if (!agentCfg?.supportsSkills) continue;
+
+    const displayName = getAgentDisplayName(tool);
+    const projectInfo = getInstalledSkillsInfoForAgent(tool, 'project', projectPath);
+    const userInfo = getInstalledSkillsInfoForAgent(tool, 'user', projectPath);
+
+    if (projectInfo?.installed || userInfo?.installed) {
+      console.log(chalk.green(`  ✓ ${displayName}:`));
+      if (userInfo?.installed) {
+        console.log(chalk.gray(`    - User: ${userInfo.version || 'installed'}`));
+      }
+      if (projectInfo?.installed) {
+        console.log(chalk.gray(`    - Project: ${projectInfo.version || 'installed'}`));
+      }
+    } else if (declinedSkills.includes(tool)) {
+      console.log(chalk.yellow(`  ⊘ ${displayName}: ${msgObj.previouslyDeclined || 'Previously declined'}`));
+    } else if (hasMarketplaceSkills && tool === 'claude-code') {
+      // Claude Code has marketplace skills but no file-based installation
+      console.log(chalk.cyan(`  ◎ ${displayName}: ${msgObj.marketplaceOnly || 'Marketplace only (no local files)'}`));
+    } else {
+      console.log(chalk.gray(`  ○ ${displayName}: ${msgObj.notInstalled || 'Not installed'}`));
+    }
+  }
+
+  // Show marketplace coexistence note if user might want to install local files
+  if (hasMarketplaceSkills && aiTools.includes('claude-code')) {
+    console.log();
+    console.log(chalk.cyan(`  ℹ ${msgObj.marketplaceCoexistNote || 'Note: File-based installation will coexist with Marketplace version'}`));
+  }
+  console.log();
+
+  // Build menu choices
+  const menuChoices = [
+    { name: msgObj.installSkills || 'Install/Update Skills', value: 'install' }
+  ];
+
+  // Add reinstall declined option if there are declined skills
+  if (declinedSkills.length > 0) {
+    menuChoices.push({
+      name: msgObj.reinstallDeclinedSkills || 'Reinstall declined Skills',
+      value: 'reinstall_declined'
+    });
+  }
+
+  menuChoices.push(
+    { name: msgObj.viewStatus || 'View status only', value: 'view' },
+    { name: common.cancelled || 'Cancel', value: 'cancel' }
+  );
+
+  // Ask what action to take
+  const action = await dynSelect({
+    message: msgObj.skillsAction || 'What would you like to do?',
+    choices: menuChoices
+  });
+
+  if (action === 'cancel' || action === 'view') {
+    console.log(chalk.gray(msgObj.noChanges || 'No changes made'));
+    return;
+  }
+
+  // Handle reinstall declined action
+  if (action === 'reinstall_declined') {
+    // Get only the declined tools that support skills
+    const declinedToolsWithSupport = declinedSkills.filter(tool => {
+      const agentCfg = getAgentConfig(tool);
+      return agentCfg?.supportsSkills;
+    });
+
+    if (declinedToolsWithSupport.length === 0) {
+      console.log(chalk.gray(msgObj.noChanges || 'No changes made'));
+      return;
+    }
+
+    // Prompt for installation level
+    const skillsLevel = await dynSelect({
+      message: msgObj.skillsLevelQuestion || 'Where should Skills be installed?',
+      choices: [
+        { name: `${msgObj.projectLevel || 'Project level'} (.claude/skills/, etc.)`, value: 'project' },
+        { name: `${msgObj.userLevel || 'User level'} (~/.claude/skills/, etc.)`, value: 'user' }
+      ],
+      default: 'project'
+    });
+
+    const installations = declinedToolsWithSupport.map(agent => ({
+      agent,
+      location: skillsLevel
+    }));
+
+    // Install Skills
+    const spinner = ora(msgObj.installingSkills || 'Installing Skills...').start();
+    const result = await installSkillsToMultipleAgents(installations, null, projectPath);
+    spinner.stop();
+
+    if (result.success) {
+      console.log(chalk.green(msgObj.skillsInstallSuccess || 'Skills installed successfully'));
+      console.log(chalk.gray(`  ${msgObj.totalInstalled || 'Total installed'}: ${result.totalInstalled}`));
+    } else {
+      console.log(chalk.yellow(msgObj.skillsInstallPartial || 'Skills installed with some issues'));
+      if (result.totalErrors > 0) {
+        console.log(chalk.red(`  ${msgObj.errors || 'Errors'}: ${result.totalErrors}`));
+      }
+    }
+
+    // Update manifest - clear declined status for installed tools
+    manifest.skills = manifest.skills || {};
+    manifest.skills.installations = installations;
+    manifest.skills.names = mergeInstalledNames(manifest.skills.names, result);
+    if (manifest.declinedFeatures?.skills) {
+      manifest.declinedFeatures.skills = manifest.declinedFeatures.skills.filter(
+        tool => !declinedToolsWithSupport.includes(tool)
+      );
+    }
+    writeManifest(manifest, projectPath);
+    return;
+  }
+
+  // Use unified installation prompt
+  const installations = await promptSkillsInstallLocation(aiTools);
+  if (installations.length === 0) {
+    console.log(chalk.gray(msgObj.noChanges || 'No changes made'));
+    return;
+  }
+
+  // Install Skills
+  const spinner = ora(msgObj.installingSkills || 'Installing Skills...').start();
+  const result = await installSkillsToMultipleAgents(installations, null, projectPath);
+  spinner.stop();
+
+  if (result.success) {
+    console.log(chalk.green(msgObj.skillsInstallSuccess || 'Skills installed successfully'));
+    console.log(chalk.gray(`  ${msgObj.totalInstalled || 'Total installed'}: ${result.totalInstalled}`));
+  } else {
+    console.log(chalk.yellow(msgObj.skillsInstallPartial || 'Skills installed with some issues'));
+    if (result.totalErrors > 0) {
+      console.log(chalk.red(`  ${msgObj.errors || 'Errors'}: ${result.totalErrors}`));
+    }
+  }
+
+  // Update manifest
+  manifest.skills = manifest.skills || {};
+  manifest.skills.installations = installations;
+  manifest.skills.names = mergeInstalledNames(manifest.skills.names, result);
+  writeManifest(manifest, projectPath);
+}
+
+/**
+ * Handle Commands configuration
+ * @param {Object} manifest - Project manifest
+ * @param {string} projectPath - Project path
+ * @param {Object} msgObj - i18n messages
+ * @param {Object} common - Common i18n messages
+ * @param {string} [specificTool] - Specific AI tool to install (triggers interactive prompt for level)
+ */
+async function handleCommandsConfiguration(manifest, projectPath, msgObj, common, specificTool) {
+  const { select: dynSelect } = await import('@inquirer/prompts');
+  const aiTools = manifest.aiTools || [];
+
+  // Semi-interactive mode: install for specific tool (prompt for level)
+  if (specificTool) {
+    const agentCfg = getAgentConfig(specificTool);
+    if (!agentCfg) {
+      console.log(chalk.red(`Unknown AI tool: ${specificTool}`));
+      console.log(chalk.gray('  Available tools: claude-code, opencode, copilot, gemini-cli, roo-code'));
+      return;
+    }
+    if (agentCfg.commands === null) {
+      console.log(chalk.yellow(`${getAgentDisplayName(specificTool)} does not support Commands`));
+      console.log(chalk.gray('  Tools that support commands: OpenCode, Copilot, Roo Code, Gemini CLI'));
+      return;
+    }
+
+    // Prompt for installation level
+    const commandsLevel = await dynSelect({
+      message: msgObj.commandsLevelQuestion || 'Where should Commands be installed?',
+      choices: [
+        { name: `${msgObj.projectLevel || 'Project level'} (${agentCfg.commands.project}) (${msgObj.recommended || 'Recommended'})`, value: 'project' },
+        { name: `${msgObj.userLevel || 'User level'} (${agentCfg.commands.user})`, value: 'user' }
+      ],
+      default: 'project'
+    });
+
+    // Install to selected level
+    const installations = [{ agent: specificTool, level: commandsLevel }];
+    const spinner = ora(`Installing Commands for ${getAgentDisplayName(specificTool)} (${commandsLevel} level)...`).start();
+    const cmdLocale = displayLanguageToLocale(manifest.options?.display_language);
+    const result = await installCommandsToMultipleAgents(installations, null, projectPath, cmdLocale);
+    spinner.stop();
+
+    if (result.success) {
+      console.log(chalk.green(`Commands installed for ${getAgentDisplayName(specificTool)}`));
+    } else {
+      console.log(chalk.yellow('Commands installation completed with issues'));
+    }
+
+    // Update manifest
+    manifest.commands = manifest.commands || {};
+    manifest.commands.installations = manifest.commands.installations || [];
+    const existing = manifest.commands.installations.findIndex(i =>
+      typeof i === 'string' ? i === specificTool : i.agent === specificTool
+    );
+    if (existing >= 0) {
+      manifest.commands.installations[existing] = installations[0];
+    } else {
+      manifest.commands.installations.push(installations[0]);
+    }
+    manifest.commands.names = mergeInstalledNames(manifest.commands.names, result);
+    writeManifest(manifest, projectPath);
+    return;
+  }
+
+  // Interactive mode
+  // Filter tools that support commands (commands !== null means support)
+  const commandSupportedTools = aiTools.filter(tool => {
+    const agentCfg = getAgentConfig(tool);
+    return agentCfg?.commands !== null;
+  });
+
+  if (commandSupportedTools.length === 0) {
+    console.log(chalk.yellow(msgObj.noCommandSupportedTools || 'No AI tools with command support configured'));
+    console.log(chalk.gray(`  ${msgObj.commandSupportedList || 'Tools that support commands: OpenCode, Copilot, Roo Code, Gemini CLI'}`));
+    return;
+  }
+
+  // Get declined commands from manifest
+  const declinedCommands = manifest.declinedFeatures?.commands || [];
+
+  // Show current Commands status (check both project and user levels)
+  console.log(chalk.cyan(msgObj.currentCommandsStatus || 'Current Commands status:'));
+  for (const tool of commandSupportedTools) {
+    const displayName = getAgentDisplayName(tool);
+    const projectCmdInfo = getInstalledCommandsForAgent(tool, 'project', projectPath);
+    const userCmdInfo = getInstalledCommandsForAgent(tool, 'user');
+
+    if (projectCmdInfo?.installed || userCmdInfo?.installed) {
+      console.log(chalk.green(`  ✓ ${displayName}:`));
+      if (userCmdInfo?.installed) {
+        console.log(chalk.gray(`    - User: ${userCmdInfo.count} commands`));
+      }
+      if (projectCmdInfo?.installed) {
+        console.log(chalk.gray(`    - Project: ${projectCmdInfo.count} commands`));
+      }
+    } else if (declinedCommands.includes(tool)) {
+      console.log(chalk.yellow(`  ⊘ ${displayName}: ${msgObj.previouslyDeclined || 'Previously declined'}`));
+    } else {
+      console.log(chalk.gray(`  ○ ${displayName}: ${msgObj.notInstalled || 'Not installed'}`));
+    }
+  }
+  console.log();
+
+  // Build menu choices
+  const menuChoices = [
+    { name: msgObj.installCommands || 'Install/Update Commands', value: 'install' }
+  ];
+
+  // Add reinstall declined option if there are declined commands
+  const declinedCommandsWithSupport = declinedCommands.filter(tool =>
+    commandSupportedTools.includes(tool)
+  );
+  if (declinedCommandsWithSupport.length > 0) {
+    menuChoices.push({
+      name: msgObj.reinstallDeclinedCommands || 'Reinstall declined Commands',
+      value: 'reinstall_declined'
+    });
+  }
+
+  menuChoices.push(
+    { name: msgObj.viewStatus || 'View status only', value: 'view' },
+    { name: common.cancelled || 'Cancel', value: 'cancel' }
+  );
+
+  // Ask what action to take
+  const action = await dynSelect({
+    message: msgObj.commandsAction || 'What would you like to do?',
+    choices: menuChoices
+  });
+
+  if (action === 'cancel' || action === 'view') {
+    console.log(chalk.gray(msgObj.noChanges || 'No changes made'));
+    return;
+  }
+
+  // Handle reinstall declined action
+  if (action === 'reinstall_declined') {
+    if (declinedCommandsWithSupport.length === 0) {
+      console.log(chalk.gray(msgObj.noChanges || 'No changes made'));
+      return;
+    }
+
+    // Install Commands
+    const spinner = ora(msgObj.installingCommands || 'Installing Commands...').start();
+    const cmdLocale = displayLanguageToLocale(manifest.options?.display_language);
+    const result = await installCommandsToMultipleAgents(declinedCommandsWithSupport, null, projectPath, cmdLocale);
+    spinner.stop();
+
+    if (result.success) {
+      console.log(chalk.green(msgObj.commandsInstallSuccess || 'Commands installed successfully'));
+      console.log(chalk.gray(`  ${msgObj.totalInstalled || 'Total installed'}: ${result.totalInstalled}`));
+    } else {
+      console.log(chalk.yellow(msgObj.commandsInstallPartial || 'Commands installed with some issues'));
+      if (result.totalErrors > 0) {
+        console.log(chalk.red(`  ${msgObj.errors || 'Errors'}: ${result.totalErrors}`));
+      }
+    }
+
+    // Update manifest - clear declined status for installed tools
+    manifest.commands = manifest.commands || {};
+    manifest.commands.installations = declinedCommandsWithSupport;
+    manifest.commands.names = mergeInstalledNames(manifest.commands.names, result);
+    if (manifest.declinedFeatures?.commands) {
+      manifest.declinedFeatures.commands = manifest.declinedFeatures.commands.filter(
+        tool => !declinedCommandsWithSupport.includes(tool)
+      );
+    }
+    writeManifest(manifest, projectPath);
+    return;
+  }
+
+  // Use unified installation prompt
+  const selectedAgents = await promptCommandsInstallation(commandSupportedTools);
+  if (selectedAgents.length === 0) {
+    console.log(chalk.gray(msgObj.noChanges || 'No changes made'));
+    return;
+  }
+
+  // Install Commands
+  const spinner = ora(msgObj.installingCommands || 'Installing Commands...').start();
+  const cmdLocale = displayLanguageToLocale(manifest.options?.display_language);
+  const result = await installCommandsToMultipleAgents(selectedAgents, null, projectPath, cmdLocale);
+  spinner.stop();
+
+  if (result.success) {
+    console.log(chalk.green(msgObj.commandsInstallSuccess || 'Commands installed successfully'));
+    console.log(chalk.gray(`  ${msgObj.totalInstalled || 'Total installed'}: ${result.totalInstalled}`));
+  } else {
+    console.log(chalk.yellow(msgObj.commandsInstallPartial || 'Commands installed with some issues'));
+    if (result.totalErrors > 0) {
+      console.log(chalk.red(`  ${msgObj.errors || 'Errors'}: ${result.totalErrors}`));
+    }
+  }
+
+  // Update manifest
+  manifest.commands = manifest.commands || {};
+  manifest.commands.installations = selectedAgents;
+  manifest.commands.names = mergeInstalledNames(manifest.commands.names, result);
+  writeManifest(manifest, projectPath);
+}

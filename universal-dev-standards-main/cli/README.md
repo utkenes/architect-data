@@ -1,0 +1,393 @@
+# Universal Development Standards CLI
+# 通用開發規範 CLI 工具
+
+CLI tool for adopting Universal Development Standards in your projects.
+
+採用通用開發規範的 CLI 工具，協助您在專案中快速導入標準。
+
+## Installation | 安裝
+
+### Option 1: npm (Recommended) | 選項一：npm（推薦）
+
+```bash
+# Install globally
+npm install -g universal-dev-standards
+
+# Or use npx directly
+npx universal-dev-standards init
+```
+
+### Option 2: Clone and Run Locally | 選項二：本地克隆執行
+
+```bash
+# Clone the repository
+git clone https://github.com/AsiaOstrich/universal-dev-standards.git
+
+# Navigate to CLI directory
+cd universal-dev-standards/cli
+
+# Install dependencies
+npm install
+
+# Run directly
+node bin/uds.js list
+node bin/uds.js init
+
+# Or link globally
+npm link
+uds list
+```
+
+## Commands | 命令
+
+### `uds list`
+
+List all available standards. | 列出所有可用的規範。
+
+```bash
+# List all standards
+uds list
+
+# Filter by level
+uds list --level 2
+
+# Filter by category
+uds list --category skill
+```
+
+**Options | 選項:**
+- `-l, --level <1|2|3>` - Filter by adoption level | 按採用等級篩選
+- `-c, --category <name>` - Filter by category | 按類別篩選 (skill, reference, extension, integration, template)
+
+### `uds init`
+
+Initialize standards in your project. | 在您的專案中初始化規範。
+
+```bash
+# Interactive mode (recommended)
+uds init
+
+# Non-interactive with defaults
+uds init --yes
+
+# Specify options
+uds init --level 2 --lang php --locale zh-tw
+```
+
+**Options | 選項:**
+- `-l, --level <1|2|3>` - Adoption level | 採用等級 (1=基本, 2=推薦, 3=企業)
+- `-f, --format <format>` - Standards format | 標準格式 (ai, human, both)
+- `--skills-location <loc>` - Skills installation location | Skills 安裝位置 (marketplace, user, project, none)
+- `--content-mode <mode>` - Integration file content mode | 整合檔案內容模式 (minimal, index, full)
+- `--workflow <strategy>` - Git workflow strategy | Git 工作流程 (github-flow, gitflow, trunk-based)
+- `--merge-strategy <strategy>` - Merge strategy | 合併策略 (squash, merge-commit, rebase-ff)
+- `--output-lang <lang>` - Output language | 產出語言 (english, traditional-chinese, bilingual)
+- `--test-levels <levels>` - Test levels (comma-separated) | 測試層級 (unit,integration,system,e2e)
+- `--lang <language>` - Language extension | 語言延伸 (csharp, php)
+- `--framework <name>` - Framework extension | 框架延伸 (fat-free)
+- `--locale <locale>` - Locale extension | 地區延伸 (zh-tw)
+- `-y, --yes` - Use defaults, skip interactive prompts | 使用預設值，跳過互動提示
+
+> **Detailed Options**: See [CLI Init Options Guide](../docs/CLI-INIT-OPTIONS.md) | **詳細選項說明**：[繁體中文](../locales/zh-TW/docs/CLI-INIT-OPTIONS.md) | [简体中文](../locales/zh-CN/docs/CLI-INIT-OPTIONS.md)
+
+**What it does | 功能說明:**
+1. Detects your project's language and framework
+2. Asks which standards to adopt
+3. Copies reference documents to `.standards/`
+4. Copies AI tool integrations (Cursor, Copilot, etc.)
+5. Creates `.standards/manifest.json` for tracking
+
+### `uds check`
+
+Check adoption status of current project. | 檢查當前專案的採用狀態。
+
+```bash
+uds check
+```
+
+**Output includes | 輸出內容:**
+- Installed version and level | 已安裝版本和等級
+- File integrity check | 檔案完整性檢查
+- Skills installation status | Skills 安裝狀態
+- Coverage summary | 涵蓋範圍摘要
+- Update availability | 更新可用性
+
+### `uds update`
+
+Update standards to the latest version. | 更新規範到最新版本。
+
+```bash
+# Interactive update
+uds update
+
+# Skip confirmation
+uds update --yes
+```
+
+**Options | 選項:**
+- `-y, --yes` - Skip confirmation prompts | 跳過確認提示
+
+### `uds skills`
+
+List installed Claude Code skills. | 列出已安裝的 Claude Code Skills。
+
+```bash
+uds skills
+```
+
+**Output includes | 輸出內容:**
+- Installation location (Plugin Marketplace, User Level, Project Level) | 安裝位置
+- Installed version | 已安裝版本
+- List of installed skills | 已安裝的 Skills 清單
+- Migration recommendations for deprecated installations | 棄用安裝的遷移建議
+
+**Example Output | 範例輸出:**
+```
+Universal Dev Standards - Installed Skills
+──────────────────────────────────────────────────
+
+✓ Plugin Marketplace (recommended)
+  Version: 3.2.2
+  Path: /Users/.../.claude/plugins/universal-dev-standards@...
+
+  Skills (14):
+    ✓ ai-collaboration-standards
+    ✓ changelog-guide
+    ✓ code-review-assistant
+    ...
+
+──────────────────────────────────────────────────
+Total unique skills: 14 / 14
+```
+
+### `uds audit`
+
+Deep health diagnosis with pattern detection and feedback. | 深度健康診斷，包含模式偵測與回饋。
+
+```bash
+# Full audit (health + patterns + friction)
+uds audit
+
+# Health score only (4-dimension scoring)
+uds audit --score
+
+# Self mode (for UDS repo itself)
+uds audit --score --self
+
+# JSON output
+uds audit --score --format json
+
+# Save snapshot for trend tracking
+uds audit --score --save
+
+# Show historical trend
+uds audit --score --trend
+
+# CI mode (exit 1 if below threshold)
+uds audit --score --ci --threshold 75
+```
+
+**Health Score Dimensions | 健康評分維度:**
+
+| Dimension | Weight | Description | 說明 |
+|-----------|--------|-------------|------|
+| Completeness | 25% | Ecosystem completeness per standard | 每個標準的生態系完整性 |
+| Freshness | 25% | How recently standards were updated | 標準的更新時間 |
+| Consistency | 30% | Sync status across layers | 各層間同步狀態 |
+| Coverage | 20% | Verification script/test coverage | 驗證腳本和測試覆蓋率 |
+
+**Hook Statistics (opt-in) | Hook 統計（需啟用）:**
+
+啟用觸發統計記錄以分析 context-aware loading 的盲區：
+
+```bash
+# Enable hook stats
+echo '{"hookStats": true}' > .uds/config.json
+
+# Analyze after sufficient data collected
+node scripts/analyze-hook-stats.mjs
+```
+
+## Adoption Levels | 採用等級
+
+| Level | Name | Description | 說明 |
+|-------|------|-------------|------|
+| 1 | Essential | Minimum viable standards | 最低可行標準 |
+| 2 | Recommended | Professional quality for teams | 團隊專業品質 |
+| 3 | Enterprise | Comprehensive standards | 全面企業標準 |
+
+## Categories | 類別
+
+| Category | Description | 說明 |
+|----------|-------------|------|
+| `skill` | Standards with Claude Code Skills | 包含 Skills 的規範 |
+| `reference` | Reference documents (no Skills) | 參考文件（無 Skills）|
+| `extension` | Language/framework-specific | 語言/框架特定 |
+| `integration` | AI tool configurations | AI 工具配置 |
+| `template` | Document templates | 文件模板 |
+
+## Example Workflow | 範例工作流程
+
+```bash
+# 1. Install CLI (one-time)
+npm install -g universal-dev-standards
+
+# 2. Navigate to your project
+cd my-project
+
+# 3. Initialize standards (interactive)
+uds init
+# ? Select adoption level: Level 2: Recommended
+# ? Detected PHP project. Select style guides: PHP Style Guide
+# ? Select AI tool integrations: Cursor, GitHub Copilot
+# ? Install Claude Code Skills? Yes
+
+# 4. Review what was created
+ls .standards/
+# checkin-standards.md
+# spec-driven-development.md
+# manifest.json
+
+# 5. Check status anytime
+uds check
+
+# 6. Update when new version is available
+uds update
+```
+
+## File Structure | 檔案結構
+
+After initialization, your project will have: | 初始化後，您的專案將包含：
+
+```
+your-project/
+├── .standards/
+│   ├── manifest.json        # Tracks what was installed
+│   ├── checkin-standards.md # Reference documents
+│   ├── spec-driven-development.md
+│   └── (other standards...)
+├── .cursorrules             # AI tool integrations
+├── .github/
+│   └── copilot-instructions.md
+└── ...
+```
+
+## Manifest File | 清單檔案
+
+The `.standards/manifest.json` tracks your adoption: | `.standards/manifest.json` 追蹤您的採用狀態：
+
+```json
+{
+  "version": "1.0.0",
+  "upstream": {
+    "repo": "AsiaOstrich/universal-dev-standards",
+    "version": "2.0.0",
+    "installed": "2025-12-23"
+  },
+  "level": 2,
+  "standards": ["core/checkin-standards.md", ...],
+  "extensions": ["extensions/languages/php-style.md"],
+  "integrations": [".cursorrules"],
+  "skills": {
+    "installed": true,
+    "version": "1.1.0"
+  }
+}
+```
+
+## Integration with Claude Code Skills | 與 Claude Code Skills 整合
+
+This CLI works alongside [Claude Code Skills](../skills/):
+此 CLI 與 [Claude Code Skills](../skills/) 配合使用：
+
+- **Skills** provide interactive AI assistance (commit messages, code review, etc.)
+- **Skills** 提供互動式 AI 協助（commit 訊息、程式碼審查等）
+- **Reference documents** provide guidelines for manual reference
+- **參考文件**提供手動參考的指南
+
+**Install Skills via Plugin Marketplace | 透過 Plugin Marketplace 安裝 Skills：**
+```bash
+/plugin marketplace add AsiaOstrich/universal-dev-standards
+/plugin install universal-dev-standards@asia-ostrich
+```
+
+**Important | 重要**: For standards with Skills available, use the Skill OR copy the source document — never both.
+對於有可用 Skills 的規範，請使用 Skill 或複製來源文件 — 切勿兩者同時使用。
+
+## Windows Support | Windows 支援
+
+The CLI tool works seamlessly on Windows. Here are some platform-specific notes:
+
+CLI 工具在 Windows 上無縫運作。以下是一些平台特定的注意事項：
+
+### Running the CLI | 執行 CLI
+
+```powershell
+# PowerShell
+npm install -g universal-dev-standards
+uds init
+
+# Or using npx
+npx universal-dev-standards init
+```
+
+### Development Setup | 開發設定
+
+**PowerShell:**
+```powershell
+git clone https://github.com/AsiaOstrich/universal-dev-standards.git
+cd universal-dev-standards\cli
+npm install
+npm link
+```
+
+**Git Bash:**
+```bash
+git clone https://github.com/AsiaOstrich/universal-dev-standards.git
+cd universal-dev-standards/cli
+npm install
+npm link
+```
+
+### Type Checking | 型別檢查
+
+No `typecheck` script is provided — this CLI is pure ESM JavaScript (`.js` / `.mjs`), no TypeScript sources, and no `tsconfig.json`. Static analysis is handled by `npm run lint` (ESLint). Tracked under BUG-A04 (XSPEC-073).
+
+未提供 `typecheck` 腳本 —— 本 CLI 為純 ESM JavaScript（`.js` / `.mjs`），無 TypeScript 原始碼亦無 `tsconfig.json`。靜態分析由 `npm run lint`（ESLint）負責。追蹤於 BUG-A04（XSPEC-073）。
+
+### Git Hooks | Git 鉤子
+
+Git hooks work through Git Bash, which is included with Git for Windows. No additional configuration needed.
+
+Git 鉤子透過 Git Bash 運作，它包含在 Git for Windows 中。不需要額外設定。
+
+## Related | 相關資源
+
+- [universal-dev-standards](https://github.com/AsiaOstrich/universal-dev-standards) - Source repository | 原始碼庫
+- [Claude Code Skills](../skills/) - 14 AI-assisted development skills | 14 個 AI 輔助開發 Skills
+- [Adoption Guide](https://github.com/AsiaOstrich/universal-dev-standards/blob/main/adoption/ADOPTION-GUIDE.md) - Complete guidance | 完整指南
+- [Windows Guide](../docs/WINDOWS-GUIDE.md) - Windows-specific guide | Windows 專用指南
+
+---
+
+## Version History | 版本歷史
+
+| Version | Date | Changes |
+|---------|------|---------|
+| 3.2.2 | 2026-01-06 | Added: `uds skills` command to list installed Claude Code skills; Deprecated: manual installation scripts |
+| 3.2.0 | 2026-01-02 | Added: Marketplace installation support; Fixed: wildcard paths, process hanging |
+| 3.0.0 | 2025-12-30 | Published to npm, enhanced init with AI tools selection |
+| 1.0.1 | 2025-12-24 | Added: Bilingual support (English + Chinese) |
+| 1.0.0 | 2025-12-23 | Initial CLI documentation |
+
+---
+
+## License | 授權
+
+This project uses a **dual-license** model:
+本專案使用**雙授權**模式：
+
+| Content Type | License | 說明 |
+|-------------|---------|------|
+| Documentation (`*.md`) | [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/) | 文件 |
+| Code (`*.js`, etc.) | [MIT](https://opensource.org/licenses/MIT) | 程式碼 |

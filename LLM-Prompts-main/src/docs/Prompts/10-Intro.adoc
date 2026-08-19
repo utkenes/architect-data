@@ -1,0 +1,223 @@
+= LLM Prompts for Architecture Documentation
+:toc: left
+:toclevels: 3
+:sectanchors:
+:sectlinks:
+:sectnums:
+:icons: font
+
+A collection of carefully crafted prompts to help with software architecture documentation using arc42, docToolchain, and related methodologies. These prompts are designed to work with various LLMs (Claude, ChatGPT, etc.) to streamline architecture documentation workflows.
+
+== 🎯 What's This About?
+
+Creating good architecture documentation is challenging. These prompts help you:
+
+* Structure your architecture thinking systematically
+* Generate consistent, high-quality documentation
+* Follow established methodologies like arc42
+* Create visual diagrams and decision records
+* Maintain documentation as living artifacts
+
+== 📋 Available Prompts
+
+=== Core Architecture Tools
+
+[cols="30,50,20"]
+|===
+| Prompt | Description | Output Format
+
+| link:20-ACC.adoc[Architecture Communication Canvas]
+| Creates a visual canvas summarizing key architecture aspects in one page
+| AsciiDoc with HTML table
+
+| link:30-ADR.adoc[Architecture Decision Record]
+| Structured approach to documenting architecture decisions with Pugh Matrix evaluation
+| AsciiDoc document
+|===
+
+=== Comprehensive Documentation Tools
+
+[cols="30,50,20"]
+|===
+| Prompt | Description | Output Format
+
+| link:40-arc42-Chapter-Generator.adoc[arc42 Chapter Generator]
+| Step-by-step creation of complete arc42 documentation with quality-driven approach
+| Multiple AsciiDoc files
+
+| link:50-Quality-Scenarios-Builder.adoc[Quality Scenarios Builder]
+| Create testable, specific quality requirements using structured scenarios
+| AsciiDoc quality scenarios
+|===
+
+=== Risk and Debt Management
+
+[cols="30,50,20"]
+|===
+| Prompt | Description | Output Format
+
+| link:60-Risk-Assessment-Matrix.adoc[Risk Assessment Matrix]
+| Systematic identification and assessment of architecture risks with mitigation strategies
+| AsciiDoc risk register
+
+| link:70-Technical-Debt-Tracker.adoc[Technical Debt Tracker]
+| Comprehensive technical debt identification, prioritization, and management
+| AsciiDoc debt register
+|===
+
+=== Specialized Prompts
+
+[cols="30,50,20"]
+|===
+| Prompt | Description | Output Format
+
+| link:80-Stakeholder-Analysis.adoc[Stakeholder Analysis]
+| include::descriptions/Stakeholder-Analysis-Description.adoc[tag=purpose]
+| AsciiDoc stakeholder register
+
+| link:90-Context-Diagram-Generator.adoc[Context Diagram Generator]
+| include::descriptions/Context-Diagram-Generator-Description.adoc[tag=purpose]
+| AsciiDoc with C4-PlantUML diagrams
+
+| link:100-Solution-Strategy-Planner.adoc[Solution Strategy Planner]
+| Develop comprehensive solution strategies based on quality goals following arc42 Chapter 4 principles
+| AsciiDoc strategy document
+
+| link:110-Deployment-View-Creator.adoc[Deployment View Creator]
+| Design and document comprehensive system deployment architectures following arc42 Chapter 7 principles
+| AsciiDoc deployment documentation
+|===
+
+== 🚀 How to Use These Prompts
+
+=== 1. Copy & Paste Approach
+Simply copy the prompt content and paste it into your preferred LLM interface.
+
+=== 2. Custom AI Assistant Setup
+Use these prompts as system prompts to create specialized AI assistants for architecture work.
+
+=== 3. Integration with docToolchain
+These prompts are designed to work seamlessly with https://doctoolchain.org[docToolchain] workflows:
+
+* Output is in AsciiDoc format
+* Diagrams use PlantUML/Kroki
+* Compatible with arc42 template structure
+
+
+== 🎨 Customization
+
+These prompts are designed to be customizable:
+
+. **Modify Questions**: Adapt the guiding questions to your domain
+. **Adjust Output Format**: Change AsciiDoc styling or structure
+. **Add Custom Sections**: Include organization-specific requirements
+. **Integrate Tools**: Connect with your existing toolchain
+
+== 📚 Background & Methodology
+
+=== arc42 Template
+These prompts follow the https://arc42.org[arc42 template] structure, which provides:
+
+* Proven documentation structure
+* Clear separation of concerns
+* Stakeholder-oriented communication
+* Pragmatic approach to architecture documentation
+
+=== Architecture Communication Canvas
+Based on Gernot Starke's Architecture Communication Canvas, focusing on:
+
+* Value proposition clarity
+* Stakeholder identification
+* Core functionality emphasis
+* Risk and decision transparency
+
+=== Decision Making
+Architecture Decision Records (ADRs) use:
+
+* Pugh Matrix for objective evaluation
+* Structured problem-solution mapping
+* Consequence documentation
+* Traceability of architectural reasoning
+
+=== Quality-Driven Architecture
+Quality Scenarios provide:
+
+* Testable quality requirements
+* Objective success criteria
+* Architecture decision guidance
+* Validation frameworks
+
+=== Risk-Driven Development
+Risk Assessment includes:
+
+* Systematic risk identification
+* Impact and probability evaluation
+* Mitigation strategy development
+* Continuous risk monitoring
+
+== 🔄 Workflow Integration
+
+=== Recommended Usage Sequence
+
+. **Start with Architecture Communication Canvas** - Get the big picture
+. **Use arc42 Chapter Generator** - Create comprehensive documentation
+. **Build Quality Scenarios** - Define testable requirements
+. **Create Architecture Decision Records** - Document key decisions
+. **Assess Risks** - Identify and mitigate project risks
+. **Track Technical Debt** - Manage long-term code health
+
+=== Continuous Documentation
+
+These prompts support:
+
+* **Living Documentation**: Keep docs updated as code evolves
+* **Iterative Refinement**: Improve documentation over multiple iterations
+* **Team Collaboration**: Involve multiple stakeholders in documentation creation
+* **Knowledge Transfer**: Maintain institutional knowledge
+
+== 🤝 Contributing
+
+We welcome contributions! Please:
+
+. **Test Your Prompts**: Ensure they work across different LLMs
+. **Follow Structure**: Use similar format to existing prompts
+. **Add Examples**: Include sample outputs
+. **Document Usage**: Explain when and how to use the prompt
+. **Consider Integration**: How does your prompt work with others?
+
+=== Contribution Ideas
+* Domain-specific prompts (e.g., microservices, data architecture)
+* Integration with specific tools (Jira, GitHub, etc.)
+* Visualization enhancements
+* Multilingual versions
+
+== 📊 Metrics and Success
+
+=== Documentation Quality Metrics
+* Completeness of architecture coverage
+* Stakeholder understanding and feedback
+* Decision traceability
+* Risk mitigation effectiveness
+
+=== Process Improvement Metrics
+* Time to create documentation
+* Documentation maintenance effort
+* Team adoption rate
+* Knowledge transfer effectiveness
+
+== 📄 License
+
+These prompts are available under Creative Commons Attribution-ShareAlike 4.0 International License, following the arc42 licensing approach.
+
+== 🔗 Related Resources
+
+* https://arc42.org[arc42 Template]
+* https://doctoolchain.org[docToolchain]
+* https://canvas.arc42.org[Architecture Communication Canvas by Gernot Starke]
+* https://plantuml.com[PlantUML] for diagrams
+* https://kroki.io[Kroki] for diagram generation
+* https://adr.github.io/[ADR GitHub Organization] for decision records
+
+---
+
+_These prompts are maintained by the docToolchain community. For questions or suggestions, please open an issue or contribute directly._

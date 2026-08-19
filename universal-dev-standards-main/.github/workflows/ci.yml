@@ -1,0 +1,345 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  # Detect which paths changed to conditionally run expensive jobs
+  changes:
+    name: Detect Changes
+    runs-on: ubuntu-latest
+    outputs:
+      cli: ${{ steps.filter.outputs.cli }}
+      # XSPEC-383 R4 — command-existence's source surface is NOT cli/** alone.
+      # It walks core/, locales/, ai/standards/, cli/src/, skills/, docs/, and
+      # repo-root *.md — every place a `uds <cmd>` instruction can live. Reusing
+      # the narrower `cli` filter would make the gate go silent on exactly the
+      # kind of change that caused the incident this gate exists for (a stale
+      # doc, untouched cli/): docs/user/CHEATSHEET.md and skills/workflows/README.md
+      # both shipped a removed command (`uds workflow`) for months without any
+      # CI job re-checking them, because nothing gated on those paths.
+      command-existence: ${{ steps.filter.outputs.command-existence }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Check changed paths
+        uses: dorny/paths-filter@v4
+        id: filter
+        with:
+          filters: |
+            cli:
+              - 'cli/**'
+            command-existence:
+              - 'core/**'
+              - 'locales/**'
+              - 'ai/standards/**'
+              - 'cli/**'
+              - 'skills/**'
+              - 'docs/**'
+              - '*.md'
+
+  # XSPEC-355 R3a — the check-*.sh ratchet.
+  #
+  # tests/scripts/check-scripts-passing.bats asserts every listed check exits 0,
+  # and its header already said "if any of these start failing, it indicates a
+  # real regression". It was never run by anything: `npm run test:scripts`
+  # appeared only in package.json and scripts/README.md. Wiring it here is what
+  # makes the ratchet real.
+  #
+  # WIDENED 2026-07-29 (XSPEC-073 G1): 1 of 16 files → all 16, via the documented
+  # command.
+  #
+  # Wiring one file left the other fifteen in exactly the condition the comment
+  # above diagnoses, and the same commit that added this job broke one of them:
+  # efe8df23 bumped TOTAL 23 → 24 in pre-release-check.sh, updated
+  # check-scripts-passing.bats, and missed pre-release-check.bats — the sibling
+  # nothing would have reported. It stayed red six days.
+  #
+  # Measured before widening: all 16 files pass (148 ok / 0 not ok), ~150s, no
+  # network dependency, no absolute paths, no external tools. So this does not
+  # turn CI red on contact.
+  #
+  # The earlier note said the known-failures file must not be gated because it
+  # "documents current, re-measured failures". Its assertions were re-read on
+  # 2026-07-29 and they are crash-only — `[ -x ... ]` and `[ ${#output} -gt 0 ]`.
+  # Nothing asserts that a check FAILS, so fixing the underlying check cannot
+  # break it, and including it is safe. Its maintenance rule (promote an entry
+  # the day it goes green) is unaffected by being run here.
+  #
+  # Uses `npm run test:scripts` rather than naming files, so the gate and the
+  # documented local command stay the same thing — the divergence between those
+  # two is what this whole job exists to close.
+  script-ratchet:
+    name: Check Script Ratchet
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+        with:
+          # tests/bats is a git submodule (bats-core); checkout skips submodules
+          # by default, which made the first run of this job exit 127.
+          submodules: true
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run all script tests
+        run: npm run test:scripts
+
+  lint:
+    name: Lint
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: cli
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: cli/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run ESLint
+        run: npm run lint
+
+  # XSPEC-383 R3 — 可達性閘門。
+  #
+  # 2026-04-07 建了 spec-linter.js 與 sync.js，兩者有測試、測試都過，
+  # 而**沒有任何使用者到得了它們**；同一天 VibeOps 接上了 `npx uds lint --json`，
+  # 一個永遠不存在的指令。四個半月兩邊全綠。單元測試證明函式對，
+  # 對「有沒有人叫得到」一個字都沒說——這個 job 就是在問那個問題。
+  #
+  # 接上時**不會當場燒紅**（沿用上方 script-ratchet 那條「measured before
+  # widening」的規矩）：落地當下實測 121 個模組、96 可達、24 不可達，
+  # 那 24 個寫進 cli/scripts/reachability-baseline.json，閘門只對**新增的**孤兒失敗。
+  # 基線帶 2026-11-19 到期日——**沒有時鐘的例外清單只是有禮貌的刪除鍵**，
+  # 過期後這支一律回 1，逼人重做一次「先不處理」的判斷。
+  #
+  # 三臂已實測：綠（現況 rc=0）／新增孤兒紅（放一個沒人 import 的模組 rc=1）／
+  # 基線過期紅（rc=1）。一支從未紅過的檢查與一支永遠回綠的檢查無從分辨。
+  reachability:
+    name: Module Reachability
+    runs-on: ubuntu-latest
+    needs: changes
+    if: needs.changes.outputs.cli == 'true'
+    defaults:
+      run:
+        working-directory: cli
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: cli/package-lock.json
+
+      - name: Prove the check can fail before trusting that it passed
+        run: node scripts/check-module-reachability.mjs --self-test
+
+      - name: Check module reachability
+        run: npm run check:reachability
+
+  # XSPEC-383 R4 — 指令存在性閘門。
+  #
+  # 2026-08-19 實測：UDS 出貨的指引裡有指令是根本不存在的（`uds install`、
+  # `uds lint`、`uds sync`，外加 `uds check --spec-size`、`uds spec create --boost`），
+  # 落點含兩處會把壞指令送到使用者面前的活程式碼（quickstart.js、
+  # integration-generator.js，已於 465335e4 修掉）。同一輪也在
+  # docs/user/CHEATSHEET.md、skills/workflows/README.md 等處挖出 v6.0.0 已移除的
+  # `uds workflow` 被當現行指令展示了數個月——「我們叫別人跑的指令是否真的存在」
+  # 這個面，在此之前零個檢查。
+  #
+  # 來源範圍見 check-command-existence.mjs 的 SOURCES：不只 cli/**，還含
+  # core/、locales/、ai/standards/、skills/、docs/、repo-root *.md——因此本 job
+  # 掛在 `changes` job 新增的 command-existence filter 下，不是既有的 cli filter
+  # （見上方 changes job 的註解）。
+  #
+  # 三臂已實測：對照組（探針對已知不存在/存在的指令名正確回報）／分母臂（走訪
+  # 1594 檔跨 7 個來源）／綠臂（現況乾淨）／紅臂（塞一個 `uds definitelynotacommand`
+  # 到真實掃描路徑下的檔案，證明完整流程真的會紅，測完自動刪除）。
+  command-existence:
+    name: Command Existence
+    runs-on: ubuntu-latest
+    needs: changes
+    if: needs.changes.outputs.command-existence == 'true'
+    defaults:
+      run:
+        working-directory: cli
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: cli/package-lock.json
+
+      - name: Prove the check can fail before trusting that it passed
+        run: node scripts/check-command-existence.mjs --self-test
+
+      - name: Check command existence
+        run: npm run check:command-existence
+
+  test:
+    name: Test (${{ matrix.os }}, Node ${{ matrix.node-version }})
+    runs-on: ${{ matrix.os }}
+    defaults:
+      run:
+        working-directory: cli
+
+    strategy:
+      matrix:
+        include:
+          - os: ubuntu-latest
+            node-version: 20
+          - os: ubuntu-latest
+            node-version: 22
+          - os: windows-latest
+            node-version: 20
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Setup Node.js ${{ matrix.node-version }}
+        uses: actions/setup-node@v7
+        with:
+          node-version: ${{ matrix.node-version }}
+          cache: 'npm'
+          cache-dependency-path: cli/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Verify CLI runs
+        run: node bin/uds.js --version
+
+      - name: Verify list command
+        run: node bin/uds.js list
+
+      - name: Run unit tests
+        run: npm run test:unit
+
+  e2e:
+    name: E2E Tests
+    needs: changes
+    if: ${{ github.event_name == 'pull_request' && needs.changes.outputs.cli == 'true' }}
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: cli
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: cli/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run E2E tests
+        run: npm run test:e2e
+
+  # XSPEC-073 G2 — the coverage gate was never wired.
+  #
+  # cli/vitest.config.js has carried coverage thresholds since it was written,
+  # but nothing in CI ever ran coverage: `grep -rn coverage .github/workflows/`
+  # returned nothing on 2026-07-29. The thresholds only applied if a human
+  # happened to run `npm run test:coverage` locally, and they were set at
+  # 25/15/25/25 against an actual 63/55/73/64 — so even then they could not fire.
+  #
+  # Runs the full suite (test:coverage = `vitest run --coverage`, include
+  # tests/**/*.test.js), not the unit subset, because that is the set the
+  # thresholds were measured against.
+  #
+  # Single job, not a matrix: coverage is a property of the code, not of the
+  # runner OS, and the matrix exists to catch platform-specific behaviour.
+  coverage:
+    name: Coverage Gate
+    needs: changes
+    if: ${{ needs.changes.outputs.cli == 'true' }}
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: cli
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: cli/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run coverage gate
+        run: npm run test:coverage
+
+  translation-sync:
+    name: Translation Sync Check
+    runs-on: ubuntu-latest
+    # Known: 144 missing-source files from past directory restructuring (tech debt)
+    continue-on-error: true
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Check translation sync
+        run: |
+          chmod +x ./scripts/check-translation-sync.sh
+          ./scripts/check-translation-sync.sh
+
+  cli-docs-sync:
+    name: CLI-Docs Sync Check
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Check CLI-docs sync
+        run: |
+          chmod +x ./scripts/check-cli-docs-sync.sh
+          ./scripts/check-cli-docs-sync.sh

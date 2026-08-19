@@ -1,0 +1,1122 @@
+{
+  "project": "Universal Development Standards",
+  "version": "6.7.5",
+  "last_updated": "2026-08-18",
+  "stats": {
+    "core_standards": 150,
+    "skills": 55,
+    "slash_commands": 51,
+    "cli_commands": 22
+  },
+  "standards": [
+    {
+      "id": "acceptance-test-driven-development",
+      "category": "development",
+      "level": 3
+    },
+    {
+      "id": "adr-standards",
+      "category": "governance",
+      "level": 2
+    },
+    {
+      "id": "retrospective-standards",
+      "category": "governance",
+      "level": 2
+    },
+    {
+      "id": "accessibility-standards",
+      "category": "quality",
+      "level": 3
+    },
+    {
+      "id": "ai-agreement-standards",
+      "category": "governance",
+      "level": 1
+    },
+    {
+      "id": "ai-friendly-architecture",
+      "category": "development",
+      "level": 2
+    },
+    {
+      "id": "ai-instruction-standards",
+      "category": "governance",
+      "level": 1
+    },
+    {
+      "id": "anti-hallucination",
+      "category": "governance",
+      "level": 1
+    },
+    {
+      "id": "agent-behavior-discipline",
+      "category": "governance",
+      "level": 1
+    },
+    {
+      "id": "behavior-driven-development",
+      "category": "development",
+      "level": 2
+    },
+    {
+      "id": "changelog-standards",
+      "category": "documentation",
+      "level": 2
+    },
+    {
+      "id": "checkin-standards",
+      "category": "quality",
+      "level": 1
+    },
+    {
+      "id": "code-review-checklist",
+      "category": "quality",
+      "level": 2
+    },
+    {
+      "id": "commit-message-guide",
+      "category": "quality",
+      "level": 1
+    },
+    {
+      "id": "deployment-standards",
+      "category": "quality",
+      "level": 3
+    },
+    {
+      "id": "developer-memory",
+      "category": "productivity",
+      "level": 2
+    },
+    {
+      "id": "documentation-structure",
+      "category": "documentation",
+      "level": 3
+    },
+    {
+      "id": "documentation-writing-standards",
+      "category": "documentation",
+      "level": 2
+    },
+    {
+      "id": "error-code-standards",
+      "category": "development",
+      "level": 2
+    },
+    {
+      "id": "forward-derivation-standards",
+      "category": "automation",
+      "level": 2
+    },
+    {
+      "id": "git-workflow",
+      "category": "quality",
+      "level": 2
+    },
+    {
+      "id": "logging-standards",
+      "category": "development",
+      "level": 2
+    },
+    {
+      "id": "performance-standards",
+      "category": "quality",
+      "level": 3
+    },
+    {
+      "id": "project-context-memory",
+      "category": "productivity",
+      "level": 2
+    },
+    {
+      "id": "project-structure",
+      "category": "development",
+      "level": 3
+    },
+    {
+      "id": "refactoring-standards",
+      "category": "development",
+      "level": 3
+    },
+    {
+      "id": "requirement-engineering",
+      "category": "development",
+      "level": 3
+    },
+    {
+      "id": "reverse-engineering-standards",
+      "category": "automation",
+      "level": 2
+    },
+    {
+      "id": "security-standards",
+      "category": "quality",
+      "level": 3
+    },
+    {
+      "id": "spec-driven-development",
+      "category": "development",
+      "level": 1
+    },
+    {
+      "id": "test-completeness-dimensions",
+      "category": "testing",
+      "level": 2
+    },
+    {
+      "id": "flow-based-testing",
+      "category": "testing",
+      "level": 2
+    },
+    {
+      "id": "mock-boundary",
+      "category": "testing",
+      "level": 2
+    },
+    {
+      "id": "security-testing",
+      "category": "testing",
+      "level": 2
+    },
+    {
+      "id": "llm-output-validation",
+      "category": "testing",
+      "level": 2
+    },
+    {
+      "id": "mutation-testing",
+      "category": "testing",
+      "level": 2
+    },
+    {
+      "id": "test-driven-development",
+      "category": "development",
+      "level": 2
+    },
+    {
+      "id": "testing-standards",
+      "category": "testing",
+      "level": 2
+    },
+    {
+      "id": "versioning",
+      "category": "documentation",
+      "level": 2
+    },
+    {
+      "id": "virtual-organization-standards",
+      "category": "governance",
+      "level": 3
+    },
+    {
+      "id": "test-governance",
+      "category": "uncategorized",
+      "level": 3
+    },
+    {
+      "id": "context-aware-loading",
+      "category": "uncategorized",
+      "level": 3
+    },
+    {
+      "id": "structured-task-definition",
+      "category": "uncategorized",
+      "level": 3
+    },
+    {
+      "id": "workflow-state-protocol",
+      "category": "uncategorized",
+      "level": 3
+    },
+    {
+      "id": "acceptance-criteria-traceability",
+      "category": "uncategorized",
+      "level": 3
+    },
+    {
+      "id": "api-design-standards",
+      "category": "uncategorized",
+      "level": 3
+    },
+    {
+      "id": "change-batching-standards",
+      "category": "uncategorized",
+      "level": 3
+    },
+    {
+      "id": "database-standards",
+      "category": "uncategorized",
+      "level": 3
+    },
+    {
+      "id": "pipeline-integration-standards",
+      "category": "uncategorized",
+      "level": 3
+    },
+    {
+      "id": "workflow-enforcement",
+      "category": "uncategorized",
+      "level": 3
+    },
+    {
+      "id": "agent-dispatch",
+      "category": "uncategorized",
+      "level": 3
+    },
+    {
+      "id": "branch-completion",
+      "category": "uncategorized",
+      "level": 3
+    },
+    {
+      "id": "git-worktree",
+      "category": "uncategorized",
+      "level": 3
+    },
+    {
+      "id": "model-selection",
+      "category": "uncategorized",
+      "level": 3
+    },
+    {
+      "id": "systematic-debugging",
+      "category": "uncategorized",
+      "level": 3
+    },
+    {
+      "id": "verification-evidence",
+      "category": "uncategorized",
+      "level": 3
+    },
+    {
+      "id": "ai-command-behavior",
+      "category": "uncategorized",
+      "level": 3
+    },
+    {
+      "id": "agent-communication-protocol",
+      "category": "uncategorized",
+      "level": 3
+    },
+    {
+      "id": "ai-response-navigation",
+      "category": "uncategorized",
+      "level": 3
+    },
+    {
+      "id": "alerting-standards",
+      "category": "uncategorized",
+      "level": 3
+    },
+    {
+      "id": "chaos-engineering-standards",
+      "category": "uncategorized",
+      "level": 3
+    },
+    {
+      "id": "containerization-standards",
+      "category": "uncategorized",
+      "level": 3
+    },
+    {
+      "id": "deprecation-standards",
+      "category": "uncategorized",
+      "level": 3
+    },
+    {
+      "id": "design-document-standards",
+      "category": "uncategorized",
+      "level": 3
+    },
+    {
+      "id": "frontend-design-standards",
+      "category": "quality",
+      "level": 3
+    },
+    {
+      "id": "documentation-lifecycle",
+      "category": "uncategorized",
+      "level": 3
+    },
+    {
+      "id": "environment-standards",
+      "category": "uncategorized",
+      "level": 3
+    },
+    {
+      "id": "estimation-standards",
+      "category": "uncategorized",
+      "level": 3
+    },
+    {
+      "id": "execution-history",
+      "category": "uncategorized",
+      "level": 3
+    },
+    {
+      "id": "feature-flag-standards",
+      "category": "uncategorized",
+      "level": 3
+    },
+    {
+      "id": "knowledge-transfer-standards",
+      "category": "uncategorized",
+      "level": 3
+    },
+    {
+      "id": "observability-standards",
+      "category": "uncategorized",
+      "level": 3
+    },
+    {
+      "id": "postmortem-standards",
+      "category": "uncategorized",
+      "level": 3
+    },
+    {
+      "id": "privacy-standards",
+      "category": "uncategorized",
+      "level": 3
+    },
+    {
+      "id": "runbook-standards",
+      "category": "uncategorized",
+      "level": 3
+    },
+    {
+      "id": "slo-standards",
+      "category": "uncategorized",
+      "level": 3
+    },
+    {
+      "id": "supply-chain-security-standards",
+      "category": "uncategorized",
+      "level": 3
+    },
+    {
+      "id": "tech-debt-standards",
+      "category": "uncategorized",
+      "level": 3
+    },
+    {
+      "id": "test-data-standards",
+      "category": "uncategorized",
+      "level": 3
+    },
+    {
+      "id": "slo-sli",
+      "category": "sre",
+      "level": 2
+    },
+    {
+      "id": "runbook",
+      "category": "sre",
+      "level": 2
+    },
+    {
+      "id": "incident-response",
+      "category": "sre",
+      "level": 2
+    },
+    {
+      "id": "license-compliance",
+      "category": "compliance",
+      "level": 2
+    },
+    {
+      "id": "verification-oracle",
+      "category": "compliance",
+      "level": 2
+    },
+    {
+      "id": "model-provenance",
+      "category": "compliance",
+      "level": 2
+    },
+    {
+      "id": "resource-cost-boundary",
+      "category": "quality",
+      "level": 2
+    },
+    {
+      "id": "pii-classification",
+      "category": "compliance",
+      "level": 2
+    },
+    {
+      "id": "audit-trail",
+      "category": "compliance",
+      "level": 2
+    },
+    {
+      "id": "schema-evolution",
+      "category": "data-engineering",
+      "level": 3
+    },
+    {
+      "id": "data-contract",
+      "category": "data-engineering",
+      "level": 3
+    },
+    {
+      "id": "data-pipeline",
+      "category": "data-engineering",
+      "level": 3
+    },
+    {
+      "id": "iac-design-principles",
+      "category": "infrastructure",
+      "level": 2
+    },
+    {
+      "id": "container-image-standards",
+      "category": "infrastructure",
+      "level": 2
+    },
+    {
+      "id": "secret-management-standards",
+      "category": "security",
+      "level": 2
+    },
+    {
+      "id": "prd-standards",
+      "category": "product",
+      "level": 2
+    },
+    {
+      "id": "product-metrics-standards",
+      "category": "product",
+      "level": 2
+    },
+    {
+      "id": "user-story-mapping",
+      "category": "product",
+      "level": 2
+    },
+    {
+      "id": "secure-op",
+      "category": "security",
+      "level": 2
+    },
+    {
+      "id": "server-ops-security",
+      "category": "security",
+      "level": 2
+    },
+    {
+      "id": "container-security",
+      "category": "security",
+      "level": 2
+    },
+    {
+      "id": "adversarial-test",
+      "category": "testing",
+      "level": 2
+    },
+    {
+      "id": "policy-as-code-testing",
+      "category": "testing",
+      "level": 2
+    },
+    {
+      "id": "sast-advanced",
+      "category": "security",
+      "level": 2
+    },
+    {
+      "id": "prompt-regression",
+      "category": "testing",
+      "level": 2
+    },
+    {
+      "id": "supply-chain-attestation",
+      "category": "security",
+      "level": 2
+    },
+    {
+      "id": "cost-budget-test",
+      "category": "testing",
+      "level": 2
+    },
+    {
+      "id": "replay-test",
+      "category": "testing",
+      "level": 2
+    },
+    {
+      "id": "smoke-test",
+      "category": "testing",
+      "level": 2
+    },
+    {
+      "id": "property-based-testing",
+      "category": "testing",
+      "level": 2
+    },
+    {
+      "id": "disaster-recovery-drill",
+      "category": "operations",
+      "level": 2
+    },
+    {
+      "id": "flaky-test-management",
+      "category": "testing",
+      "level": 2
+    },
+    {
+      "id": "data-migration-testing",
+      "category": "testing",
+      "level": 2
+    },
+    {
+      "id": "chaos-injection-tests",
+      "category": "testing",
+      "level": 2
+    },
+    {
+      "id": "release-quality-manifest",
+      "category": "deployment",
+      "level": 2
+    },
+    {
+      "id": "anti-sycophancy-prompting",
+      "category": "uncategorized",
+      "level": 3
+    },
+    {
+      "id": "behavior-snapshot",
+      "category": "uncategorized",
+      "level": 3
+    },
+    {
+      "id": "browser-compatibility-standards",
+      "category": "uncategorized",
+      "level": 3
+    },
+    {
+      "id": "capability-declaration",
+      "category": "uncategorized",
+      "level": 3
+    },
+    {
+      "id": "cd-deployment-strategies",
+      "category": "uncategorized",
+      "level": 3
+    },
+    {
+      "id": "circuit-breaker",
+      "category": "uncategorized",
+      "level": 3
+    },
+    {
+      "id": "contract-testing-standards",
+      "category": "uncategorized",
+      "level": 3
+    },
+    {
+      "id": "cross-flow-regression",
+      "category": "uncategorized",
+      "level": 3
+    },
+    {
+      "id": "dual-phase-output",
+      "category": "uncategorized",
+      "level": 3
+    },
+    {
+      "id": "failure-source-taxonomy",
+      "category": "uncategorized",
+      "level": 3
+    },
+    {
+      "id": "feature-manifest-standard",
+      "category": "uncategorized",
+      "level": 3
+    },
+    {
+      "id": "full-coverage-testing",
+      "category": "uncategorized",
+      "level": 3
+    },
+    {
+      "id": "governance-layer",
+      "category": "uncategorized",
+      "level": 3
+    },
+    {
+      "id": "health-check-standards",
+      "category": "uncategorized",
+      "level": 3
+    },
+    {
+      "id": "immutability-first",
+      "category": "uncategorized",
+      "level": 3
+    },
+    {
+      "id": "no-cicd-deployment",
+      "category": "uncategorized",
+      "level": 3
+    },
+    {
+      "id": "packaging-standards",
+      "category": "uncategorized",
+      "level": 3
+    },
+    {
+      "id": "pipeline-security-gates",
+      "category": "uncategorized",
+      "level": 3
+    },
+    {
+      "id": "recovery-recipe-registry",
+      "category": "uncategorized",
+      "level": 3
+    },
+    {
+      "id": "release-readiness-gate",
+      "category": "uncategorized",
+      "level": 3
+    },
+    {
+      "id": "retry-standards",
+      "category": "uncategorized",
+      "level": 3
+    },
+    {
+      "id": "rollback-standards",
+      "category": "uncategorized",
+      "level": 3
+    },
+    {
+      "id": "security-decision",
+      "category": "uncategorized",
+      "level": 3
+    },
+    {
+      "id": "skill-standard-alignment-check",
+      "category": "uncategorized",
+      "level": 3
+    },
+    {
+      "id": "standard-admission-criteria",
+      "category": "uncategorized",
+      "level": 3
+    },
+    {
+      "id": "standard-lifecycle-management",
+      "category": "uncategorized",
+      "level": 3
+    },
+    {
+      "id": "timeout-standards",
+      "category": "uncategorized",
+      "level": 3
+    },
+    {
+      "id": "token-budget",
+      "category": "uncategorized",
+      "level": 3
+    },
+    {
+      "id": "translation-lifecycle-standards",
+      "category": "uncategorized",
+      "level": 3
+    },
+    {
+      "id": "self-review-protocol",
+      "category": "uncategorized",
+      "level": 3
+    },
+    {
+      "id": "knowledge-graph-memory",
+      "category": "uncategorized",
+      "level": 3
+    },
+    {
+      "id": "user-journey-testing",
+      "category": "uncategorized",
+      "level": 3
+    },
+    {
+      "id": "feature-discovery-standards",
+      "category": "uncategorized",
+      "level": 3
+    },
+    {
+      "id": "multi-environment-e2e-testing",
+      "category": "uncategorized",
+      "level": 3
+    },
+    {
+      "id": "push-standards",
+      "category": "uncategorized",
+      "level": 3
+    },
+    {
+      "id": "class-level-fix",
+      "category": "uncategorized",
+      "level": 3
+    }
+  ],
+  "skills": [
+    {
+      "id": "ai-collaboration-standards",
+      "command": "/guide",
+      "category": "governance"
+    },
+    {
+      "id": "ai-friendly-architecture",
+      "command": "/guide",
+      "category": "development"
+    },
+    {
+      "id": "ai-instruction-standards",
+      "command": "/guide",
+      "category": "governance"
+    },
+    {
+      "id": "adr-assistant",
+      "command": "/adr",
+      "category": "governance"
+    },
+    {
+      "id": "retrospective-assistant",
+      "command": "/retrospective",
+      "category": "governance"
+    },
+    {
+      "id": "contract-test-assistant",
+      "command": "/contract-test",
+      "category": "development"
+    },
+    {
+      "id": "atdd-assistant",
+      "command": "/atdd",
+      "category": "development"
+    },
+    {
+      "id": "bdd-assistant",
+      "command": "/bdd",
+      "category": "development"
+    },
+    {
+      "id": "changelog-guide",
+      "command": "/changelog",
+      "category": "documentation"
+    },
+    {
+      "id": "checkin-assistant",
+      "command": "/checkin",
+      "category": "quality"
+    },
+    {
+      "id": "code-review-assistant",
+      "command": "/code-review",
+      "category": "quality"
+    },
+    {
+      "id": "commit-standards",
+      "command": "/commit",
+      "category": "quality"
+    },
+    {
+      "id": "docs-generator",
+      "command": "/docgen",
+      "category": "documentation"
+    },
+    {
+      "id": "documentation-guide",
+      "command": "/docs",
+      "category": "documentation"
+    },
+    {
+      "id": "error-code-guide",
+      "command": "/guide",
+      "category": "development"
+    },
+    {
+      "id": "forward-derivation",
+      "command": "/derive",
+      "category": "automation"
+    },
+    {
+      "id": "git-workflow-guide",
+      "command": "/guide",
+      "category": "quality"
+    },
+    {
+      "id": "logging-guide",
+      "command": "/guide",
+      "category": "development"
+    },
+    {
+      "id": "methodology-system",
+      "command": "/methodology",
+      "category": "development"
+    },
+    {
+      "id": "project-discovery",
+      "command": "/discover",
+      "category": "productivity"
+    },
+    {
+      "id": "project-structure-guide",
+      "command": "/config",
+      "category": "development"
+    },
+    {
+      "id": "refactoring-assistant",
+      "command": "/refactor",
+      "category": "development"
+    },
+    {
+      "id": "release-standards",
+      "command": "/release",
+      "category": "documentation"
+    },
+    {
+      "id": "requirement-assistant",
+      "command": "/requirement",
+      "category": "development"
+    },
+    {
+      "id": "reverse-engineer",
+      "command": "/reverse",
+      "category": "automation"
+    },
+    {
+      "id": "spec-driven-dev",
+      "command": "/sdd",
+      "category": "development"
+    },
+    {
+      "id": "tdd-assistant",
+      "command": "/tdd",
+      "category": "development"
+    },
+    {
+      "id": "test-coverage-assistant",
+      "command": "/coverage",
+      "category": "testing"
+    },
+    {
+      "id": "testing-guide",
+      "command": "/guide",
+      "category": "testing"
+    },
+    {
+      "id": "agents",
+      "command": "/guide",
+      "category": "uncategorized"
+    },
+    {
+      "id": "ai",
+      "command": "/guide",
+      "category": "uncategorized"
+    },
+    {
+      "id": "brainstorm-assistant",
+      "command": "/guide",
+      "category": "uncategorized"
+    },
+    {
+      "id": "commands",
+      "command": "/guide",
+      "category": "uncategorized"
+    },
+    {
+      "id": "tools",
+      "command": "/guide",
+      "category": "uncategorized"
+    },
+    {
+      "id": "workflows",
+      "command": "/guide",
+      "category": "uncategorized"
+    },
+    {
+      "id": "audit-assistant",
+      "command": "/guide",
+      "category": "uncategorized"
+    },
+    {
+      "id": "dev-workflow-guide",
+      "command": "/guide",
+      "category": "uncategorized"
+    },
+    {
+      "id": "ac-coverage-assistant",
+      "command": "/guide",
+      "category": "uncategorized"
+    },
+    {
+      "id": "api-design-assistant",
+      "command": "/guide",
+      "category": "uncategorized"
+    },
+    {
+      "id": "ci-cd-assistant",
+      "command": "/guide",
+      "category": "uncategorized"
+    },
+    {
+      "id": "database-assistant",
+      "command": "/guide",
+      "category": "uncategorized"
+    },
+    {
+      "id": "durable-execution-assistant",
+      "command": "/guide",
+      "category": "uncategorized"
+    },
+    {
+      "id": "incident-response-assistant",
+      "command": "/guide",
+      "category": "uncategorized"
+    },
+    {
+      "id": "metrics-dashboard-assistant",
+      "command": "/guide",
+      "category": "uncategorized"
+    },
+    {
+      "id": "migration-assistant",
+      "command": "/guide",
+      "category": "uncategorized"
+    },
+    {
+      "id": "pr-automation-assistant",
+      "command": "/guide",
+      "category": "uncategorized"
+    },
+    {
+      "id": "security-assistant",
+      "command": "/guide",
+      "category": "uncategorized"
+    },
+    {
+      "id": "security-scan-assistant",
+      "command": "/guide",
+      "category": "uncategorized"
+    },
+    {
+      "id": "e2e-assistant",
+      "command": "/guide",
+      "category": "uncategorized"
+    },
+    {
+      "id": "observability-assistant",
+      "command": "/guide",
+      "category": "uncategorized"
+    },
+    {
+      "id": "process-automation",
+      "command": "/guide",
+      "category": "uncategorized"
+    },
+    {
+      "id": "runbook-assistant",
+      "command": "/guide",
+      "category": "uncategorized"
+    },
+    {
+      "id": "slo-assistant",
+      "command": "/guide",
+      "category": "uncategorized"
+    },
+    {
+      "id": "ac-coverage",
+      "command": "/guide",
+      "category": "uncategorized"
+    },
+    {
+      "id": "deploy-assistant",
+      "command": "/guide",
+      "category": "uncategorized"
+    },
+    {
+      "id": "dev-methodology",
+      "command": "/guide",
+      "category": "uncategorized"
+    },
+    {
+      "id": "journey-test-assistant",
+      "command": "/guide",
+      "category": "uncategorized"
+    },
+    {
+      "id": "orchestrate",
+      "command": "/guide",
+      "category": "uncategorized"
+    },
+    {
+      "id": "plan",
+      "command": "/guide",
+      "category": "uncategorized"
+    },
+    {
+      "id": "push",
+      "command": "/guide",
+      "category": "uncategorized"
+    },
+    {
+      "id": "skill-builder",
+      "command": "/guide",
+      "category": "uncategorized"
+    },
+    {
+      "id": "spec-derivation",
+      "command": "/guide",
+      "category": "uncategorized"
+    },
+    {
+      "id": "sweep",
+      "command": "/guide",
+      "category": "uncategorized"
+    },
+    {
+      "id": "knowledge-graph",
+      "command": "/knowledge-graph",
+      "category": "documentation"
+    }
+  ],
+  "agent_support": {
+    "claude-code": {
+      "tier": "complete",
+      "skills": true,
+      "slash_commands": "native"
+    },
+    "opencode": {
+      "tier": "complete",
+      "skills": true,
+      "slash_commands": "native"
+    },
+    "gemini-cli": {
+      "tier": "preview",
+      "skills": true,
+      "slash_commands": "native"
+    },
+    "cursor": {
+      "tier": "complete",
+      "skills": "core",
+      "slash_commands": "simulated"
+    },
+    "cline": {
+      "tier": "partial",
+      "skills": "core",
+      "slash_commands": "workflow"
+    },
+    "copilot": {
+      "tier": "partial",
+      "skills": "instruction-based",
+      "slash_commands": "chat"
+    },
+    "windsurf": {
+      "tier": "partial",
+      "skills": "core",
+      "slash_commands": "rulebook"
+    }
+  }
+}

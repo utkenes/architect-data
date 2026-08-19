@@ -1,0 +1,10 @@
+:jbake-title: Solution Strategy Planner
+
+== Solution Strategy Planner
+
+ifndef::projectRootDir[:projectRootDir: ../../..]
+
+[source, markdown]
+----
+include::{projectRootDir}/prompts/Solution-Strategy-Planner.md[]
+----

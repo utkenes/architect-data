@@ -1,0 +1,136 @@
+# Essential Adoption Checklist (Historical Reference)
+
+> **Language**: English | [繁體中文](../../locales/zh-TW/adoption/checklists/minimal.md)
+>
+> **Note**: The Level system has been removed. UDS now installs all standards by default via `uds init`. This checklist is kept as a historical reference. See [enterprise.md](enterprise.md) for the complete adoption checklist.
+
+> Minimum viable standards for any project
+>
+> Setup time: ~30 minutes
+
+---
+
+## Prerequisites
+
+- [ ] Git repository initialized
+- [ ] Claude Code installed (for Skills)
+
+---
+
+## Skills Installation
+
+### Option A: Plugin Marketplace (Recommended)
+
+```bash
+# In Claude Code
+/plugin marketplace add AsiaOstrich/universal-dev-standards
+/plugin install universal-dev-standards@asia-ostrich
+```
+
+### Option B: Manual Copy (macOS / Linux)
+
+```bash
+# Copy only Level 1 skills
+cp -r universal-dev-skills/skills/ai-collaboration-standards ~/.claude/skills/
+cp -r universal-dev-skills/skills/commit-standards ~/.claude/skills/
+```
+
+### Option C: Manual Copy (Windows PowerShell)
+
+```powershell
+# Copy only Level 1 skills
+Copy-Item -Recurse universal-dev-skills\skills\ai-collaboration-standards $env:USERPROFILE\.claude\skills\
+Copy-Item -Recurse universal-dev-skills\skills\commit-standards $env:USERPROFILE\.claude\skills\
+```
+
+**Checklist**:
+- [ ] ai-collaboration-standards skill installed
+- [ ] commit-standards skill installed
+
+---
+
+## Reference Documents
+
+Copy these documents to your project:
+
+**macOS / Linux:**
+```bash
+# In your project root
+mkdir -p .standards
+
+# Copy Level 1 reference documents
+cp path/to/universal-dev-standards/core/checkin-standards.md .standards/
+cp path/to/universal-dev-standards/core/spec-driven-development.md .standards/
+```
+
+**Windows PowerShell:**
+```powershell
+# In your project root
+New-Item -ItemType Directory -Force -Path .standards
+
+# Copy Level 1 reference documents
+Copy-Item path\to\universal-dev-standards\core\checkin-standards.md .standards\
+Copy-Item path\to\universal-dev-standards\core\spec-driven-development.md .standards\
+```
+
+**Checklist**:
+- [ ] `.standards/` directory created
+- [ ] `checkin-standards.md` copied
+- [ ] `spec-driven-development.md` copied
+
+---
+
+## Verification
+
+### Test Skills
+
+1. Open Claude Code in your project
+2. Try: "Help me write a commit message" → Should follow Conventional Commits
+3. Ask about code changes → Should provide evidence-based responses
+
+### Review Reference Documents
+
+- [ ] Read `checkin-standards.md` and understand quality gates
+- [ ] Read `spec-driven-development.md` and understand the methodology
+
+---
+
+## Final Checklist
+
+| Item | Status |
+|------|--------|
+| ai-collaboration-standards skill | [ ] |
+| commit-standards skill | [ ] |
+| .standards/checkin-standards.md | [ ] |
+| .standards/spec-driven-development.md | [ ] |
+
+---
+
+## Next Steps
+
+When ready to upgrade to Level 2 (Recommended):
+- See [recommended.md](recommended.md)
+
+---
+
+## Related Standards
+
+- [Recommended Adoption Checklist](recommended.md) - Level 2 upgrade guide
+- [Enterprise Adoption Checklist](enterprise.md) - Level 3 upgrade guide
+- [Checkin Standards](../../core/checkin-standards.md) - Quality gate standards
+- [Spec-Driven Development](../../core/spec-driven-development.md) - Development methodology
+
+---
+
+## Version History
+
+| Version | Date | Changes |
+|---------|------|---------|
+| 1.0.1 | 2025-12-24 | Added: Related Standards, License sections |
+| 1.0.0 | 2025-12-23 | Initial checklist |
+
+---
+
+## License
+
+This checklist is released under [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/).

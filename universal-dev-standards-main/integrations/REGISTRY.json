@@ -1,0 +1,444 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "version": "1.0.0",
+  "lastUpdated": "2026-08-12",
+  "description": "AI Agent integration registry for cross-agent sync verification",
+  "descriptionZh": "AI Agent 整合註冊表，用於跨 Agent 同步驗證",
+  "agents": {
+    "claude-code": {
+      "name": "Claude Code",
+      "tier": "complete",
+      "integrationFiles": [
+        "CLAUDE.md",
+        "integrations/claude-code/model-selection-mapping.md",
+        "integrations/claude-code/model-selection-mapping.ai.yaml",
+        "integrations/claude-code/dispatch-template.md",
+        "integrations/claude-code/.claude/agents/uds-mechanical-edit.md",
+        "integrations/claude-code/.claude/agents/uds-feature-implementer.md",
+        "integrations/claude-code/.claude/agents/uds-architecture-reviewer.md",
+        "integrations/claude-code/.claude/agents/uds-deep-investigator.md"
+      ],
+      "instructionFile": "CLAUDE.md",
+      "rulesLocation": "project-root",
+      "modelSelectionMapping": "integrations/claude-code/model-selection-mapping.ai.yaml",
+      "supportsSkills": true,
+      "supportsAgents": true,
+      "supportsWorkflows": true,
+      "verification": {
+        "status": "unverified",
+        "note": "In daily production use by the maintainer, but no formal probe run has been recorded. Per XSPEC-357 AC-3.3 a verification claim without evidence is not a verification. Also cannot be self-judged (§3.3)."
+      }
+    },
+    "opencode": {
+      "name": "OpenCode",
+      "tier": "complete",
+      "integrationFiles": [
+        "integrations/opencode/AGENTS.md",
+        "integrations/opencode/opencode.json"
+      ],
+      "instructionFile": "integrations/opencode/AGENTS.md",
+      "rulesLocation": "integrations/opencode/",
+      "supportsSkills": true,
+      "supportsAgents": true,
+      "supportsWorkflows": true,
+      "verification": {
+        "status": "unverified"
+      }
+    },
+    "cursor": {
+      "name": "Cursor",
+      "tier": "partial",
+      "integrationFiles": [
+        "integrations/cursor/.cursorrules"
+      ],
+      "instructionFile": "integrations/cursor/.cursorrules",
+      "rulesLocation": "integrations/cursor/",
+      "supportsSkills": true,
+      "supportsAgents": true,
+      "supportsWorkflows": false,
+      "note": "SKILL.md support added in v2.3.35 (Jan 2026)",
+      "verification": {
+        "status": "unverified"
+      }
+    },
+    "cline": {
+      "name": "Cline",
+      "tier": "partial",
+      "integrationFiles": [
+        "integrations/cline/.clinerules"
+      ],
+      "instructionFile": "integrations/cline/.clinerules",
+      "rulesLocation": "integrations/cline/",
+      "supportsSkills": true,
+      "supportsAgents": true,
+      "supportsWorkflows": false,
+      "verification": {
+        "status": "unverified"
+      }
+    },
+    "windsurf": {
+      "name": "Windsurf",
+      "tier": "partial",
+      "integrationFiles": [
+        "integrations/windsurf/.windsurfrules"
+      ],
+      "instructionFile": "integrations/windsurf/.windsurfrules",
+      "rulesLocation": "integrations/windsurf/",
+      "supportsSkills": false,
+      "supportsAgents": true,
+      "supportsWorkflows": false,
+      "verification": {
+        "status": "unverified"
+      }
+    },
+    "copilot": {
+      "name": "GitHub Copilot",
+      "tier": "partial",
+      "integrationFiles": [
+        "integrations/github-copilot/copilot-instructions.md"
+      ],
+      "instructionFile": "integrations/github-copilot/copilot-instructions.md",
+      "rulesLocation": "integrations/github-copilot/",
+      "supportsSkills": true,
+      "supportsAgents": true,
+      "supportsWorkflows": false,
+      "verification": {
+        "status": "unverified"
+      }
+    },
+    "codex": {
+      "name": "OpenAI Codex",
+      "tier": "partial",
+      "integrationFiles": [
+        "integrations/codex/AGENTS.md"
+      ],
+      "instructionFile": "integrations/codex/AGENTS.md",
+      "rulesLocation": "integrations/codex/",
+      "supportsSkills": true,
+      "supportsAgents": true,
+      "supportsWorkflows": false,
+      "verification": {
+        "status": "verified",
+        "date": "2026-07-23",
+        "toolVersion": "codex-cli 0.145.0",
+        "udsVersion": "6.1.1",
+        "probes": [
+          "P2"
+        ],
+        "evidence": "integrations/verification/codex/2026-07-23.md",
+        "note": "3 of 3 runs applied the certainty tags correctly. Verified with the skill at .agents/skills/ (the official path, which ai-agent-paths.js was corrected to in this same session). The uds init flow itself is not verified end-to-end for this target: init has no --ai-tool flag."
+      }
+    },
+    "gemini-cli": {
+      "name": "Gemini CLI",
+      "tier": "preview",
+      "deprecated": true,
+      "deprecationNote": "Google sunset Gemini CLI on 2026-06-18 (announced at I/O 2026-05-19, 30-day migration window); succeeded by Antigravity CLI. Kept for reference only. Disposal of the 142-file .gemini/ tree is XSPEC-355 OQ5.",
+      "deprecationNoteZh": "Google 已於 2026-06-18 終止 Gemini CLI（2026-05-19 I/O 宣布，30 天遷移窗），由 Antigravity CLI 接手。此條目僅供參考。`.gemini/` 142 檔的處置見 XSPEC-355 OQ5。",
+      "supersededBy": "antigravity",
+      "integrationFiles": [
+        "integrations/gemini-cli/GEMINI.md"
+      ],
+      "instructionFile": "integrations/gemini-cli/GEMINI.md",
+      "rulesLocation": "integrations/gemini-cli/",
+      "supportsSkills": true,
+      "supportsAgents": true,
+      "supportsWorkflows": false
+    },
+    "antigravity": {
+      "name": "Google Antigravity",
+      "tier": "minimal",
+      "integrationFiles": [
+        "integrations/google-antigravity/INSTRUCTIONS.md",
+        "integrations/google-antigravity/.antigravity/rules.md"
+      ],
+      "instructionFile": "integrations/google-antigravity/INSTRUCTIONS.md",
+      "rulesLocation": "integrations/google-antigravity/",
+      "supportsSkills": true,
+      "supportsAgents": false,
+      "supportsWorkflows": false,
+      "verification": {
+        "status": "unverified",
+        "note": "Scheduled first. Overlaps XSPEC-356 R1 (install-path verification) — run both in one session."
+      }
+    },
+    "aider": {
+      "name": "Aider",
+      "tier": "partial",
+      "integrationFiles": [
+        "integrations/aider/AGENTS.md"
+      ],
+      "instructionFile": "integrations/aider/AGENTS.md",
+      "rulesLocation": "integrations/aider/",
+      "supportsSkills": false,
+      "supportsAgents": true,
+      "supportsWorkflows": false,
+      "note": "AI pair programming in terminal; loads AGENTS.md via --read flag",
+      "verification": {
+        "status": "unverified"
+      }
+    },
+    "continue-dev": {
+      "name": "Continue.dev",
+      "tier": "partial",
+      "integrationFiles": [
+        "integrations/continue-dev/AGENTS.md"
+      ],
+      "instructionFile": "integrations/continue-dev/AGENTS.md",
+      "rulesLocation": "integrations/continue-dev/",
+      "supportsSkills": false,
+      "supportsAgents": true,
+      "supportsWorkflows": false,
+      "note": "VS Code/JetBrains AI extension; loads via context providers",
+      "verification": {
+        "status": "unverified"
+      }
+    },
+    "roo-code": {
+      "name": "Roo Code",
+      "tier": "complete",
+      "integrationFiles": [
+        "integrations/roo-code/.roo/rules/uds-standards.md",
+        "integrations/roo-code/.clinerules"
+      ],
+      "instructionFile": "integrations/roo-code/.roo/rules/uds-standards.md",
+      "rulesLocation": "integrations/roo-code/",
+      "supportsSkills": true,
+      "supportsAgents": true,
+      "supportsWorkflows": true,
+      "note": "Modern .roo/rules/ + legacy .clinerules backward compat",
+      "verification": {
+        "status": "unverified"
+      }
+    },
+    "spec-kit": {
+      "name": "Spec Kit",
+      "tier": "tool",
+      "integrationFiles": [
+        "integrations/spec-kit/AGENTS.md"
+      ],
+      "instructionFile": "integrations/spec-kit/AGENTS.md",
+      "rulesLocation": "integrations/spec-kit/",
+      "supportsSkills": false,
+      "supportsAgents": false,
+      "supportsWorkflows": false,
+      "note": "SDD tool, not AI coding assistant"
+    },
+    "openspec": {
+      "name": "OpenSpec",
+      "tier": "tool",
+      "integrationFiles": [
+        "integrations/openspec/AGENTS.md"
+      ],
+      "instructionFile": "integrations/openspec/AGENTS.md",
+      "rulesLocation": "integrations/openspec/",
+      "supportsSkills": false,
+      "supportsAgents": false,
+      "supportsWorkflows": false,
+      "note": "SDD tool, not AI coding assistant"
+    }
+  },
+  "tiers": {
+    "complete": {
+      "name": "Complete Support",
+      "nameZh": "完全支援",
+      "description": "Full UDS integration with Skills, Agents, and Workflows support",
+      "requiredRules": [
+        "AH-001",
+        "AH-002",
+        "AH-003",
+        "AH-004",
+        "SDD-001",
+        "SDD-002",
+        "CMT-001"
+      ],
+      "requiredCategories": [
+        "core",
+        "testing",
+        "quality",
+        "docs",
+        "ops",
+        "methodology",
+        "reference"
+      ]
+    },
+    "partial": {
+      "name": "Partial Support",
+      "nameZh": "部分支援",
+      "description": "Basic UDS integration with core anti-hallucination and commit rules",
+      "requiredRules": [
+        "AH-001",
+        "AH-002",
+        "AH-003",
+        "AH-004",
+        "SDD-001",
+        "CMT-001"
+      ],
+      "requiredCategories": [
+        "core",
+        "testing",
+        "quality",
+        "docs",
+        "ops",
+        "methodology",
+        "reference"
+      ]
+    },
+    "minimal": {
+      "name": "Minimal Support",
+      "nameZh": "最小支援",
+      "description": "Minimal integration with basic guidelines",
+      "requiredRules": [
+        "AH-001",
+        "AH-002"
+      ],
+      "requiredCategories": []
+    },
+    "preview": {
+      "name": "Preview",
+      "nameZh": "預覽版",
+      "description": "Experimental integration under development",
+      "requiredRules": [
+        "AH-001",
+        "AH-002",
+        "AH-003"
+      ],
+      "requiredCategories": []
+    },
+    "planned": {
+      "name": "Planned",
+      "nameZh": "計劃中",
+      "description": "Integration planned but not yet implemented",
+      "requiredRules": [],
+      "requiredCategories": []
+    },
+    "tool": {
+      "name": "SDD Tool",
+      "nameZh": "SDD 工具",
+      "description": "Spec-Driven Development tool, not AI coding assistant",
+      "requiredRules": [],
+      "requiredCategories": []
+    }
+  },
+  "syncRules": {
+    "AH-001": {
+      "id": "AH-001",
+      "name": "Evidence-Based Analysis",
+      "nameZh": "證據基礎分析",
+      "description": "Must read files before analyzing them",
+      "severity": "error",
+      "patterns": [
+        "read.*file.*before",
+        "must.*read",
+        "MUST read files before analyzing",
+        "read files before analyzing them",
+        "Evidence-Based Analysis",
+        "Evidence-Based"
+      ],
+      "source": "core/anti-hallucination.md",
+      "section": "1. Evidence-Based Analysis Only"
+    },
+    "AH-002": {
+      "id": "AH-002",
+      "name": "Source Attribution",
+      "nameZh": "來源標注",
+      "description": "Cite sources for all factual claims",
+      "severity": "error",
+      "patterns": [
+        "\\[Source:",
+        "Source Attribution",
+        "cite.*source",
+        "must cite sources"
+      ],
+      "source": "core/anti-hallucination.md",
+      "section": "2. Explicit Source Attribution"
+    },
+    "AH-003": {
+      "id": "AH-003",
+      "name": "Certainty Classification",
+      "nameZh": "確定性分類",
+      "description": "Use certainty tags for confidence level",
+      "severity": "warning",
+      "patterns": [
+        "\\[Confirmed\\]",
+        "\\[Inferred\\]",
+        "\\[Assumption\\]",
+        "\\[Unknown\\]",
+        "Certainty Classification",
+        "certainty.*tag"
+      ],
+      "source": "core/anti-hallucination.md",
+      "section": "3. Classify Certainty Levels"
+    },
+    "AH-004": {
+      "id": "AH-004",
+      "name": "Recommendation Required",
+      "nameZh": "推薦選項必要",
+      "description": "When presenting options, include recommended choice with reasoning",
+      "severity": "warning",
+      "patterns": [
+        "recommend.*option",
+        "Recommended.*choice",
+        "MUST.*recommend",
+        "explicitly state.*Recommended"
+      ],
+      "source": "core/anti-hallucination.md",
+      "section": "Recommendation Principles"
+    },
+    "SDD-001": {
+      "id": "SDD-001",
+      "name": "SDD Tool Detection",
+      "nameZh": "SDD 工具偵測",
+      "description": "Check for OpenSpec or Spec Kit integration",
+      "severity": "error",
+      "patterns": [
+        "OpenSpec",
+        "Spec Kit",
+        "openspec/",
+        "specs/",
+        "\\.speckit"
+      ],
+      "source": "core/spec-driven-development.md",
+      "section": "SDD Tool Integration"
+    },
+    "SDD-002": {
+      "id": "SDD-002",
+      "name": "SDD Command Priority",
+      "nameZh": "SDD 命令優先級",
+      "description": "Prioritize SDD commands over manual file editing",
+      "severity": "warning",
+      "patterns": [
+        "prioritize.*command",
+        "MUST prioritize using these commands",
+        "Spec-Driven Development.*Priority",
+        "SDD.*Priority"
+      ],
+      "source": "core/spec-driven-development.md",
+      "section": "Command Priority"
+    },
+    "CMT-001": {
+      "id": "CMT-001",
+      "name": "Conventional Commits Format",
+      "nameZh": "Conventional Commits 格式",
+      "description": "Follow type(scope): subject format",
+      "severity": "warning",
+      "patterns": [
+        "type.*scope.*subject",
+        "<type>\\(<scope>\\):",
+        "Conventional Commits",
+        "feat.*fix.*docs.*chore"
+      ],
+      "source": "core/commit-message-guide.md",
+      "section": "Commit Message Format"
+    }
+  },
+  "checkConfig": {
+    "excludeAgents": [
+      "planned",
+      "tool"
+    ],
+    "verboseOutput": false,
+    "failOnWarning": false,
+    "reportFormat": "summary"
+  }
+}

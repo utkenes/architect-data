@@ -1,0 +1,446 @@
+#!/usr/bin/env node
+
+import { createRequire } from 'node:module';
+import { program } from 'commander';
+import { listCommand } from '../src/commands/list.js';
+import { initCommand } from '../src/commands/init.js';
+import { checkCommand } from '../src/commands/check.js';
+import { simulateCommand } from '../src/commands/simulate.js';
+import { fixCommand } from '../src/commands/fix.js';
+import { updateCommand } from '../src/commands/update.js';
+import { configureCommand } from '../src/commands/configure.js';
+import { configCommand } from '../src/commands/config.js';
+import { hitlCommand } from '../src/commands/hitl.js';
+import { skillsCommand } from '../src/commands/skills.js';
+import { agentListCommand, agentInstallCommand, agentInfoCommand } from '../src/commands/agent.js';
+import { aiContextInitCommand, aiContextValidateCommand, aiContextGraphCommand } from '../src/commands/ai-context.js';
+import { auditCommand } from '../src/commands/audit.js';
+import { depsCommand } from '../src/commands/deps.js';
+import { uninstallCommand } from '../src/commands/uninstall.js';
+import { specCreateCommand, specListCommand, specShowCommand, specConfirmCommand, specArchiveCommand, specDeleteCommand, specSearchCommand } from '../src/commands/spec.js';
+import { quickstartCommand } from '../src/commands/quickstart.js';
+import { specSplitCommand } from '../src/commands/spec-split.js';
+import { releaseCommand } from '../src/commands/release.js';
+import { compileStandards } from '../src/commands/compile.js';
+import { generateReport } from '../src/commands/report.js';
+import { mcpCommand } from '../src/commands/mcp.js';
+import { runIntentCommand } from '../src/commands/run-intent.js';
+import { setLanguage, setLanguageExplicit, detectLanguage, t } from '../src/i18n/messages.js';
+import { maybeCheckForUpdates, formatUpdateNotice, shouldCheckUpdateForCommand } from '../src/utils/update-checker.js';
+import { config } from '../src/utils/config-manager.js';
+import { readManifest, isInitialized } from '../src/utils/copier.js';
+
+const require = createRequire(import.meta.url);
+const pkg = require('../package.json');
+
+// Non-UTF-8 Windows consoles (e.g. CP950/Big5 on zh-TW systems) render UTF-8
+// output as mojibake — switch the active code page before any output (#125)
+if (process.platform === 'win32') {
+  try {
+    const { execSync } = await import('node:child_process');
+    execSync('chcp 65001', { stdio: 'ignore' });
+  } catch {
+    // Best effort — cosmetic only, never block the CLI
+  }
+}
+
+/**
+ * Perform update check and print notice if a newer version is available.
+ * Resolves silently on error so it never breaks CLI flow.
+ */
+async function printUpdateNoticeIfAvailable() {
+  try {
+    const result = await maybeCheckForUpdates(pkg.version);
+    if (result?.shouldNotify) {
+      console.log(formatUpdateNotice(result, t()));
+    }
+  } catch {
+    // Silent failure — update check should never break CLI
+  }
+}
+
+program
+  .name('uds')
+  .description('CLI tool for adopting Universal Development Standards')
+  .version(pkg.version)
+  .configureOutput({
+    outputVersion: (str) => {
+      process.stdout.write(str);
+      // Intercept version output to append update notice before exit
+      printUpdateNoticeIfAvailable().finally(() => process.exit(0));
+    }
+  })
+  .option('--ui-lang <lang>', 'UI language (en, zh-tw, auto) [default: auto]')
+  .hook('preAction', (thisCommand) => {
+    const opts = thisCommand.opts();
+    const uiLang = opts.uiLang || 'auto';
+    if (uiLang !== 'auto') {
+      // Explicit --ui-lang flag: highest priority, mark as explicitly set
+      setLanguageExplicit(uiLang);
+      return;
+    }
+
+    // Auto-detect priority chain:
+    // 1. Project manifest options.display_language
+    // 2. ~/.udsrc ui.language
+    // 3. OS env LANG / LC_ALL
+    // 4. Default 'en'
+    const projectPath = process.cwd();
+    if (isInitialized(projectPath)) {
+      const manifest = readManifest(projectPath);
+      if (manifest?.options?.display_language) {
+        setLanguage(manifest.options.display_language);
+        return;
+      }
+    }
+
+    // Fallback to ~/.udsrc ui.language
+    const rcLang = config.get('ui.language');
+    if (rcLang && rcLang !== 'en') {
+      setLanguage(rcLang);
+      return;
+    }
+
+    // Fallback to OS environment variable detection
+    setLanguage(detectLanguage(null));
+  })
+  .hook('postAction', async (thisCommand) => {
+    const cmd = thisCommand.name();
+    if (!shouldCheckUpdateForCommand(cmd)) return;
+    await printUpdateNoticeIfAvailable();
+  });
+
+program
+  .command('list')
+  .description('List available standards')
+  .option('-c, --category <category>', 'Filter by category (skill, reference, extension, integration, template)')
+  .action(listCommand);
+
+program
+  .command('init')
+  .description('Initialize standards in current project')
+  .option('-m, --mode <mode>', 'Installation mode (skills, full)')
+  .option('-f, --format <format>', 'Standards format (ai, human, both)')
+  .option('--workflow <workflow>', 'Git workflow (github-flow, gitflow, trunk-based)')
+  .option('--merge-strategy <strategy>', 'Merge strategy (squash, merge-commit, rebase-ff)')
+  .option('--output-lang <lang>', 'Output language (english, traditional-chinese, bilingual)')
+  .option('--test-levels <levels>', 'Test levels, comma-separated (unit-testing,integration-testing,...)')
+  .option('--lang <language>', 'Language extension (csharp, php)')
+  .option('--framework <framework>', 'Framework extension (fat-free)')
+  .option('--locale <locale>', 'Locale extension (zh-tw)')
+  .option('--skills-location <location>', 'Skills location (marketplace, user, project, none) [default: marketplace]')
+  .option('--content-mode <mode>', 'Content mode for integration files (minimal, index, full) [default: index]')
+  .option('--agents-md', 'Generate AGENTS.md universal summary')
+  .option('--no-agents-md', 'Skip AGENTS.md generation')
+  .option('--with-hooks', 'Install enforcement hooks (commit-msg, security, logging)')
+  .option('--content-layout <layout>', 'Content layout (flat, layered) [default: flat]')
+  .option('-y, --yes', 'Use defaults, skip interactive prompts')
+  .option('-E, --experimental', 'Enable experimental features (methodology)')
+  .option('--force', 'Bypass UDS source-repo self-adoption guard (DEC-044 / XSPEC-071)')
+  .action(initCommand);
+
+program
+  .command('config [action] [key] [value]')
+  .description('Manage UDS configuration and project settings')
+  .option('-g, --global', 'Use global configuration')
+  .option('--vibe-mode', 'Initialize vibe coding mode (use with init action)')
+  .option('-y, --yes', 'Skip confirmation prompts')
+  .option('-t, --type <type>', 'Option type to configure (format, workflow, merge_strategy, output_language, test_levels, skills, commands, all)')
+  .option('--ai-tool <tool>', 'Specific AI tool to configure (claude-code, opencode, copilot, etc.)')
+  .option('--skills-location <location>', 'Skills installation location (project, user)')
+  .option('-E, --experimental', 'Enable experimental features (methodology)')
+  .action(configCommand);
+
+program
+  .command('hitl')
+  .description('Human-in-the-Loop controls')
+  .command('check')
+  .description('Check if an operation is allowed')
+  .option('--op <operation>', 'Operation description')
+  .action(hitlCommand);
+
+program
+  .command('configure')
+  .description('Alias for "uds config" — Modify project settings')
+  .option('-t, --type <type>', 'Option type to configure (format, workflow, merge_strategy, output_language, test_levels, skills, commands, all)')
+  .option('--ai-tool <tool>', 'Specific AI tool to configure (claude-code, opencode, copilot, etc.)')
+  .option('--skills-location <location>', 'Skills installation location (project, user)')
+  .option('-y, --yes', 'Apply changes immediately without prompting')
+  .option('-E, --experimental', 'Enable experimental features (methodology)')
+  .action(configureCommand);
+
+program
+  .command('check')
+  .description('Check file integrity and adoption status (quick validation). For deep health diagnosis, use "uds audit"')
+  .option('-s, --standard <id>', 'Validate against a specific standard physical spec')
+  .option('--json', 'Output result in JSON format')
+  .option('--summary', 'Show compact status summary (for use by other commands)')
+  .option('--diff', 'Show diff for modified files')
+  .option('--restore', 'Restore all modified and missing files')
+  .option('--restore-missing', 'Restore only missing files')
+  .option('--no-interactive', 'Disable interactive mode')
+  .option('--ci', 'CI mode: disable interactive prompts and set exit code on issues')
+  .option('--migrate', 'Migrate legacy manifest to hash-based tracking')
+  .option('--offline', 'Skip npm registry check for CLI updates')
+  .option('--force', 'Bypass UDS source-repo self-adoption guard (DEC-044 / XSPEC-071)')
+  .option('--i18n', 'Run i18n lint rules (XSPEC-239) across canonical + locale variants')
+  .action(checkCommand);
+
+program
+  .command('simulate')
+  .description('Simulate a standard check with input (Predictive Validation)')
+  .option('-s, --standard <id>', 'Standard to simulate against')
+  .option('-i, --input <string>', 'Input string to test')
+  .option('--json', 'Output result in JSON format')
+  .action(simulateCommand);
+
+program
+  .command('fix')
+  .description('Auto-fix standard violations (Self-Healing)')
+  .option('-s, --standard <id>', 'Standard to fix')
+  .option('--json', 'Output result in JSON format')
+  .action(fixCommand);
+
+program
+  .command('update')
+  .description('Update standards to latest version')
+  .option('-y, --yes', 'Skip confirmation prompts')
+  .option('--sync-refs', 'Sync integration file references with manifest standards')
+  .option('--integrations-only', 'Only regenerate integration files (CLAUDE.md, etc.)')
+  .option('--standards-only', 'Only update standards, skip integration files')
+  .option('--offline', 'Skip npm registry check for CLI updates')
+  .option('--beta', 'Check for beta version updates')
+  .option('--skills', 'Install/update Skills for configured AI tools')
+  .option('--commands', 'Install/update slash commands for configured AI tools')
+  .option('--debug', 'Show debug output for Skills/Commands detection')
+  .option('--plan', 'Show reconciliation plan without executing (like terraform plan); combines with --skills/--commands to plan just that scope, still writing nothing')
+  .option('--apply', 'Apply exactly the plan --plan prints (plain `uds update` does not); with --skills/--commands it does the reconciliation AND that scope, not only the scope')
+  .option('--force', 'Force update all files, ignoring hash comparison')
+  .option('--rollback', 'Rollback to the most recent backup')
+  .option('--locale <locale>', 'Override locale for skills install (zh-tw, zh-cn, en); also reads .uds/install.yaml + UDS_LOCALE env')
+  .action(updateCommand);
+
+program
+  .command('skills')
+  .description('List installed Claude Code skills')
+  .action(skillsCommand);
+
+program
+  .command('audit')
+  .description('Deep health diagnosis with pattern detection and feedback (strategic). For quick file check, use "uds check"')
+  .option('--health', 'Health check only')
+  .option('--patterns', 'Pattern detection only')
+  .option('--friction', 'Friction detection only')
+  .option('--report', 'Interactive feedback submission')
+  .option('--yes', 'Submit all findings without interactive selection (CI / non-TTY)')
+  .option('--dry-run', 'Preview report without submitting')
+  .option('--gh', 'Force gh CLI for submission')
+  .option('--format <format>', 'Output format (json)')
+  .option('--quiet', 'Summary only')
+  .option('--score', 'Run multi-dimensional health score analysis')
+  .option('--self', 'Self mode: analyze UDS repo itself (use with --score)')
+  .option('--save', 'Save score snapshot for trend tracking (use with --score)')
+  .option('--trend', 'Show historical score trend (use with --score)')
+  .option('--ci', 'CI mode: output score only, exit 1 if below threshold (use with --score)')
+  .option('--threshold <n>', 'Score threshold for CI mode (default: 75)', '75')
+  .action(auditCommand);
+
+program
+  .command('deps')
+  .description('Compare the versions you test against the versions your declared ranges resolve to')
+  .option('--path <dir>', 'Directory containing package.json (default: cwd)')
+  .option('--json', 'Output raw JSON')
+  .option('--concurrency <n>', 'Parallel registry lookups (default: 8)')
+  .action(depsCommand);
+
+program
+  .command('uninstall')
+  .description('Remove UDS standards, integrations, skills, and hooks')
+  .option('--all', 'Remove everything including user-level installations')
+  .option('--standards-only', 'Remove only .standards/ directory')
+  .option('--skills-only', 'Remove only skills and commands')
+  .option('--integrations-only', 'Remove only UDS blocks from integration files')
+  .option('--dry-run', 'Preview mode, no files modified')
+  .option('-y, --yes', 'Skip confirmation prompts')
+  .action(uninstallCommand);
+
+program
+  .command('compile')
+  .description('Compile enforcement standards into hook configurations')
+  .option('--target <target>', 'Target platform (claude-code)', 'claude-code')
+  .option('--dry-run', 'Preview output without writing files')
+  .action((options) => {
+    const result = compileStandards(process.cwd(), {
+      target: options.target,
+      dryRun: options.dryRun,
+    });
+    if (!result.success) {
+      console.error(result.error);
+      process.exit(1);
+    }
+    if (result.dryRun) {
+      console.log(JSON.stringify(result.config, null, 2));
+    } else {
+      console.log(`Compiled ${result.compiledCount} enforcement standard(s) for ${options.target}`);
+    }
+  });
+
+program
+  .command('report')
+  .description('Analyze hook telemetry and show adoption report')
+  .action(() => {
+    const report = generateReport(process.cwd());
+    if (report.noData) {
+      console.log('No telemetry data available. Run hooks to generate data.');
+      return;
+    }
+    console.log(`\nUDS Hook Telemetry Report`);
+    console.log('═'.repeat(50));
+    console.log(`Total executions: ${report.totalExecutions}\n`);
+    console.log('Standard'.padEnd(25) + 'Executions  Pass Rate  Avg Duration');
+    console.log('─'.repeat(50));
+    for (const s of report.standards) {
+      console.log(
+        s.id.padEnd(25) +
+        String(s.executions).padEnd(12) +
+        `${s.passRate.toFixed(1)}%`.padEnd(11) +
+        `${s.avgDuration}ms`
+      );
+    }
+  });
+
+// Release command with subcommands (Manual Deployment Mode)
+program
+  .command('release [subcommand] [args]')
+  .description('Manage release process (promote, deploy, manifest, verify)')
+  .option('--result <result>', 'Test result for deploy command (passed/failed)')
+  .option('--checksum <hash>', 'Package checksum for manifest command')
+  .option('--artifact <path>', 'Artefact file to verify against the manifest checksum (verify command)')
+  .action(releaseCommand);
+
+// Spec command with subcommands (Vibe Coding)
+const specCommand = program
+  .command('spec')
+  .description('Manage lightweight micro-specs for vibe coding. For full spec lifecycle with review, use "/sdd"');
+
+specCommand
+  .command('create <intent>')
+  .alias('new')
+  .description('Create a micro-spec from natural language intent')
+  .option('-s, --scope <scope>', 'Scope (frontend, backend, fullstack)')
+  .option('-o, --output <path>', 'Output directory (default: specs/)')
+  .option('-y, --yes', 'Auto-confirm without prompting')
+  .action(specCreateCommand);
+
+specCommand
+  .command('list')
+  .alias('ls')
+  .description('List all micro-specs')
+  .option('--status <status>', 'Filter by status (draft, confirmed, archived)')
+  .option('-o, --output <path>', 'Specs directory (default: specs/)')
+  .action(specListCommand);
+
+specCommand
+  .command('show <id>')
+  .description('Show a specific micro-spec')
+  .option('-o, --output <path>', 'Specs directory (default: specs/)')
+  .action(specShowCommand);
+
+specCommand
+  .command('confirm <id>')
+  .description('Confirm a micro-spec for implementation')
+  .option('-o, --output <path>', 'Specs directory (default: specs/)')
+  .action(specConfirmCommand);
+
+specCommand
+  .command('archive <id>')
+  .description('Archive a completed micro-spec')
+  .option('-o, --output <path>', 'Specs directory (default: specs/)')
+  .action(specArchiveCommand);
+
+specCommand
+  .command('delete <id>')
+  .alias('rm')
+  .description('Delete a micro-spec')
+  .option('-y, --yes', 'Skip confirmation')
+  .option('-o, --output <path>', 'Specs directory (default: specs/)')
+  .action(specDeleteCommand);
+
+specCommand
+  .command('search <query>')
+  .description('Search specs by title or content')
+  .option('--archived', 'Search only archived specs')
+  .option('-o, --output <dir>', 'Specs directory')
+  .action(specSearchCommand);
+
+specCommand
+  .command('split <id>')
+  .description('Split a large spec into two with mutual depends_on references')
+  .option('-o, --output <dir>', 'Specs directory')
+  .action(specSplitCommand);
+
+// Quickstart command
+program
+  .command('quickstart')
+  .description('Interactive workflow guide — find the right commands quickly')
+  .action(quickstartCommand);
+
+// Agent command with subcommands
+const agentCommand = program
+  .command('agent')
+  .description('Manage UDS agents for AI tools');
+
+agentCommand
+  .command('list')
+  .description('List available and installed agents')
+  .option('--installed', 'Show installation status for all AI tools')
+  .action(agentListCommand);
+
+agentCommand
+  .command('install [agent-name]')
+  .description('Install agents (specify name or "all" for all agents)')
+  .option('-t, --tool <tool>', 'Target AI tool (default: claude-code)')
+  .option('-g, --global', 'Install to user level instead of project level')
+  .option('-y, --yes', 'Skip confirmation prompts')
+  .action(agentInstallCommand);
+
+agentCommand
+  .command('info <agent-name>')
+  .description('Show detailed information about an agent')
+  .action(agentInfoCommand);
+
+// AI Context command with subcommands
+const aiContextCommand = program
+  .command('ai-context')
+  .description('Manage .ai-context.yaml configuration for AI-friendly architecture');
+
+aiContextCommand
+  .command('init')
+  .description('Generate .ai-context.yaml configuration file')
+  .option('-f, --force', 'Overwrite existing configuration')
+  .option('-y, --yes', 'Use defaults, skip interactive prompts')
+  .action(aiContextInitCommand);
+
+aiContextCommand
+  .command('validate')
+  .description('Validate .ai-context.yaml configuration')
+  .option('-v, --verbose', 'Show full configuration')
+  .action(aiContextValidateCommand);
+
+aiContextCommand
+  .command('graph')
+  .description('Show module dependency graph')
+  .option('-m, --mermaid', 'Output Mermaid diagram format')
+  .action(aiContextGraphCommand);
+
+// MCP command for AI tool integration
+mcpCommand(program);
+
+// uds run <intent> — language-agnostic command proxy (XSPEC-029)
+program
+  .command('run <intent>')
+  .description('Run a project command by intent (test/lint/build/security) via uds.project.yaml')
+  .option('--dry-run', 'Show resolved command without executing')
+  .action(runIntentCommand);
+
+program.parse();

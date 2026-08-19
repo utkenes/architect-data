@@ -1,0 +1,10 @@
+:jbake-title: Stakeholder Analysis
+
+== Stakeholder Analysis
+
+ifndef::projectRootDir[:projectRootDir: ../../..]
+
+[source, markdown]
+----
+include::{projectRootDir}/prompts/Stakeholder-Analysis.md[]
+----

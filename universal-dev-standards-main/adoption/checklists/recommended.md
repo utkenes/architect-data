@@ -1,0 +1,266 @@
+# Recommended Adoption Checklist (Historical Reference)
+
+> **Language**: English | [繁體中文](../../locales/zh-TW/adoption/checklists/recommended.md)
+>
+> **Note**: The Level system has been removed. UDS now installs all standards by default via `uds init`. This checklist is kept as a historical reference. See [enterprise.md](enterprise.md) for the complete adoption checklist.
+
+> Professional quality standards for team projects
+>
+> Setup time: ~2 hours
+
+---
+
+## Prerequisites
+
+- [ ] Level 1 (Essential) completed
+- [ ] Team agreement on adoption
+
+---
+
+## Skills Installation
+
+Install additional Level 2 skills:
+
+**Recommended: Plugin Marketplace**
+```bash
+/plugin marketplace add AsiaOstrich/universal-dev-standards
+/plugin install universal-dev-standards@asia-ostrich
+```
+
+**Checklist**:
+
+### From Level 1
+- [ ] ai-collaboration-standards
+- [ ] commit-standards
+
+### Level 2 Skills
+- [ ] code-review-assistant
+- [ ] git-workflow-guide
+- [ ] release-standards
+- [ ] testing-guide
+- [ ] requirement-assistant
+
+---
+
+## Reference Documents
+
+Level 2 has no additional reference documents beyond Level 1.
+
+**Verify Level 1 Documents**:
+- [ ] `.standards/checkin-standards.md` exists
+- [ ] `.standards/spec-driven-development.md` exists
+
+---
+
+## Extensions (Select Applicable)
+
+### Language Extensions
+
+**For C# Projects (macOS / Linux)**:
+```bash
+cp path/to/universal-dev-standards/extensions/languages/csharp-style.md .standards/
+```
+
+**For C# Projects (Windows PowerShell)**:
+```powershell
+Copy-Item path\to\universal-dev-standards\extensions\languages\csharp-style.md .standards\
+```
+- [ ] `csharp-style.md` copied (if applicable)
+
+**For PHP Projects (macOS / Linux)**:
+```bash
+cp path/to/universal-dev-standards/extensions/languages/php-style.md .standards/
+```
+
+**For PHP Projects (Windows PowerShell)**:
+```powershell
+Copy-Item path\to\universal-dev-standards\extensions\languages\php-style.md .standards\
+```
+- [ ] `php-style.md` copied (if applicable)
+
+### Framework Extensions
+
+**For Fat-Free Framework (macOS / Linux)**:
+```bash
+cp path/to/universal-dev-standards/extensions/frameworks/fat-free-patterns.md .standards/
+```
+
+**For Fat-Free Framework (Windows PowerShell)**:
+```powershell
+Copy-Item path\to\universal-dev-standards\extensions\frameworks\fat-free-patterns.md .standards\
+```
+- [ ] `fat-free-patterns.md` copied (if applicable)
+
+### Locale Extensions
+
+**For Traditional Chinese Teams (macOS / Linux)**:
+```bash
+cp path/to/universal-dev-standards/extensions/locales/zh-tw.md .standards/
+```
+
+**For Traditional Chinese Teams (Windows PowerShell)**:
+```powershell
+Copy-Item path\to\universal-dev-standards\extensions\locales\zh-tw.md .standards\
+```
+- [ ] `zh-tw.md` copied (if applicable)
+
+---
+
+## AI Tool Integrations
+
+Select and install based on your tools:
+
+### GitHub Copilot
+
+**macOS / Linux:**
+```bash
+mkdir -p .github
+cp path/to/universal-dev-standards/integrations/github-copilot/copilot-instructions.md .github/
+```
+
+**Windows PowerShell:**
+```powershell
+New-Item -ItemType Directory -Force -Path .github
+Copy-Item path\to\universal-dev-standards\integrations\github-copilot\copilot-instructions.md .github\
+```
+- [ ] `.github/copilot-instructions.md` installed
+
+### Cursor IDE
+
+**macOS / Linux:**
+```bash
+cp path/to/universal-dev-standards/integrations/cursor/.cursorrules .
+```
+
+**Windows PowerShell:**
+```powershell
+Copy-Item path\to\universal-dev-standards\integrations\cursor\.cursorrules .
+```
+- [ ] `.cursorrules` installed
+
+### Windsurf IDE
+
+**macOS / Linux:**
+```bash
+cp path/to/universal-dev-standards/integrations/windsurf/.windsurfrules .
+```
+
+**Windows PowerShell:**
+```powershell
+Copy-Item path\to\universal-dev-standards\integrations\windsurf\.windsurfrules .
+```
+- [ ] `.windsurfrules` installed
+
+### Cline
+
+**macOS / Linux:**
+```bash
+cp path/to/universal-dev-standards/integrations/cline/.clinerules .
+```
+
+**Windows PowerShell:**
+```powershell
+Copy-Item path\to\universal-dev-standards\integrations\cline\.clinerules .
+```
+- [ ] `.clinerules` installed
+
+### OpenSpec (for SDD workflow)
+
+**macOS / Linux:**
+```bash
+cp -r path/to/universal-dev-standards/integrations/openspec/ .openspec/
+```
+
+**Windows PowerShell:**
+```powershell
+Copy-Item -Recurse path\to\universal-dev-standards\integrations\openspec\ .openspec\
+```
+- [ ] `.openspec/` directory installed
+
+---
+
+## Team Configuration
+
+### Git Workflow Selection
+
+Review `git-workflow.md` and select:
+- [ ] Trunk-Based Development
+- [ ] GitHub Flow
+- [ ] GitFlow
+
+Document decision in project README or CONTRIBUTING.md.
+
+### Code Review Process
+
+- [ ] Define required reviewers
+- [ ] Set up branch protection rules
+- [ ] Configure code-review-assistant skill settings
+
+### Testing Standards
+
+- [ ] Define coverage targets (recommended: 70/20/7/3)
+- [ ] Set up CI/CD pipeline
+- [ ] Configure testing-guide skill settings
+
+---
+
+## Verification
+
+### Test All Skills
+
+1. **commit-standards**: Write a commit → Should follow Conventional Commits
+2. **code-review-assistant**: Review code → Should use systematic checklist
+3. **git-workflow-guide**: Ask about branching → Should explain chosen workflow
+4. **release-standards**: Ask about versioning → Should explain SemVer
+5. **testing-guide**: Ask about tests → Should explain testing pyramid
+
+### Verify Integrations
+
+- [ ] AI tool follows project standards
+- [ ] AI tool provides evidence-based responses
+
+---
+
+## Final Checklist
+
+| Category | Items | Status |
+|----------|-------|--------|
+| **Level 1 Skills** | ai-collaboration-standards, commit-standards | [ ] |
+| **Level 2 Skills** | code-review-assistant, git-workflow-guide, release-standards, testing-guide, requirement-assistant | [ ] |
+| **Reference Docs** | checkin-standards.md, spec-driven-development.md | [ ] |
+| **Extensions** | (selected based on project) | [ ] |
+| **Integrations** | (selected based on tools) | [ ] |
+| **Team Config** | Workflow, review process, testing targets | [ ] |
+
+---
+
+## Next Steps
+
+When ready to upgrade to Level 3 (Enterprise):
+- See [enterprise.md](enterprise.md)
+
+---
+
+## Related Standards
+
+- [Essential Adoption Checklist](minimal.md) - Level 1 basics
+- [Enterprise Adoption Checklist](enterprise.md) - Level 3 upgrade guide
+- [Checkin Standards](../../core/checkin-standards.md) - Quality gate standards
+- [Git Workflow](../../core/git-workflow.md) - Workflow patterns
+- [Testing Standards](../../core/testing-standards.md) - Testing guidelines
+- [Code Review Checklist](../../core/code-review-checklist.md) - Review process
+
+---
+
+## Version History
+
+| Version | Date | Changes |
+|---------|------|---------|
+| 1.0.1 | 2025-12-24 | Added: Related Standards, License sections |
+| 1.0.0 | 2025-12-23 | Initial checklist |
+
+---
+
+## License
+
+This checklist is released under [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/).

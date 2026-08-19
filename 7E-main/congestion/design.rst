@@ -1,0 +1,337 @@
+|CC|.1 Design Issues
+------------------------------
+
+Chapter |Capacity| outlines part of the design space for congestion
+control, focusing on what routers may (or may not) do to help manage
+congestion; e.g., isolate flows, perform active queue management, send
+explicit congestion notifications.  There are other questions that
+only the sources of those packets can answer. We start by identifying
+what those questions are, and exploring the options available to TCP
+(and other transport protocols running on edge hosts) to address
+them. Until we get to domain-specific use cases in Section
+|CC|.4, you can assume the routers implement FIFO queues with
+tail-drop.
+
+Note while the concepts underlying congestion control algorithms are
+protocol-independent, the history of congestion control in the
+Internet is strongly tied to TCP.\ [#]_ This includes several
+implementation details that leverage existing TCP header fields. This
+chapter uses this TCP-centric terminology, but as we will see in
+Chapter |Message|, other transport protocols—most notably QUIC—adapt
+these algorithms to their particular circumstances.
+
+.. [#] Not only is congestion control historically tied to TCP, it's
+   actually tied to a specific implementation of TCP. Originally, the
+   *Berkeley Software Distribution (BSD)* implementation of Unix was
+   considered the *reference implementation* of TCP congestion
+   control. In fact, the initial algorithm proposed by Jacobson and
+   Karels was a noteworthy feature of the Tahoe release of BSD 4.3
+   in 1988.  Today, Linux is has replaced BSD as the *de facto*
+   reference implementation of TCP.
+
+|CC|.1.1 Load Control
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+At its core, congestion control is networking's version of a general
+system problem: *load control*. No matter how sophisticated or
+simple-minded a system's scheduler—the algorithm that decides how to
+allocate system resources to users—there is a complementary question
+of how many users are allowed into the system in the first place. One
+answer is that there is no load control mechanism; if you show up and
+want service, you get to compete for resources.
+
+This is what leads to congestion, and anyone who has driven on a
+highway at rush hour has experienced it. There is a limited
+resource—the space on the highway—and a set of cars, trucks, etc. that
+compete for that resource. As rush hour gets underway, more traffic
+arrives but the road keeps working as intended, just with more
+vehicles on it. But there comes a point where the number of vehicles
+becomes so large that everyone has to slow down (because there is no
+longer enough space for everyone to keep a safe distance at the speed
+limit) at which point the road actually becomes *less effective* at
+moving vehicles. So, just at the point when you would be wanting more
+capacity, there is actually less capacity to move traffic.
+
+This is the situation depicted in :numref:`Figure %s <fig-collapse>`,
+and while the right side of the load curve is labeled *congestion
+collapse*, the general shape of the graph is the same in any system
+with finite resources. A multi-user computer system trying to allocate
+resources to an excessive number of tasks faces a similar
+problem. Perhaps the most familiar example today is trying to purchase
+tickets to a popular concert from a web site, or attempting to
+download the latest release of a popular game. If there isn't enough
+capacity to handle the load, the service degrades in an ungraceful
+manner.
+
+.. _fig-collapse:
+.. figure:: congestion/figures/Slide1.png
+   :width: 400px
+   :align: center
+
+   As load increases, throughput rises then falls at the point of
+   congestion collapse.
+
+The reason that congestion collapse occurred in the early Internet is
+that dropped packets are not just discarded and forgotten. When the
+end-to-end transport protocol is TCP, as it is for most Internet
+traffic, a dropped packet is retransmitted. So as congestion rises,
+the number of retransmitted packets rises; in other words, the number
+of packets sent into the network increases even if there is no real
+increase in the offered load from users and applications. More packets
+lead to more drops leading to more retransmissions and so on. You can
+see how this leads to collapse.
+
+A useful term in this context is *goodput*, which is distinguished
+from throughput in the sense that only packets doing useful work are
+counted towards goodput. So, for example, if a link is running at 100%
+utilization, but 60% of the packets on that link are retransmitted due
+to earlier losses, you could say the goodput is only 40%.
+
+The solution is to somehow limit the load. On a multi-user computer
+system there might be a centralized "gate" that decides to let new
+users log in, but a centralized strategy is not practical on a network
+the scale of the Internet. Each sender has to decide for itself
+whether to send one packet, ten packets, or several gigabytes worth of
+packets at any given time. In a network, the decision is ongoing
+rather than a one-time gate, so it can be restated as deciding how
+many bytes may be in transit in any given period of time. For ongoing
+connections, you know your recent history. This is a good place to
+start, but you need a heuristic to tell you if you should try to go
+faster (because the network has unused capacity), or if there are
+warning signs that perhaps you should slow down. For new connections,
+you need a heuristic to tell you how aggressively you can start
+dumping packets into the network at the start.
+
+As an aside, since we have already seen the idea of *flow control*, it
+is important to distinguish between flow control and congestion
+control. Flow control involves keeping a fast sender from overrunning
+a slow receiver. Congestion control, by contrast, is intended to keep
+a set of senders from sending too much data *into the network* because
+of lack of resources at some location. These two concepts are often
+confused; as we will see, they also share some mechanisms. (Note that
+in principle congestion control algorithms are protocol independent,
+but in practice, they have been integrated into TCP, and so we present
+them in that context.)
+
+
+|CC|.1.2 Signals from the Network
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+The sender's decision to increase or decrease its sending rate is
+based on different signals it detects or explicitly receives. There
+are several types of signals, but the most important is the arrival of
+an ACK, indicating that one of its packets has been received by the
+destination. If the destination received the packet, it must have
+exited the network, meaning there should now be capacity for another
+packet. By using ACKs to pace the transmission of packets, TCP is said
+to be *self-clocking*.  In contrast, a timeout signals that a packet
+was lost, potentially implying that the network is congested, and that
+TCP needs to reduce its sending rate. Because using packet loss as a
+signal means congestion has already occurred and we are reacting after
+the fact, we sometimes refer to this approach as *control-based*, or
+alternatively, *loss-based*.
+
+Waiting for packet loss to signal the onset of congestion, and then
+reacting to that loss, is not the only option. It is possible adopt a
+more proactive strategy, for example, by watching for changes in the
+measured throughput rate, and adjusting the sending rate *before*
+congestion becomes severe enough to cause packet loss.  Such
+algorithms are said to be *avoidance-based*, or alternatively, either
+*delay-based* or *rate-based*. Delay and rate are directly related, in
+that the sender records how much data is successfully sent during some
+time interval, such as its current estimate of the RTT. The key is
+whether the observed round-trip delay is shrinking or growing. Note
+that while we sometimes differentiate between the two approaches a
+control-based versus avoidance-based, we always refer to the general
+concept as "congestion control". The following two sections
+describe various loss-based and delay-based algorithms, respectively.
+
+|CC|.1.3 Fairness and Stability
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+While we want good throughput and low delay, there are other
+requirements. Two topics of particular importance when thinking about
+congestion avoidance are *fairness* and *stability*. When the network
+is congested, it's going to be necessary for some users or flows to
+send less. It is clearly worth asking: which flows should send less?
+Should all flows share the pain equally? And what happens if some
+flows pay more attention to congestion signals than others? These
+questions are at the heart of the fairness issue. Jain's *fairness
+index* is one widely accepted way to measure how
+fair a network is.
+
+When several flows share a particular link, we would like for each
+flow to receive an equal share of the bandwidth. This definition
+presumes that a *fair* share of bandwidth means an *equal* share of
+bandwidth. But equal shares may not equate to fair shares.  Should we
+also consider the length of the paths being compared? For example, as
+illustrated in :numref:`Figure %s <fig-path-len>`, what is fair when
+one four-hop flow is competing with three one-hop flows?
+
+.. _fig-path-len:
+.. figure:: congestion/figures/Slide10.png
+   :width: 550px
+   :align: center
+
+   One four-hop flow competing with three one-hop flows.
+
+Assuming that the most fair situation would be one in which all flows
+receive the same bandwidth, networking researcher Raj Jain proposed a
+metric that can be used to quantify the fairness of a
+congestion-control mechanism. Jain’s fairness index is defined as
+follows. Given a set of flow throughputs
+
+.. math::
+
+   (x_{1}, x_{2}, \ldots , x_{n})
+
+(measured in consistent units such as bits/second), the following
+function assigns a fairness index to the flows:
+
+.. math::
+
+   f(x_{1}, x_{2}, \ldots ,x_{n}) = \frac{( \sum_{i=1}^{n} x_{i}
+   )^{2}} {n  \sum_{i=1}^{n} x_{i}^{2}}
+
+The fairness index always results in a number between 0 and 1, with 1
+representing greatest fairness. To understand the intuition behind this
+metric, consider the case where all *n* flows receive a throughput of
+1 unit of data per second. We can see that the fairness index in this
+case is
+
+.. math::
+
+   \frac{n^2}{n \times n} = 1
+
+Now, suppose one flow receives a throughput of :math:`1 + \Delta`.
+Now the fairness index is
+
+.. math::
+
+   \frac{((n - 1) + 1 + \Delta)^2}{n(n - 1 + (1 + \Delta)^2)}
+   = \frac{n^2 + 2n\Delta + \Delta^2}{n^2 + 2n\Delta + n\Delta^2}
+
+Note that the denominator exceeds the numerator by :math:`(n-1)\Delta^2`.
+Thus, whether the odd flow out was getting more or less than all the
+other flows (positive or negative :math:`\Delta`), the fairness index has
+now dropped below one. Another simple case to
+consider is where only *k* of the *n* flows receive equal throughput,
+and the remaining *n-k* users receive zero throughput, in which case the
+fairness index drops to \ *k/n*.
+
+.. sidebar:: Fairness vs. Deployment
+
+   Over the decades of development of congestion control, algorithms,
+   the question has often arisen of whether a given mechanism A is
+   fair to flows managed by mechanism B. If mechanism A is able to
+   measure improved throughput over B, but it does so by being more
+   aggressive, and hence, stealing bandwidth from B's flows, then A's
+   improvement is not fairly gained and may be discounted. The
+   Internet's highly decentralized approach to congestion control
+   works because a large number of flows respond in a cooperative way
+   to congestion, which opens the door to more aggressive flows
+   improving their performance at the expense of those which implement
+   the accepted, less aggressive algorithms.
+
+   Arguments like this have been made many times, which has raised a
+   high bar to the deployment of new algorithms. Even if global
+   deployment of a new algorithm would be a net positive, incremental
+   deployment (which is the only real option) could negatively impact
+   flows using existing algorithms, leading to a reluctance to deploy
+   new approaches. But such analysis suffers from three problems, as
+   identified by Ranysha Ware and colleagues (see Further Reading below):
+
+   * **Ideal-Driven Goalposting:**
+     A fairness-based threshold asserts that new
+     mechanism B should equally share the bottleneck link with
+     deployed mechanism A. This goal is too idealistic in
+     practice, especially when A is sometimes unfair to its own
+     flows.
+
+   * **Throughput-Centricity:**
+     A fairness-based threshold focuses on
+     how new mechanism B impacts a competitor flow using mechanism A
+     by focusing on A’s achieved throughput.  However, this ignores
+     other important figures of merit for good performance, such as
+     latency, flow completion time, or loss rate.
+
+   * **Assumption of Balance:**
+     Inter-mechanism interactions often
+     have some bias, but a fairness metric cannot tell whether the
+     outcome is biased for or against the status quo. It makes a
+     difference in terms of deployability whether a new mechanism B
+     takes a larger share of bandwidth than legacy mechanism A or
+     leaves a larger share for A to consume: the former might elicit
+     complaints from legacy users of A, where the latter would
+     not. Jain’s Fairness Index assigns an equivalent score to both
+     scenarios.
+
+   Instead of a simple calculation of Jain's fairness index, Ware
+   advocates for a threshold based on *harm*, as measured by a
+   reduction in throughput or an increase in latency or
+   jitter. Intuitively, if the amount of harm caused by flows using a
+   new mechanism B on flows using existing mechanism A is within a
+   bound derived from how much harm A-managed flows cause other
+   A-managed flows, we can consider B deployable alongside A without
+   harm. Even with a single congestion control algorithm, the amount
+   of harm that one flow causes another depends on factors such as its
+   RTT, start time, and duration. Thus measures of harm need to take
+   into account the range of impacts that different flows have on each
+   other under the existing regime and aim to do no worse with a new
+   algorithm.
+
+Stability is another critical property for any sort of control system,
+which is what congestion control is. When congestion is detected, some
+action is taken to reduce the total amount of traffic, causing
+congestion to ease, at which point it would seem reasonable to start
+sending more traffic again, leading back to more congestion. You can
+imagine that this sort of oscillation between congested and
+uncongested states could go on forever, and would be quite detrimental
+if the network is swinging from underutilized to collapsing.  We
+really want it to find an equilibrium where the network is busy but
+not so much so that congestion collapse occurs. Finding these stable
+control loops has been one of the key challenges for congestion
+control system designers over the decades. The quest for stability
+features heavily in the early work of Jacobson and Karels and
+stability remains a requirement that subsequent approaches have to
+meet.
+
+Finally, much of the theoretical work on congestion control frames the
+problem as
+
+  *"a distributed algorithm to share network resources among competing
+  sources, where the goal is to choose source rate so as to maximize
+  aggregate source utility subject to capacity constraints."*
+
+Formulating a congestion-control mechanism as an algorithm to optimize
+an objective function is traceable to a paper by Frank Kelly in 1997,
+and later extended by Sanjeewa Athuraliya and Steven Low to take into
+account both traffic sources (TCP) and router queuing techniques
+(AQM). We do not pursue the mathematical formulation outlined in these
+papers (and the large body of work that followed), but we do find it
+helpful to recognize that there is an established connection between
+optimizing a utility function and the pragmatic aspects of the
+mechanisms described in this chapter.
+
+.. _reading_kelly_low:
+.. admonition:: Further Reading
+
+   R. Jain, D. Chiu, and W. Hawe. `A Quantitative Measure of Fairness
+   and Discrimination for Resource Allocation in Shared Computer Systems
+   <https://arxiv.org/abs/cs/9809099>`__.
+   DEC Research Report TR-301, 1984.
+
+   F. Kelly. `Charging and Rate Control for Elastic Traffic
+   <http://www.statslab.cam.ac.uk/~frank/elastic.pdf>`__.
+   European Transactions on Telecommunications, 8:33–37, 1997.
+
+   S. Athuraliya and S. Low, `An Empirical Validation of a Duality
+   Model of TCP and Active Queue Management Algorithms
+   <https://ieeexplore.ieee.org/document/977445>`__.
+   Winter Simulation Conference, 2001.
+
+   R. Ware et al. `Beyond Jain's Fairness Index: Setting the Bar for
+   the Deployment of Congestion Control Algorithms
+   <https://dl.acm.org/doi/10.1145/3365609.3365855>`__.
+   ACM SIGCOMM HotNets, November 2019.
+

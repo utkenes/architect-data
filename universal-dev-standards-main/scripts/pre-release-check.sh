@@ -1,0 +1,561 @@
+#!/bin/bash
+#
+# Pre-release Check Script
+# 發布前檢查腳本
+#
+# This script runs all pre-release checks in one command.
+# 此腳本一次執行所有發布前檢查。
+#
+# Usage: ./scripts/pre-release-check.sh [options]
+#
+# Options:
+#   --fail-fast    Stop on first failure
+#   --skip-tests   Skip running tests (faster validation)
+#   --help         Show this help message
+#
+
+# Cross-platform /dev/null protection for Windows
+_cleanup_null_file() {
+  if [ -f "NULL" ]; then rm -f "NULL"; fi
+}
+trap _cleanup_null_file EXIT
+
+# Colors for output
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+YELLOW='\033[1;33m'
+BLUE='\033[0;34m'
+CYAN='\033[0;36m'
+BOLD='\033[1m'
+NC='\033[0m' # No Color
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+ROOT_DIR="$(dirname "$SCRIPT_DIR")"
+CLI_DIR="$ROOT_DIR/cli"
+
+# Parse arguments
+FAIL_FAST=false
+SKIP_TESTS=false
+SKIP_CHANGELOG=false
+
+for arg in "$@"; do
+    case $arg in
+        --fail-fast)
+            FAIL_FAST=true
+            shift
+            ;;
+        --skip-tests)
+            SKIP_TESTS=true
+            shift
+            ;;
+        --skip-changelog)
+            SKIP_CHANGELOG=true
+            shift
+            ;;
+        --help)
+            echo "Usage: ./scripts/pre-release-check.sh [options]"
+            echo ""
+            echo "Options:"
+            echo "  --fail-fast       Stop on first failure"
+            echo "  --skip-tests      Skip running tests (faster validation)"
+            echo "  --skip-changelog  Skip CHANGELOG [Unreleased] hard gate (requires justification)"
+            echo "  --help            Show this help message"
+            exit 0
+            ;;
+        *)
+            echo -e "${RED}Unknown option: $arg${NC}"
+            echo "Use --help for usage information"
+            exit 1
+            ;;
+    esac
+done
+
+# Counters
+PASSED=0
+FAILED=0
+SKIPPED=0
+TOTAL=24
+
+# `tsx` is not on PATH in every shell (nvm-managed installs, non-login shells).
+# Three checks invoked it bare, so a missing binary was reported as "✗ Failed" —
+# indistinguishable from the check actually finding something. Resolve it once,
+# loudly, and fail the run if it cannot be found at all.
+if command -v tsx >/dev/null 2>&1; then
+    TSX="tsx"
+elif [ -x "$ROOT_DIR/node_modules/.bin/tsx" ]; then
+    TSX="$ROOT_DIR/node_modules/.bin/tsx"
+elif npx --no-install tsx --version >/dev/null 2>&1; then
+    TSX="npx --no-install tsx"
+else
+    echo -e "${RED}✗ tsx not found — three checks below cannot run.${NC}"
+    echo "  Install it (npm i) or add it to PATH; do not read their result as a pass or a fail."
+    exit 1
+fi
+
+if [ "$SKIP_TESTS" = true ]; then
+    TOTAL=20
+fi
+
+# Function to run a check
+run_check() {
+    local step=$1
+    local name=$2
+    local command=$3
+
+    echo -e "${CYAN}[$step/$TOTAL]${NC} $name..."
+
+    # Run the command and capture output
+    output=$(eval "$command" 2>&1)
+    exit_code=$?
+
+    if [ $exit_code -eq 0 ]; then
+        echo -e "      ${GREEN}✓ Passed${NC}"
+        PASSED=$((PASSED + 1))
+        # exit 0 means "did not block the release", not "found nothing to say".
+        # A check can pass while still carrying non-blocking warnings, and this
+        # repo's checks spell "warning" at least 7 different ways (WARN/[WARN]/
+        # WARN:/⚠️/⚠/ADVISORY/警告— none of them a closed set). Matching against
+        # a hand-typed list of marker strings is the same "gate enumerates the
+        # set" mistake as check-naming-and-refs.ts's fixed directory list — the
+        # 8th spelling would go unprinted and nothing would say so. So: don't
+        # sniff for a marker at all — print any output the check produced,
+        # whether or not it exited 0. Silence stays silent; anything the check
+        # had to say is shown.
+        trimmed=$(echo "$output" | tr -d '[:space:]')
+        if [ -n "$trimmed" ]; then
+            echo ""
+            echo "$output" | sed 's/^/      /'
+            echo ""
+        fi
+        return 0
+    else
+        echo -e "      ${RED}✗ Failed${NC}"
+        echo ""
+        echo "$output" | sed 's/^/      /'
+        echo ""
+        FAILED=$((FAILED + 1))
+
+        if [ "$FAIL_FAST" = true ]; then
+            echo -e "${RED}Stopping due to --fail-fast${NC}"
+            show_summary
+            exit 1
+        fi
+        return 1
+    fi
+}
+
+# Function to show summary
+show_summary() {
+    echo ""
+    echo "=========================================="
+    echo "  Summary | 摘要"
+    echo "=========================================="
+    echo ""
+
+    if [ $FAILED -eq 0 ]; then
+        echo -e "${GREEN}${BOLD}✓ All pre-release checks passed!${NC}"
+        echo -e "  ${GREEN}Ready to release.${NC}"
+    else
+        echo -e "${RED}${BOLD}✗ $FAILED check(s) failed!${NC}"
+        echo -e "  ${RED}Please fix the issues above before releasing.${NC}"
+    fi
+
+    echo ""
+    echo -e "  Passed:  ${GREEN}$PASSED${NC}"
+    echo -e "  Failed:  ${RED}$FAILED${NC}"
+    if [ $SKIPPED -gt 0 ]; then
+        echo -e "  Skipped: ${YELLOW}$SKIPPED${NC}"
+    fi
+    echo ""
+}
+
+# Header
+echo ""
+echo "=========================================="
+echo "  Pre-release Check"
+echo "  發布前檢查"
+echo "=========================================="
+echo ""
+
+if [ "$SKIP_TESTS" = true ]; then
+    echo -e "${YELLOW}Note: Tests will be skipped (--skip-tests)${NC}"
+    echo ""
+fi
+
+# Change to root directory
+cd "$ROOT_DIR"
+
+# Step 1: Git status
+echo -e "${CYAN}[1/$TOTAL]${NC} Checking git status..."
+git_status=$(git status --porcelain 2>&1)
+if [ -z "$git_status" ]; then
+    echo -e "      ${GREEN}✓ Working directory clean${NC}"
+    PASSED=$((PASSED + 1))
+else
+    echo -e "      ${YELLOW}⚠ Uncommitted changes detected${NC}"
+    echo ""
+    echo "$git_status" | sed 's/^/      /'
+    echo ""
+    echo -e "      ${YELLOW}(This is a warning, not a failure)${NC}"
+    PASSED=$((PASSED + 1))
+fi
+
+# Step 1.5: Sync Documentation (Auto-fix)
+echo -e "${CYAN}[1.5/$TOTAL]${NC} Syncing Documentation & Manifest..."
+npm run docs:sync > /dev/null 2>&1
+if [ $? -eq 0 ]; then
+    echo -e "      ${GREEN}✓ Documentation synchronized${NC}"
+else
+    echo -e "      ${RED}✗ Documentation sync failed${NC}"
+    FAILED=$((FAILED + 1))
+fi
+
+# Step 2: Version sync
+run_check "2" "Running version sync check" "$SCRIPT_DIR/check-version-sync.sh"
+
+# Step 3: Standards sync
+run_check "3" "Running standards sync check" "$SCRIPT_DIR/check-standards-sync.sh"
+
+# Step 4: Translation sync
+run_check "4" "Running translation sync check" "$SCRIPT_DIR/check-translation-sync.sh"
+
+# Step 5: CLI-docs sync
+run_check "5" "Running CLI-docs sync check" "$SCRIPT_DIR/check-cli-docs-sync.sh"
+
+# Step 6: Documentation sync
+run_check "6" "Running documentation sync check" "$SCRIPT_DIR/check-docs-sync.sh"
+
+# Step 7: AI Agent sync
+run_check "7" "Running AI Agent sync check" "$SCRIPT_DIR/check-ai-agent-sync.sh"
+
+# Step 7.5: Integration commands sync (SPEC-INTSYNC-001)
+# check-integration-commands-sync.sh (the old bash implementation, and later
+# a thin wrapper around this .ts) was removed under XSPEC-376 R4/R7 — its
+# per-command match piped `echo "$file_content" | grep -qE ...`, and grep -q's
+# early exit on match could SIGPIPE the echo, leaking intermittent bash
+# "write error: Broken pipe" lines into this step's captured output (0-9
+# stray lines across 3 consecutive runs in local testing). The .ts matches
+# in-memory (RegExp.test), no subprocess or pipe involved, and is now the
+# only entry point — reuses the $TSX already resolved above.
+run_check "7.5" "Running integration commands sync check" "$TSX $SCRIPT_DIR/check-integration-commands-sync.ts"
+
+# Step 8: Usage docs sync
+run_check "8" "Running usage docs sync check" "$SCRIPT_DIR/check-usage-docs-sync.sh"
+
+# Step 9: Spec sync (Core↔Skill)
+run_check "9" "Running spec sync check (Core↔Skill)" "$SCRIPT_DIR/check-spec-sync.sh"
+
+# Step 10: Scope sync
+run_check "10" "Running scope sync check" "$SCRIPT_DIR/check-scope-sync.sh"
+
+# Step 11: Commands sync
+run_check "11" "Running commands sync check" "$SCRIPT_DIR/check-commands-sync.sh"
+
+# Step 12: Docs integrity
+run_check "12" "Running docs integrity check | 文件完整性檢查" "$SCRIPT_DIR/check-docs-integrity.sh"
+
+# Step 13: Skill Next Steps sync
+run_check "13" "Running skill next steps sync check" "$SCRIPT_DIR/check-skill-next-steps-sync.sh"
+
+# Step 14: Linting
+run_check "14" "Running linting" "npm run lint --prefix $CLI_DIR"
+
+# Step 15: Orphan Spec Detection
+# Mandatory Closure: stable releases enforce --strict (orphans = FAILED)
+# Alpha/Beta/RC releases keep warning-only behavior
+echo -e "${CYAN}[15/$TOTAL]${NC} Running orphan spec detection | 孤兒 Spec 偵測..."
+ORPHAN_STRICT=""
+CLI_VERSION=$(node -p "require('$CLI_DIR/package.json').version" 2>/dev/null || echo "0.0.0")
+if echo "$CLI_VERSION" | grep -qE '^[0-9]+\.[0-9]+\.[0-9]+$'; then
+    ORPHAN_STRICT="--strict"
+    echo -e "      ${CYAN}Stable release detected (v$CLI_VERSION) — enforcing strict orphan check${NC}"
+fi
+orphan_output=$("$SCRIPT_DIR/check-orphan-specs.sh" $ORPHAN_STRICT 2>&1)
+orphan_exit=$?
+if [ $orphan_exit -ne 0 ] && [ -n "$ORPHAN_STRICT" ]; then
+    echo -e "      ${RED}✗ Orphan specs detected (strict mode — stable release)${NC}"
+    echo "$orphan_output" | grep -E "^\s*-" | sed 's/^/      /'
+    FAILED=$((FAILED + 1))
+elif echo "$orphan_output" | grep -q "orphan spec"; then
+    echo -e "      ${YELLOW}⚠ Orphan specs detected (warning only — pre-release version)${NC}"
+    echo "$orphan_output" | grep -E "^\s*-" | sed 's/^/      /'
+    PASSED=$((PASSED + 1))
+else
+    echo -e "      ${GREEN}✓ No orphan specs${NC}"
+    PASSED=$((PASSED + 1))
+fi
+
+# Step 16: AI Agent Behavior coverage
+# check-ai-behavior-sync.sh (the old bash implementation, and later a thin
+# wrapper around this .ts) was removed under XSPEC-376 R4/R7 — it was a full
+# second implementation whose deprecation header was never enforced, since
+# this gate used to call the .sh filename directly. The .ts is now the only
+# entry point — reuses the $TSX already resolved above.
+run_check "16" "Running AI Agent Behavior coverage check | AI Agent Behavior 覆蓋率檢查" "$TSX $SCRIPT_DIR/check-ai-behavior-sync.ts"
+
+# Step 17: Workflow Compliance (warning only)
+# Calls the .ts directly (not check-workflow-compliance.sh): the .sh was a
+# full second implementation whose deprecation header was never enforced —
+# both this gate and cli/.husky/pre-commit still called the .sh filename
+# directly. check-workflow-compliance.sh is now a thin wrapper around this
+# same .ts file, so this call and a direct call to the .sh are equivalent —
+# calling the .ts directly here just skips the wrapper's own tsx-resolution
+# step, reusing the $TSX already resolved above.
+echo -e "${CYAN}[17/$TOTAL]${NC} Running workflow compliance check | 工作流程合規檢查..."
+if [ -f "$SCRIPT_DIR/check-workflow-compliance.ts" ]; then
+    wf_output=$($TSX "$SCRIPT_DIR/check-workflow-compliance.ts" 2>&1)
+    wf_warnings=$(echo "$wf_output" | grep -c "⚠️" 2>/dev/null || echo "0")
+    if [ "$wf_warnings" -gt 0 ]; then
+        echo -e "      ${YELLOW}⚠ $wf_warnings workflow warning(s) (advisory only)${NC}"
+        echo "$wf_output" | grep "⚠️\|Active workflows\|→" | sed 's/^/      /'
+    else
+        echo -e "      ${GREEN}✓ No workflow compliance issues${NC}"
+    fi
+    PASSED=$((PASSED + 1))
+else
+    echo -e "      ${YELLOW}⏭ check-workflow-compliance.ts not found${NC}"
+    SKIPPED=$((SKIPPED + 1))
+fi
+
+# Step 18: Registry Completeness
+# check-registry-completeness.sh (the old bash implementation, and later a
+# thin wrapper around this .ts) was removed under XSPEC-376 R4/R7 — its
+# Check 3 only ever tested file existence, never content, so a .standards/
+# copy that had drifted out of sync with its ai/standards/ source read as
+# [OK] here at release-gate time even though the .ts version's sha256
+# comparison (added to catch exactly that drift) would have flagged it. The
+# .ts is now the only entry point — reuses the $TSX already resolved above.
+run_check "18" "Running registry completeness check | 註冊表完整性檢查" "$TSX $SCRIPT_DIR/check-registry-completeness.ts"
+
+# Step 18.5: Skill Structural Integrity (XSPEC-223)
+run_check "18.5" "Running skill structural integrity check | Skill 結構完整性檢查" "$TSX $SCRIPT_DIR/check-skill-structural-integrity.ts"
+
+# Step 18.6: Skill↔Standard content-coverage audit (XSPEC-070 Phase 2, advisory)
+# Runs without --strict: prints version-skew / mandatory-keyword / size-ratio
+# drift but never blocks. Promote to --strict here once drift stays at zero.
+run_check "18.6" "Running skill↔standard content-coverage audit (advisory) | Skill↔Standard 內容覆蓋稽核（建議性）" "$TSX $SCRIPT_DIR/check-skill-content-coverage.ts"
+
+# Step 18.7: Integration liveness + cross-registry consistency (XSPEC-355 OQ5/OQ6)
+# A discontinued tool must not ship still labelled as supported, and the same field
+# must not carry different values in three registries.
+run_check "18.7" "Running integration liveness check | 整合存活性與註冊表一致性檢查" "$TSX $SCRIPT_DIR/check-integration-liveness.ts"
+
+# Step 18.8: capability_registry rot (XSPEC-362 R4) — advisory, never blocks.
+# DEC-031 D1 required pin_date to be recorded; nothing ever required it to be read.
+# It expired 120 days over threshold and looked identical to a current entry.
+# Warnings are printed here rather than via run_check, because run_check hides the
+# output of anything that exits 0 — and this check exits 0 by design.
+echo -e "${CYAN}[18.8/$TOTAL]${NC} Running capability_registry freshness check | 模型鎖定新鮮度檢查..."
+if [ -f "$SCRIPT_DIR/check-model-pin-freshness.ts" ]; then
+    # Self-test first: a clean scan means nothing unless the predicates fire.
+    if ! $TSX "$SCRIPT_DIR/check-model-pin-freshness.ts" --self-test > /dev/null; then
+        echo -e "      ${RED}✗ Predicate self-test failed — a clean scan from this build proves nothing${NC}"
+        $TSX "$SCRIPT_DIR/check-model-pin-freshness.ts" --self-test | sed 's/^/      /'
+        FAILED=$((FAILED + 1))
+    else
+        pin_output=$($TSX "$SCRIPT_DIR/check-model-pin-freshness.ts" 2>&1)
+        pin_exit=$?
+        if [ $pin_exit -ne 0 ]; then
+            echo -e "      ${RED}✗ Check did not complete (exit $pin_exit) — this is not 'no findings'${NC}"
+            echo "$pin_output" | sed 's/^/      /'
+            FAILED=$((FAILED + 1))
+        elif echo "$pin_output" | grep -q "\[WARN\]"; then
+            echo -e "      ${YELLOW}⚠ capability_registry warnings (advisory only)${NC}"
+            echo "$pin_output" | grep -E "\[WARN\]|^  [A-Za-z_.-]+/|^    " | sed 's/^/      /'
+            PASSED=$((PASSED + 1))
+        else
+            echo -e "      ${GREEN}✓ No stale pins, no concrete vendor model IDs${NC}"
+            PASSED=$((PASSED + 1))
+        fi
+    fi
+else
+    echo -e "      ${YELLOW}⏭ check-model-pin-freshness.ts not found${NC}"
+    SKIPPED=$((SKIPPED + 1))
+fi
+
+# Step 18.9: Drift-override anti-permanence (XSPEC-376 R3b) — blocking.
+# check-registry-completeness.ts step 18's .standards/ drift gate has a
+# one-shot escape hatch (UDS_STANDARDS_DRIFT_OVERRIDE). This step makes sure
+# that variable's name was never checked into a tracked file — which would
+# turn "block, with a manual one-time exception" into "never actually
+# blocks". Unlike step 18.8, this is a real gate: a hit here is not advisory.
+run_check "18.9" "Running drift-override anti-permanence check | 漂移逃生門防永久化檢查" "$TSX $SCRIPT_DIR/check-drift-override-clean.ts"
+
+# Step 19: Unit Tests
+if [ "$SKIP_TESTS" = true ]; then
+    echo -e "${CYAN}[19/$TOTAL]${NC} Running unit tests..."
+    echo -e "      ${YELLOW}⏭ Skipped (--skip-tests flag)${NC}"
+    SKIPPED=$((SKIPPED + 1))
+else
+    run_check "19" "Running unit tests | 單元測試" "npm run test:unit --prefix $CLI_DIR"
+fi
+
+# Step 20: E2E Tests (Bug Regression)
+if [ "$SKIP_TESTS" = true ]; then
+    echo -e "${CYAN}[20/$TOTAL]${NC} Running E2E tests..."
+    echo -e "      ${YELLOW}⏭ Skipped (--skip-tests flag)${NC}"
+    SKIPPED=$((SKIPPED + 1))
+else
+    run_check "20" "Running E2E tests | E2E 迴歸測試" "npm run test:e2e --prefix $CLI_DIR"
+fi
+
+# Step 21: Release Readiness Sign-off (warning-only until next minor release)
+# check-release-readiness-signoff.sh (the old bash implementation, and later
+# a thin wrapper around this .ts) was removed under XSPEC-376 R4/R7 — its
+# `grep -c ... || echo "0"` counters produced a malformed "0\n0" value (and
+# spurious "integer expression expected" stderr) on the common case of a
+# clean sign-off, because `grep -c` exits 1 (not 0) on zero matches. The .ts
+# is now the only entry point — reuses the $TSX already resolved above.
+echo -e "${CYAN}[21/$TOTAL]${NC} Checking release readiness sign-off | 釋出準備簽核檢查..."
+if [ -f "$SCRIPT_DIR/check-release-readiness-signoff.ts" ]; then
+    signoff_output=$($TSX "$SCRIPT_DIR/check-release-readiness-signoff.ts" 2>&1)
+    signoff_exit=$?
+    if [ $signoff_exit -ne 0 ]; then
+        echo -e "      ${YELLOW}⚠ Release readiness sign-off incomplete (advisory) | 釋出準備簽核不完整（僅警告）${NC}"
+        echo "$signoff_output" | head -5 | sed 's/^/      /'
+        PASSED=$((PASSED + 1))  # warning-only: does not count as failure
+    else
+        echo -e "      ${GREEN}✓ Release readiness sign-off present${NC}"
+        PASSED=$((PASSED + 1))
+    fi
+else
+    echo -e "      ${YELLOW}⏭ check-release-readiness-signoff.ts not found${NC}"
+    SKIPPED=$((SKIPPED + 1))
+fi
+
+# Step 22: Flow Gate Report (warning-only until next minor release)
+# check-flow-gate-report.sh (the old bash implementation, and later a thin
+# wrapper around this .ts) was removed under XSPEC-376 R4/R7 — its jq path,
+# under `set -euo pipefail`, aborted on malformed JSON with jq's own raw parse
+# error (exit 5) instead of the script's own "malformed or missing
+# summary.status field" message (exit 1). The .ts is now the only entry
+# point — reuses the $TSX already resolved above.
+echo -e "${CYAN}[22/$TOTAL]${NC} Checking flow gate report | 流程閘門報告檢查..."
+if [ -f "$SCRIPT_DIR/check-flow-gate-report.ts" ]; then
+    flowgate_output=$($TSX "$SCRIPT_DIR/check-flow-gate-report.ts" 2>&1)
+    flowgate_exit=$?
+    if [ $flowgate_exit -ne 0 ]; then
+        echo -e "      ${YELLOW}⚠ flow_gate_report.json missing or incomplete (advisory) | flow_gate_report.json 缺失或不完整（僅警告）${NC}"
+        echo "$flowgate_output" | head -5 | sed 's/^/      /'
+        PASSED=$((PASSED + 1))  # warning-only
+    else
+        echo -e "      ${GREEN}✓ Flow gate report valid${NC}"
+        PASSED=$((PASSED + 1))
+    fi
+else
+    echo -e "      ${YELLOW}⏭ check-flow-gate-report.ts not found${NC}"
+    SKIPPED=$((SKIPPED + 1))
+fi
+
+# Step 22.5: CHANGELOG documented-this-release gate — refuses release when neither
+# [Unreleased] nor today's dated section has substantive content.
+#
+# Why: Release is irreversible; downstream consumers depend on CHANGELOG to know what changed.
+#
+# Two pass conditions (either satisfies the gate):
+#   (A) "Work in progress, ready to release"  — [Unreleased] has entries
+#   (B) "Just promoted [Unreleased] → [X.Y.Z]" — latest dated section is today AND has entries
+#
+# Fail conditions:
+#   (C) "Forgot to update CHANGELOG"          — [Unreleased] empty AND latest dated section is older than today
+#   (D) "Today's section is template-only"    — [Unreleased] empty AND today's section exists but has no entries
+#
+# Honors --skip-changelog flag (advisory; justification expected in release commit message).
+# v5.13.3 logic upgrade: original v5.13.0 implementation only checked condition A,
+# falsely failed condition B (just-promoted) and required --skip-changelog workaround.
+echo -e "${CYAN}[22.5/$TOTAL]${NC} Checking CHANGELOG documented-this-release gate | CHANGELOG 已記錄本次發版檢查..."
+if [ "$SKIP_CHANGELOG" = true ]; then
+    echo -e "      ${YELLOW}⏭ Skipped (--skip-changelog flag — justification expected in commit message)${NC}"
+    SKIPPED=$((SKIPPED + 1))
+elif [ ! -f "$ROOT_DIR/CHANGELOG.md" ]; then
+    echo -e "      ${RED}✗ CHANGELOG.md not found at repo root${NC}"
+    FAILED=$((FAILED + 1))
+else
+    # ── Pass A: [Unreleased] has substantive content ───────────────────────────
+    unreleased_body=$(awk '/^## \[Unreleased\]/{flag=1; next} /^## \[/{flag=0} flag' "$ROOT_DIR/CHANGELOG.md")
+    unreleased_substantive=$(echo "$unreleased_body" | grep -v '^[[:space:]]*$' | head -5)
+
+    if [ -n "$unreleased_substantive" ]; then
+        entry_count=$(echo "$unreleased_body" | grep -c '^[-*]' 2>/dev/null || echo "0")
+        echo -e "      ${GREEN}✓ [Unreleased] section populated (~$entry_count entries) — pass A${NC}"
+        PASSED=$((PASSED + 1))
+    else
+        # ── Pass B check: latest dated section is today + non-empty ────────────
+        # Match first "## [VERSION] - YYYY-MM-DD" line (excludes [Unreleased]).
+        latest_section_line=$(grep -m1 -E '^## \[[0-9]+\.[0-9]+\.[0-9]+.*\] - [0-9]{4}-[0-9]{2}-[0-9]{2}' "$ROOT_DIR/CHANGELOG.md" || echo "")
+        latest_date=$(echo "$latest_section_line" | grep -oE '[0-9]{4}-[0-9]{2}-[0-9]{2}' || echo "")
+        today=$(date +%Y-%m-%d)
+
+        if [ "$latest_date" = "$today" ]; then
+            # Extract content of today's section: from its header to the next "## [" header.
+            latest_body=$(awk -v hdr="$latest_section_line" '
+                $0 == hdr {flag=1; next}
+                /^## \[/ {flag=0}
+                flag
+            ' "$ROOT_DIR/CHANGELOG.md")
+            latest_substantive=$(echo "$latest_body" | grep -v '^[[:space:]]*$' | head -5)
+
+            if [ -n "$latest_substantive" ]; then
+                entry_count=$(echo "$latest_body" | grep -c '^[-*]' 2>/dev/null || echo "0")
+                latest_version=$(echo "$latest_section_line" | grep -oE '\[[^]]+\]' | head -1 | tr -d '[]' | head -c 30)
+                echo -e "      ${GREEN}✓ Latest dated section [$latest_version] - $today populated (~$entry_count entries) — pass B (post-promotion)${NC}"
+                PASSED=$((PASSED + 1))
+            else
+                echo -e "      ${RED}✗ Today's [$latest_section_line] section exists but is empty (fail D)${NC}"
+                echo -e "      ${RED}  Section was created but no entries were added.${NC}"
+                FAILED=$((FAILED + 1))
+                if [ "$FAIL_FAST" = true ]; then
+                    echo -e "${RED}Stopping due to --fail-fast${NC}"
+                    show_summary
+                    exit 1
+                fi
+            fi
+        else
+            echo -e "      ${RED}✗ CHANGELOG.md [Unreleased] is empty AND no dated section for today ($today) (fail C)${NC}"
+            echo -e "      ${RED}  Latest dated section is from ${latest_date:-(none)} — likely forgot to document changes.${NC}"
+            echo -e "      ${CYAN}  Run \`/changelog\` skill to populate [Unreleased] from git log,${NC}"
+            echo -e "      ${CYAN}  or use --skip-changelog flag with justification.${NC}"
+            FAILED=$((FAILED + 1))
+            if [ "$FAIL_FAST" = true ]; then
+                echo -e "${RED}Stopping due to --fail-fast${NC}"
+                show_summary
+                exit 1
+            fi
+        fi
+    fi
+fi
+
+# Step 23: Dogfooding Gate — new CLI build must pass uds check on itself (XSPEC-222)
+echo -e "${CYAN}[23/$TOTAL]${NC} Dogfooding gate — UDS check on itself | 自我採用驗證..."
+# `--force` is required: DEC-044's self-adoption guard (added 2026-04-18) refuses
+# `uds check` inside the UDS source repo, and this gate was added a month later
+# (2026-05-19). It has therefore failed on every release since — 5.15.1, 5.17.0,
+# 6.0.0, 6.1.0, 6.1.1 — which trained everyone to read its red as noise. With
+# --force the check runs and exits 0, so the gate measures something again.
+dogfood_output=$(node "$CLI_DIR/bin/uds.js" check --force 2>&1)
+dogfood_exit=$?
+if [ $dogfood_exit -eq 0 ]; then
+    echo -e "      ${GREEN}✓ Dogfooding gate passed — UDS validates itself${NC}"
+    PASSED=$((PASSED + 1))
+else
+    echo -e "      ${RED}✗ Dogfooding gate FAILED — UDS cannot validate itself${NC}"
+    echo ""
+    echo "$dogfood_output" | sed 's/^/      /'
+    echo ""
+    FAILED=$((FAILED + 1))
+    if [ "$FAIL_FAST" = true ]; then
+        echo -e "${RED}Stopping due to --fail-fast${NC}"
+        show_summary
+        exit 1
+    fi
+fi
+
+# Show summary
+show_summary
+
+# Exit with appropriate code
+if [ $FAILED -gt 0 ]; then
+    exit 1
+else
+    exit 0
+fi

@@ -1,0 +1,171 @@
+# 語意化版本標準 - AI 優化版
+# 來源: core/versioning.md
+
+id: versioning
+meta:
+  version: "1.2.0"
+  updated: "2025-12-30"
+  source: core/versioning.md
+  description: 軟體發布的語意化版本 (SemVer)
+  language: zh-TW
+
+format:
+  template: "MAJOR.MINOR.PATCH[-PRERELEASE][+BUILD]"
+  examples:
+    - "2.3.1"
+    - "1.0.0-alpha.1"
+    - "3.2.0-beta.2+20250112"
+
+components:
+  major:
+    purpose: 破壞性變更
+    when_to_increment:
+      - 不相容的 API 變更
+      - 移除已棄用功能
+      - 重大架構變更
+    guidelines:
+      - 重設 MINOR 和 PATCH 為 0
+      - 記錄遷移指南
+      - 在前一個 MINOR 版本提供棄用警告
+
+  minor:
+    purpose: 新功能
+    when_to_increment:
+      - 新增向後相容的功能
+      - 棄用功能（非移除）
+      - 重大內部改進
+    guidelines:
+      - 重設 PATCH 為 0
+      - 既有功能不變
+      - 新功能是選擇性的
+
+  patch:
+    purpose: Bug 修正
+    when_to_increment:
+      - Bug 修正（無新功能）
+      - 安全修補
+      - 文件更正
+      - 內部重構（無 API 變更）
+    guidelines:
+      - 無新功能
+      - 無 API 變更
+      - 可以安全立即更新
+
+prerelease:
+  identifiers:
+    - id: alpha
+      purpose: 早期測試
+      stability: 不穩定
+      audience: 內部團隊
+
+    - id: beta
+      purpose: 功能完整
+      stability: 大致穩定
+      audience: 早期採用者
+
+    - id: rc
+      purpose: 最終測試（發布候選）
+      stability: 穩定
+      audience: Beta 測試者
+
+  ordering: "alpha < beta < rc < stable"
+
+initial_development:
+  version_0:
+    description: 主版本 0 表示開發階段
+    guidelines:
+      - API 可能頻繁變更
+      - MINOR 版本允許破壞性變更
+      - API 穩定時升至 1.0.0
+
+# API 版本化策略、向後相容性檢查清單、棄用時間線 + 依分級期間、以及遷移指南模板，
+# 已移至各自的單一真實來源（XSPEC-298 R8、UDS #126）：
+#   - api-design-standards → versioning_strategies.backward_compatibility
+#   - deprecation-standards → api_deprecation.minimum_period_by_tier
+cross_references:
+  api_contract: "core/api-design-standards.md#api-versioning-strategies"
+  deprecation_lifecycle: "core/deprecation-standards.md#api-deprecation"
+
+release_process:
+  phases:
+    - phase: 1
+      name: 發布前診斷
+      mandatory: true
+      check_items:
+        - 系統工具版本
+        - 必要驅動程式
+        - 磁碟空間
+        - 資料庫連線
+        - 應用程式版本
+        - 設定完整性
+
+    - phase: 2
+      name: 環境準備
+      purpose: 安裝缺少的工具和驅動程式
+
+    - phase: 3
+      name: 套件產生
+      naming: "{PROJECT}-upgrade-v{VERSION}-{DATE}.tar.gz"
+
+    - phase: 4
+      name: 部署執行
+      steps:
+        - 上傳升級套件
+        - 解壓套件
+        - 試運行測試（強烈建議）
+        - 實際升級
+
+    - phase: 5
+      name: 發布後驗證
+      check_items:
+        - 服務正常運作
+        - API 回傳正確版本
+        - 日誌無致命錯誤
+        - 功能驗證通過
+
+rules:
+  - id: semver-compliance
+    trigger: 發布新版本時
+    instruction: 嚴格遵循語意化版本格式
+    priority: required
+
+  - id: deprecation-warning
+    trigger: 規劃破壞性變更時
+    instruction: 在移除前 N-1 版本加入棄用警告
+    priority: required
+
+  - id: migration-guide
+    trigger: 發布 MAJOR 版本時
+    instruction: 記錄遷移指南，附前後對照範例
+    priority: required
+
+  - id: changelog-update
+    trigger: 發布任何版本時
+    instruction: 更新 CHANGELOG.md 記錄所有重要變更
+    priority: required
+
+  - id: pre-release-diagnosis
+    trigger: 開始發布流程時
+    instruction: 不得跳過診斷階段
+    priority: required
+
+  - id: dry-run-test
+    trigger: 部署升級時
+    instruction: 不得跳過試運行測試
+    priority: required
+
+quick_reference:
+  version_components:
+    columns: [組成, 用途, 重設]
+    rows:
+      - [MAJOR, 破壞性變更, "MINOR=0, PATCH=0"]
+      - [MINOR, 新功能, "PATCH=0"]
+      - [PATCH, Bug 修正, 無]
+
+  prerelease_order:
+    columns: [識別碼, 穩定度, 受眾]
+    rows:
+      - [alpha, 不穩定, 內部團隊]
+      - [beta, 大致穩定, 早期採用者]
+      - [rc, 穩定, Beta 測試者]
+  # deprecation_periods 已移至 deprecation-standards（依 API 分級的最短棄用期間，單一真實來源）

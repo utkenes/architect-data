@@ -1,0 +1,10 @@
+:jbake-title: Architecture Decision Record
+
+== Architecture Decision Record
+
+ifndef::projectRootDir[:projectRootDir: ../../..]
+
+[source, markdown]
+----
+include::{projectRootDir}/prompts/Architecture-Decision-Record.md[]
+----

@@ -1,0 +1,2660 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "version": "6.7.5",
+  "lastUpdated": "2026-05-13",
+  "description": "Standards registry for universal-dev-standards with integrated skills and AI-optimized formats",
+  "formats": {
+    "ai": {
+      "name": "AI-Optimized",
+      "description": "Token-optimized YAML format for AI assistants",
+      "extension": ".ai.yaml",
+      "basePath": "ai/"
+    },
+    "human": {
+      "name": "Human-Readable",
+      "description": "Full Markdown format for human readers",
+      "extension": ".md",
+      "basePath": "core/"
+    }
+  },
+  "optionCategories": {
+    "workflow": {
+      "name": "Branching Strategy",
+      "nameZh": "分支策略",
+      "appliesTo": [
+        "git-workflow"
+      ]
+    },
+    "merge_strategy": {
+      "name": "Merge Strategy",
+      "nameZh": "合併策略",
+      "appliesTo": [
+        "git-workflow"
+      ]
+    },
+    "output_language": {
+      "name": "Output Language",
+      "nameZh": "產出語言",
+      "appliesTo": [
+        "commit-message"
+      ]
+    },
+    "test_level": {
+      "name": "Test Level",
+      "nameZh": "測試層級",
+      "appliesTo": [
+        "testing"
+      ]
+    },
+    "project_language": {
+      "name": "Project Language",
+      "nameZh": "專案語言",
+      "appliesTo": [
+        "project-structure"
+      ]
+    }
+  },
+  "repositories": {
+    "standards": {
+      "name": "universal-dev-standards",
+      "url": "https://github.com/AsiaOstrich/universal-dev-standards",
+      "version": "6.7.5"
+    },
+    "skills": {
+      "name": "universal-dev-standards",
+      "url": "https://github.com/AsiaOstrich/universal-dev-standards",
+      "localPath": "skills",
+      "rawUrl": "https://raw.githubusercontent.com/AsiaOstrich/universal-dev-standards/main/skills",
+      "version": "6.7.5",
+      "note": "Skills are now included in the main repository under skills/"
+    }
+  },
+  "supportedAITools": {
+    "_note": "INFORMATIONAL MIRROR. No code reads this block -- the CLI's actual install behaviour is driven by cli/src/config/ai-agent-paths.js, and integrations/REGISTRY.json is the SSOT for tier and deprecation. Kept in sync by scripts/check-integration-liveness.ts so the three cannot drift apart silently again (they did, for 5.5 months, on antigravity.supportsSkills).",
+    "_noteZh": "資訊性鏡像。沒有任何程式讀取此區塊——CLI 實際的安裝行為由 cli/src/config/ai-agent-paths.js 驅動，tier 與停用狀態的 SSOT 是 integrations/REGISTRY.json。由 scripts/check-integration-liveness.ts 維持同步，避免三者再次無聲漂移（antigravity.supportsSkills 曾漂移 5.5 個月）。",
+    "claude-code": {
+      "name": "Claude Code",
+      "skillsPath": "skills",
+      "nativePaths": {
+        "skills": {
+          "project": ".claude/skills/",
+          "user": "~/.claude/skills/"
+        },
+        "agents": {
+          "project": ".claude/agents/",
+          "user": "~/.claude/agents/"
+        },
+        "workflows": {
+          "project": ".claude/workflows/",
+          "user": "~/.claude/workflows/"
+        }
+      },
+      "supportsMarketplace": true,
+      "supportsSkills": true,
+      "supportsCommands": false,
+      "supportsTask": true,
+      "supportsAgents": true,
+      "status": "complete"
+    },
+    "opencode": {
+      "name": "OpenCode",
+      "skillsPath": "skills",
+      "nativePaths": {
+        "skills": {
+          "project": ".opencode/skill/",
+          "user": "~/.config/opencode/skill/"
+        },
+        "commands": {
+          "project": ".opencode/command/"
+        },
+        "agents": {
+          "project": ".opencode/agents/",
+          "user": "~/.config/opencode/agents/"
+        },
+        "workflows": {
+          "project": ".opencode/workflows/",
+          "user": "~/.config/opencode/workflows/"
+        }
+      },
+      "fallbackSkillsPath": ".claude/skills/",
+      "supportsSkills": true,
+      "supportsCommands": true,
+      "supportsTask": true,
+      "supportsAgents": true,
+      "status": "complete"
+    },
+    "cursor": {
+      "name": "Cursor",
+      "skillsPath": "skills/cursor",
+      "nativePaths": {
+        "skills": {
+          "project": ".cursor/skills/",
+          "user": "~/.cursor/skills/"
+        },
+        "agents": {
+          "project": ".cursor/agents/",
+          "user": "~/.cursor/agents/"
+        }
+      },
+      "fallbackSkillsPath": ".claude/skills/",
+      "supportsSkills": false,
+      "supportsCommands": false,
+      "supportsTask": false,
+      "supportsAgents": true,
+      "status": "minimal"
+    },
+    "cline": {
+      "name": "Cline",
+      "skillsPath": "skills/cline",
+      "nativePaths": {
+        "skills": {
+          "project": ".cline/skills/",
+          "user": "~/.cline/skills/"
+        },
+        "agents": {
+          "project": ".cline/agents/",
+          "user": "~/.cline/agents/"
+        },
+        "workflows": {
+          "project": ".cline/workflows/",
+          "user": "~/.cline/workflows/"
+        }
+      },
+      "fallbackSkillsPath": ".claude/skills/",
+      "supportsSkills": true,
+      "supportsCommands": false,
+      "supportsTask": false,
+      "supportsAgents": true,
+      "status": "partial"
+    },
+    "roo-code": {
+      "name": "Roo Code",
+      "skillsPath": "skills",
+      "nativePaths": {
+        "skills": {
+          "project": ".roo/skills/",
+          "user": "~/.roo/skills/"
+        },
+        "commands": {
+          "project": ".roo/commands/"
+        },
+        "agents": {
+          "project": ".roo/agents/",
+          "user": "~/.roo/agents/"
+        },
+        "workflows": {
+          "project": ".roo/workflows/",
+          "user": "~/.roo/workflows/"
+        }
+      },
+      "fallbackSkillsPath": ".claude/skills/",
+      "supportsSkills": true,
+      "supportsCommands": true,
+      "supportsTask": true,
+      "supportsAgents": true,
+      "status": "planned"
+    },
+    "codex": {
+      "name": "OpenAI Codex",
+      "skillsPath": "skills",
+      "nativePaths": {
+        "skills": {
+          "project": ".agents/skills/",
+          "user": "~/.agents/skills/"
+        },
+        "agents": {
+          "project": ".codex/agents/",
+          "user": "~/.codex/agents/"
+        }
+      },
+      "fallbackSkillsPath": ".claude/skills/",
+      "supportsSkills": true,
+      "supportsCommands": false,
+      "supportsTask": false,
+      "supportsAgents": true,
+      "status": "partial",
+      "skillsPathNote": "Verified 2026-07-23 against developers.openai.com/codex/skills. Codex reads .agents/skills (plural). The previous '.codex/skills/' was a directory UDS invented and Codex never reads."
+    },
+    "copilot": {
+      "name": "GitHub Copilot",
+      "skillsPath": "skills/copilot",
+      "nativePaths": {
+        "skills": {
+          "project": ".github/skills/",
+          "user": "~/.copilot/skills/"
+        },
+        "commands": {
+          "project": ".github/prompts/"
+        },
+        "agents": {
+          "project": ".github/agents/",
+          "user": "~/.copilot/agents/"
+        }
+      },
+      "fallbackSkillsPath": ".claude/skills/",
+      "supportsSkills": true,
+      "supportsCommands": true,
+      "supportsTask": false,
+      "supportsAgents": true,
+      "status": "partial"
+    },
+    "windsurf": {
+      "name": "Windsurf",
+      "skillsPath": "skills/windsurf",
+      "nativePaths": {
+        "skills": {
+          "project": ".windsurf/skills/",
+          "user": "~/.codeium/windsurf/skills/"
+        },
+        "agents": {
+          "project": ".windsurf/agents/",
+          "user": "~/.codeium/windsurf/agents/"
+        }
+      },
+      "supportsSkills": false,
+      "supportsCommands": false,
+      "supportsTask": false,
+      "supportsAgents": true,
+      "status": "minimal"
+    },
+    "gemini-cli": {
+      "name": "Gemini CLI",
+      "deprecated": true,
+      "deprecationNote": "Google sunset Gemini CLI on 2026-06-18; succeeded by Antigravity CLI. The integrations/gemini-cli/ and .gemini/ trees are frozen -- see .gemini/DEPRECATED.md.",
+      "deprecationNoteZh": "Google 已於 2026-06-18 終止 Gemini CLI，由 Antigravity CLI 接手。integrations/gemini-cli/ 與 .gemini/ 兩棵樹已凍結——見 .gemini/DEPRECATED.md。",
+      "supersededBy": "antigravity",
+      "skillsPath": "skills",
+      "nativePaths": {
+        "skills": {
+          "project": ".gemini/skills/",
+          "user": "~/.gemini/skills/"
+        },
+        "commands": {
+          "project": ".gemini/commands/"
+        },
+        "agents": {
+          "project": ".gemini/agents/",
+          "user": "~/.gemini/agents/"
+        },
+        "workflows": {
+          "project": ".gemini/workflows/",
+          "user": "~/.gemini/workflows/"
+        }
+      },
+      "fallbackSkillsPath": ".claude/skills/",
+      "supportsSkills": true,
+      "supportsCommands": true,
+      "supportsTask": false,
+      "supportsAgents": true,
+      "status": "preview"
+    },
+    "antigravity": {
+      "name": "Google Antigravity",
+      "skillsPath": null,
+      "skillsPathStatus": "unverified",
+      "skillsPathNote": "Antigravity supports skills, but UDS has not verified where it reads them from. Candidates: '~/.gemini/antigravity-cli/plugins/<name>/skills/' (official plugin docs) and '.agent/skills/' (UDS's own 2026-02 spec, written in the Gemini CLI era). skillsPath stays null until one is confirmed against a real CLI -- an unverified path fails silently. Tracked as XSPEC-355 OQ6.",
+      "skillsPathNoteZh": "Antigravity 支援 skills，但 UDS 尚未驗證它實際從何處讀取。候選路徑：'~/.gemini/antigravity-cli/plugins/<name>/skills/'（官方 plugin 文件）與 '.agent/skills/'（UDS 自己 2026-02 的 spec，寫於 Gemini CLI 時代）。在對實際 CLI 確認之前 skillsPath 維持 null——路徑填錯會是靜默失敗。追蹤於 XSPEC-355 OQ6。",
+      "nativePaths": {
+        "config": {
+          "project": "INSTRUCTIONS.md"
+        }
+      },
+      "supportsSkills": true,
+      "supportsCommands": false,
+      "supportsTask": false,
+      "supportsAgents": false,
+      "status": "minimal"
+    }
+  },
+  "skillFiles": {
+    "ai-collaboration-standards": [
+      "skills/ai-collaboration-standards/SKILL.md",
+      "skills/ai-collaboration-standards/anti-hallucination.md",
+      "skills/ai-collaboration-standards/certainty-labels.md"
+    ],
+    "commit-standards": [
+      "skills/commit-standards/SKILL.md",
+      "skills/commit-standards/guide.md",
+      "skills/commit-standards/conventional-commits.md",
+      "skills/commit-standards/language-options.md"
+    ],
+    "code-review-assistant": [
+      "skills/code-review-assistant/SKILL.md",
+      "skills/code-review-assistant/guide.md",
+      "skills/code-review-assistant/checkin-checklist.md",
+      "skills/code-review-assistant/review-checklist.md"
+    ],
+    "testing-guide": [
+      "skills/testing-guide/SKILL.md",
+      "skills/testing-guide/testing-pyramid.md"
+    ],
+    "release-standards": [
+      "skills/release-standards/SKILL.md",
+      "skills/release-standards/guide.md",
+      "skills/release-standards/changelog-format.md",
+      "skills/release-standards/semantic-versioning.md"
+    ],
+    "git-workflow-guide": [
+      "skills/git-workflow-guide/SKILL.md",
+      "skills/git-workflow-guide/branch-naming.md",
+      "skills/git-workflow-guide/git-workflow.md"
+    ],
+    "documentation-guide": [
+      "skills/documentation-guide/SKILL.md",
+      "skills/documentation-guide/documentation-structure.md",
+      "skills/documentation-guide/readme-template.md"
+    ],
+    "requirement-assistant": [
+      "skills/requirement-assistant/SKILL.md",
+      "skills/requirement-assistant/guide.md",
+      "skills/requirement-assistant/requirement-checklist.md",
+      "skills/requirement-assistant/requirement-writing.md"
+    ],
+    "project-structure-guide": [
+      "skills/project-structure-guide/SKILL.md",
+      "skills/project-structure-guide/language-patterns.md"
+    ],
+    "spec-driven-dev": [
+      "skills/spec-driven-dev/SKILL.md",
+      "skills/spec-driven-dev/guide.md"
+    ],
+    "test-coverage-assistant": [
+      "skills/test-coverage-assistant/SKILL.md",
+      "skills/test-coverage-assistant/guide.md"
+    ],
+    "changelog-guide": [
+      "skills/changelog-guide/SKILL.md",
+      "skills/changelog-guide/guide.md"
+    ],
+    "error-code-guide": [
+      "skills/error-code-guide/SKILL.md"
+    ],
+    "logging-guide": [
+      "skills/logging-guide/SKILL.md"
+    ],
+    "tdd-assistant": [
+      "skills/tdd-assistant/SKILL.md",
+      "skills/tdd-assistant/guide.md",
+      "skills/tdd-assistant/tdd-workflow.md",
+      "skills/tdd-assistant/language-examples.md"
+    ],
+    "brainstorm-assistant": [
+      "skills/brainstorm-assistant/SKILL.md",
+      "skills/brainstorm-assistant/guide.md"
+    ],
+    "bdd-assistant": [
+      "skills/bdd-assistant/SKILL.md",
+      "skills/bdd-assistant/guide.md",
+      "skills/bdd-assistant/bdd-workflow.md",
+      "skills/bdd-assistant/gherkin-guide.md"
+    ],
+    "atdd-assistant": [
+      "skills/atdd-assistant/SKILL.md",
+      "skills/atdd-assistant/guide.md",
+      "skills/atdd-assistant/atdd-workflow.md",
+      "skills/atdd-assistant/acceptance-criteria-guide.md"
+    ],
+    "e2e-assistant": [
+      "skills/e2e-assistant/SKILL.md"
+    ],
+    "commands": [
+      "skills/commands/README.md",
+      "skills/commands/atdd.md",
+      "skills/commands/bdd.md",
+      "skills/commands/brainstorm.md",
+      "skills/commands/changelog.md",
+      "skills/commands/check.md",
+      "skills/commands/commit.md",
+      "skills/commands/config.md",
+      "skills/commands/coverage.md",
+      "skills/commands/e2e.md",
+      "skills/commands/derive-all.md",
+      "skills/commands/derive-atdd.md",
+      "skills/commands/derive-bdd.md",
+      "skills/commands/derive-tdd.md",
+      "skills/commands/docs.md",
+      "skills/commands/init.md",
+      "skills/commands/methodology.md",
+      "skills/commands/refactor.md",
+      "skills/commands/release.md",
+      "skills/commands/requirement.md",
+      "skills/commands/reverse-bdd.md",
+      "skills/commands/reverse-sdd.md",
+      "skills/commands/reverse-tdd.md",
+      "skills/commands/code-review.md",
+      "skills/commands/sdd.md",
+      "skills/commands/tdd.md",
+      "skills/commands/update.md"
+    ],
+    "refactoring-assistant": [
+      "skills/refactoring-assistant/SKILL.md",
+      "skills/refactoring-assistant/guide.md"
+    ],
+    "methodology-system": [
+      "skills/dev-methodology/SKILL.md",
+      "skills/dev-methodology/guide.md",
+      "skills/dev-methodology/runtime.md",
+      "skills/dev-methodology/create-methodology.md"
+    ],
+    "reverse-engineer": [
+      "skills/reverse-engineer/SKILL.md",
+      "skills/reverse-engineer/guide.md",
+      "skills/reverse-engineer/workflow.md",
+      "skills/reverse-engineer/bdd-extraction.md",
+      "skills/reverse-engineer/tdd-analysis.md"
+    ],
+    "forward-derivation": [
+      "skills/spec-derivation/SKILL.md",
+      "skills/forward-derivation/guide.md"
+    ],
+    "ai-friendly-architecture": [
+      "skills/ai-friendly-architecture/SKILL.md"
+    ],
+    "ai-instruction-standards": [
+      "skills/ai-instruction-standards/SKILL.md"
+    ],
+    "checkin-assistant": [
+      "skills/checkin-assistant/SKILL.md",
+      "skills/checkin-assistant/guide.md"
+    ],
+    "docs-generator": [
+      "skills/docs-generator/SKILL.md",
+      "skills/docs-generator/guide.md"
+    ],
+    "project-discovery": [
+      "skills/project-discovery/SKILL.md",
+      "skills/project-discovery/guide.md",
+      "skills/project-discovery/workflow.md"
+    ]
+  },
+  "agents": {
+    "status": "stable",
+    "statusNote": "New in v4.1.0 - Subagent orchestration system",
+    "statusNoteZh": "v4.1.0 新增 - Subagent 編排系統",
+    "description": "Specialized AI subagents that can be orchestrated to handle complex development workflows",
+    "descriptionZh": "專門的 AI 子代理，可編排處理複雜的開發工作流程",
+    "basePath": "skills/agents/",
+    "builtIn": [
+      {
+        "id": "code-architect",
+        "name": "Code Architect",
+        "nameZh": "程式碼架構師",
+        "source": "skills/agents/code-architect.md",
+        "role": "specialist",
+        "expertise": [
+          "system-design",
+          "api-design",
+          "database-modeling"
+        ],
+        "description": "Software architecture specialist for system design and technical planning"
+      },
+      {
+        "id": "test-specialist",
+        "name": "Test Specialist",
+        "nameZh": "測試專家",
+        "source": "skills/agents/test-specialist.md",
+        "role": "specialist",
+        "expertise": [
+          "test-strategy",
+          "tdd",
+          "bdd",
+          "coverage-analysis"
+        ],
+        "description": "Testing strategy specialist for test design, coverage analysis, and quality assurance"
+      },
+      {
+        "id": "reviewer",
+        "name": "Code Reviewer",
+        "nameZh": "程式碼審查員",
+        "source": "skills/agents/reviewer.md",
+        "role": "reviewer",
+        "expertise": [
+          "code-review",
+          "security-analysis",
+          "best-practices"
+        ],
+        "description": "Code review specialist for quality assessment, security analysis, and best practices enforcement"
+      },
+      {
+        "id": "doc-writer",
+        "name": "Documentation Writer",
+        "nameZh": "文件撰寫員",
+        "source": "skills/agents/doc-writer.md",
+        "role": "specialist",
+        "expertise": [
+          "technical-writing",
+          "api-documentation",
+          "user-guides"
+        ],
+        "description": "Documentation specialist for technical writing, API docs, and user guides"
+      },
+      {
+        "id": "spec-analyst",
+        "name": "Specification Analyst",
+        "nameZh": "規格分析師",
+        "source": "skills/agents/spec-analyst.md",
+        "role": "specialist",
+        "expertise": [
+          "requirement-analysis",
+          "specification-writing",
+          "reverse-engineering"
+        ],
+        "description": "Specification analysis specialist for requirement extraction and spec generation"
+      }
+    ]
+  },
+  "workflows": {
+    "status": "experimental",
+    "statusNote": "New in v4.1.0 - Multi-agent workflow orchestration",
+    "statusNoteZh": "v4.1.0 新增 - 多代理工作流程編排",
+    "description": "Workflow definitions that orchestrate multiple agents for complex development tasks",
+    "descriptionZh": "編排多個代理處理複雜開發任務的工作流程定義",
+    "basePath": "skills/workflows/",
+    "builtIn": [
+      {
+        "id": "integrated-flow",
+        "name": "Integrated Development Flow",
+        "nameZh": "整合開發流程",
+        "source": "skills/workflows/integrated-flow.workflow.yaml",
+        "stages": 8,
+        "description": "Complete ATDD → SDD → BDD → TDD workflow"
+      },
+      {
+        "id": "feature-dev",
+        "name": "Feature Development",
+        "nameZh": "功能開發",
+        "source": "skills/workflows/feature-dev.workflow.yaml",
+        "stages": 6,
+        "description": "Feature development workflow"
+      },
+      {
+        "id": "code-review",
+        "name": "Code Review Workflow",
+        "nameZh": "程式碼審查流程",
+        "source": "skills/workflows/code-review.workflow.yaml",
+        "stages": 4,
+        "description": "Code review workflow"
+      }
+    ]
+  },
+  "methodologies": {
+    "status": "experimental",
+    "statusNote": "Will be redesigned in v4.0",
+    "statusNoteZh": "將在 v4.0 中重新設計",
+    "description": "Development methodologies that can be adopted to guide the development workflow",
+    "descriptionZh": "可採用的開發方法論，用於引導開發工作流程",
+    "basePath": "methodologies/",
+    "schemaFile": "methodology-schema.json",
+    "builtIn": [
+      {
+        "id": "tdd",
+        "name": "Test-Driven Development",
+        "nameZh": "測試驅動開發",
+        "source": "methodologies/tdd.methodology.yaml",
+        "phases": [
+          "red",
+          "green",
+          "refactor",
+          "done"
+        ],
+        "description": "Red → Green → Refactor cycle for test-first development"
+      },
+      {
+        "id": "bdd",
+        "name": "Behavior-Driven Development",
+        "nameZh": "行為驅動開發",
+        "source": "methodologies/bdd.methodology.yaml",
+        "phases": [
+          "discovery",
+          "formulation",
+          "automation",
+          "living-documentation"
+        ],
+        "description": "Given-When-Then format for behavior specification"
+      },
+      {
+        "id": "sdd",
+        "name": "Spec-Driven Development",
+        "nameZh": "規格驅動開發",
+        "source": "methodologies/sdd.methodology.yaml",
+        "phases": [
+          "proposal",
+          "review",
+          "implementation",
+          "verification",
+          "archive"
+        ],
+        "description": "Specification-first approach with formal review process"
+      },
+      {
+        "id": "atdd",
+        "name": "Acceptance Test-Driven Development",
+        "nameZh": "驗收測試驅動開發",
+        "source": "methodologies/atdd.methodology.yaml",
+        "phases": [
+          "specification-workshop",
+          "distillation",
+          "development",
+          "demo",
+          "done"
+        ],
+        "description": "Acceptance criteria defined upfront through collaboration"
+      },
+      {
+        "id": "integrated-flow",
+        "name": "Integrated Development Flow",
+        "nameZh": "整合開發流程",
+        "source": "methodologies/integrated-flow.methodology.yaml",
+        "phases": [
+          "specification-workshop",
+          "spec-proposal",
+          "spec-review",
+          "discovery",
+          "formulation",
+          "tdd-red",
+          "tdd-green",
+          "tdd-refactor",
+          "demo",
+          "archive"
+        ],
+        "description": "Complete ATDD → SDD → BDD → TDD workflow"
+      }
+    ],
+    "customPath": ".standards/methodologies/"
+  },
+  "categories": {
+    "skill": {
+      "name": "Skill",
+      "description": "Standards implemented as Claude Code Skills. Install the skill for interactive AI assistance.",
+      "adoptionMethod": "Install via universal-dev-skills"
+    },
+    "reference": {
+      "name": "Reference Document",
+      "description": "Static reference documents not suitable for Skills conversion. Copy to project's .standards/ directory.",
+      "adoptionMethod": "Copy to project"
+    },
+    "extension": {
+      "name": "Extension",
+      "description": "Language, framework, or locale-specific standards. Apply based on project requirements.",
+      "adoptionMethod": "Copy if applicable"
+    },
+    "integration": {
+      "name": "Integration",
+      "description": "AI tool configuration files. Copy to tool's expected location.",
+      "adoptionMethod": "Copy to tool location"
+    },
+    "template": {
+      "name": "Template",
+      "description": "Document templates for specific purposes. Use as starting point for project documents.",
+      "adoptionMethod": "Copy and customize"
+    }
+  },
+  "standards": [
+    {
+      "id": "governance-layer",
+      "name": "Governance Layer Standard",
+      "nameZh": "治理層標準",
+      "source": {
+        "human": "core/governance-layer.md",
+        "ai": "ai/standards/governance-layer.ai.yaml"
+      },
+      "category": "core",
+      "description": "Standard #0: Vision/Mission/Goals three-layer governance schema with KPI mandatory fields, red lines format, and evaluator integration. Evaluated before all other standards."
+    },
+    {
+      "id": "anti-sycophancy-prompting",
+      "name": "Anti-Sycophancy Prompting Standards",
+      "nameZh": "防迎合提示詞設計標準",
+      "source": {
+        "human": "core/anti-sycophancy-prompting.md",
+        "ai": "ai/standards/anti-sycophancy-prompting.ai.yaml"
+      },
+      "category": "core",
+      "description": "Techniques for designing prompts that elicit genuine, critical LLM responses rather than sycophantic agreement"
+    },
+    {
+      "id": "anti-hallucination",
+      "name": "Anti-Hallucination Guidelines",
+      "nameZh": "反幻覺指南",
+      "source": {
+        "human": "core/anti-hallucination.md",
+        "ai": "ai/standards/anti-hallucination.ai.yaml",
+        "guide": "core/guides/anti-hallucination-guide.md"
+      },
+      "category": "skill",
+      "skillName": "ai-collaboration-standards",
+      "description": "Guidelines for AI collaboration to prevent hallucination and ensure evidence-based responses"
+    },
+    {
+      "id": "agent-behavior-discipline",
+      "name": "Agent Behavior Discipline",
+      "nameZh": "Agent 行為紀律標準",
+      "source": {
+        "human": "core/agent-behavior-discipline.md",
+        "ai": "ai/standards/agent-behavior-discipline.ai.yaml"
+      },
+      "category": "core",
+      "description": "Four behavioral disciplines for AI agents: Ask (surface assumptions), Simple (minimum code), Precision (scope only what's needed), Test (loop until verified)"
+    },
+    {
+      "id": "ai-friendly-architecture",
+      "name": "AI-Friendly Architecture",
+      "nameZh": "AI 友善架構",
+      "source": {
+        "human": "core/ai-friendly-architecture.md",
+        "ai": "ai/standards/ai-friendly-architecture.ai.yaml"
+      },
+      "category": "skill",
+      "skillName": "ai-friendly-architecture",
+      "description": "Standards for designing project architecture that maximizes AI collaboration effectiveness"
+    },
+    {
+      "id": "commit-message",
+      "name": "Commit Message Guide",
+      "nameZh": "提交訊息指南",
+      "source": {
+        "human": "core/commit-message-guide.md",
+        "ai": "ai/standards/commit-message.ai.yaml"
+      },
+      "category": "skill",
+      "skillName": "commit-standards",
+      "description": "Conventional Commits format for standardized git commit messages",
+      "options": {
+        "output_language": {
+          "default": "english",
+          "choices": [
+            {
+              "id": "english",
+              "name": "English",
+              "nameZh": "英文",
+              "source": {
+                "human": "options/commit-message/english.md",
+                "ai": "ai/options/commit-message/english.ai.yaml"
+              }
+            },
+            {
+              "id": "traditional-chinese",
+              "name": "Traditional Chinese",
+              "nameZh": "繁體中文",
+              "source": {
+                "human": "options/commit-message/traditional-chinese.md",
+                "ai": "ai/options/commit-message/traditional-chinese.ai.yaml"
+              }
+            },
+            {
+              "id": "bilingual",
+              "name": "Bilingual",
+              "nameZh": "雙語",
+              "source": {
+                "human": "options/commit-message/bilingual.md",
+                "ai": "ai/options/commit-message/bilingual.ai.yaml"
+              }
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "checkin-standards",
+      "name": "Code Check-in Standards",
+      "nameZh": "程式碼簽入標準",
+      "source": {
+        "human": "core/checkin-standards.md",
+        "ai": "ai/standards/checkin-standards.ai.yaml"
+      },
+      "category": "skill",
+      "skillName": "checkin-assistant",
+      "description": "Quality gates and verification steps before committing code"
+    },
+    {
+      "id": "deployment-standards",
+      "name": "Deployment Standards",
+      "nameZh": "部署標準",
+      "source": {
+        "human": "core/deployment-standards.md",
+        "ai": "ai/standards/deployment-standards.ai.yaml"
+      },
+      "category": "reference",
+      "skillName": null,
+      "description": "Safe deployment strategies, feature flags, rollback, environment parity, and DORA metrics"
+    },
+    {
+      "id": "packaging-standards",
+      "name": "Packaging Standards",
+      "nameZh": "打包標準",
+      "source": {
+        "human": "core/packaging-standards.md",
+        "ai": "ai/standards/packaging-standards.ai.yaml"
+      },
+      "category": "reference",
+      "skillName": null,
+      "description": "Recipe-based packaging framework for user projects using a UDS-aware toolchain"
+    },
+    {
+      "id": "api-design-standards",
+      "name": "API Design Standards",
+      "nameZh": "API 設計標準",
+      "source": {
+        "human": "core/api-design-standards.md",
+        "ai": "ai/standards/api-design-standards.ai.yaml"
+      },
+      "category": "reference",
+      "skillName": null,
+      "description": "REST, GraphQL, and gRPC API design principles, versioning, pagination, authentication, and error handling"
+    },
+    {
+      "id": "database-standards",
+      "name": "Database Standards",
+      "nameZh": "資料庫標準",
+      "source": {
+        "human": "core/database-standards.md",
+        "ai": "ai/standards/database-standards.ai.yaml"
+      },
+      "category": "reference",
+      "skillName": null,
+      "description": "Schema design, migration strategy, indexing, query optimization, and data integrity"
+    },
+    {
+      "id": "spec-driven-development",
+      "name": "Spec-Driven Development",
+      "nameZh": "規格驅動開發",
+      "source": {
+        "human": "core/spec-driven-development.md",
+        "ai": "ai/standards/spec-driven-development.ai.yaml",
+        "guide": "methodologies/guides/sdd-guide.md"
+      },
+      "category": "skill",
+      "skillName": "spec-driven-dev",
+      "description": "Methodology for specification-first development approach"
+    },
+    {
+      "id": "code-review",
+      "name": "Code Review Checklist",
+      "nameZh": "程式碼審查清單",
+      "source": {
+        "human": "core/code-review-checklist.md",
+        "ai": "ai/standards/code-review.ai.yaml"
+      },
+      "category": "skill",
+      "skillName": "code-review-assistant",
+      "description": "Systematic checklist for reviewing code quality, security, and maintainability"
+    },
+    {
+      "id": "git-workflow",
+      "name": "Git Workflow Guide",
+      "nameZh": "Git 工作流程指南",
+      "source": {
+        "human": "core/git-workflow.md",
+        "ai": "ai/standards/git-workflow.ai.yaml",
+        "guide": "core/guides/git-workflow-guide.md"
+      },
+      "category": "skill",
+      "skillName": "git-workflow-guide",
+      "description": "Branching strategies including Trunk-Based, GitHub Flow, and GitFlow",
+      "options": {
+        "workflow": {
+          "default": "github-flow",
+          "choices": [
+            {
+              "id": "gitflow",
+              "name": "GitFlow",
+              "nameZh": "GitFlow 工作流",
+              "source": {
+                "human": "options/git-workflow/gitflow.md",
+                "ai": "ai/options/git-workflow/gitflow.ai.yaml"
+              },
+              "conditions": {
+                "release_frequency": "monthly+",
+                "team_size": "10+"
+              }
+            },
+            {
+              "id": "github-flow",
+              "name": "GitHub Flow",
+              "nameZh": "GitHub Flow 工作流",
+              "source": {
+                "human": "options/git-workflow/github-flow.md",
+                "ai": "ai/options/git-workflow/github-flow.ai.yaml"
+              },
+              "conditions": {
+                "release_frequency": "weekly",
+                "team_size": "5-15"
+              }
+            },
+            {
+              "id": "trunk-based",
+              "name": "Trunk-Based Development",
+              "nameZh": "主幹開發",
+              "source": {
+                "human": "options/git-workflow/trunk-based.md",
+                "ai": "ai/options/git-workflow/trunk-based.ai.yaml"
+              },
+              "conditions": {
+                "release_frequency": "daily+",
+                "ci_cd_maturity": "advanced"
+              }
+            }
+          ]
+        },
+        "merge_strategy": {
+          "default": "squash",
+          "choices": [
+            {
+              "id": "merge-commit",
+              "name": "Merge Commit",
+              "nameZh": "合併提交",
+              "source": {
+                "human": "options/git-workflow/merge-commit.md",
+                "ai": "ai/options/git-workflow/merge-commit.ai.yaml"
+              }
+            },
+            {
+              "id": "squash",
+              "name": "Squash Merge",
+              "nameZh": "壓縮合併",
+              "source": {
+                "human": "options/git-workflow/squash-merge.md",
+                "ai": "ai/options/git-workflow/squash-merge.ai.yaml"
+              }
+            },
+            {
+              "id": "rebase-ff",
+              "name": "Rebase + Fast-Forward",
+              "nameZh": "變基快進",
+              "source": {
+                "human": "options/git-workflow/rebase-ff.md",
+                "ai": "ai/options/git-workflow/rebase-ff.ai.yaml"
+              }
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "versioning",
+      "name": "Semantic Versioning",
+      "nameZh": "語意化版本",
+      "source": {
+        "human": "core/versioning.md",
+        "ai": "ai/standards/versioning.ai.yaml"
+      },
+      "category": "skill",
+      "skillName": "release-standards",
+      "description": "SemVer standard for version numbering (MAJOR.MINOR.PATCH)"
+    },
+    {
+      "id": "changelog",
+      "name": "Changelog Standards",
+      "nameZh": "變更日誌標準",
+      "source": {
+        "human": "core/changelog-standards.md",
+        "ai": "ai/standards/changelog.ai.yaml"
+      },
+      "category": "skill",
+      "skillName": "release-standards",
+      "description": "Keep a Changelog format for documenting notable changes"
+    },
+    {
+      "id": "test-governance",
+      "name": "Test Governance Standards",
+      "nameZh": "測試治理標準",
+      "source": {
+        "human": "core/test-governance.md",
+        "ai": "ai/standards/test-governance.ai.yaml"
+      },
+      "category": "reference",
+      "skillName": null,
+      "description": "Test policy, completion criteria, and environment management standards (ISO 29119, Agile DoD)"
+    },
+    {
+      "id": "structured-task-definition",
+      "name": "Structured Task Definition",
+      "nameZh": "結構化任務定義",
+      "source": {
+        "human": "core/structured-task-definition.md",
+        "ai": "ai/standards/structured-task-definition.ai.yaml"
+      },
+      "category": "reference",
+      "skillName": null,
+      "description": "Standard structure for AI task definitions with 4 required fields (read_first, action, acceptance_criteria, verification)"
+    },
+    {
+      "id": "testing",
+      "name": "Testing Standards",
+      "nameZh": "測試標準",
+      "source": {
+        "human": "core/testing-standards.md",
+        "ai": "ai/standards/testing.ai.yaml",
+        "guide": "skills/testing-guide/testing-theory.md"
+      },
+      "category": "skill",
+      "skillName": "testing-guide",
+      "description": "Testing structure, FIRST principles, AAA pattern, and framework options. Coverage policy superseded by full-coverage-testing (XSPEC-178).",
+      "options": {
+        "test_level": {
+          "default": null,
+          "multiSelect": true,
+          "choices": [
+            {
+              "id": "unit-testing",
+              "name": "Unit Testing",
+              "nameZh": "單元測試",
+              "source": {
+                "human": "options/testing/unit-testing.md",
+                "ai": "ai/options/testing/unit-testing.ai.yaml"
+              }
+            },
+            {
+              "id": "integration-testing",
+              "name": "Integration Testing",
+              "nameZh": "整合測試",
+              "source": {
+                "human": "options/testing/integration-testing.md",
+                "ai": "ai/options/testing/integration-testing.ai.yaml"
+              }
+            },
+            {
+              "id": "system-testing",
+              "name": "System Testing",
+              "nameZh": "系統測試",
+              "source": {
+                "human": "options/testing/system-testing.md",
+                "ai": "ai/options/testing/system-testing.ai.yaml"
+              }
+            },
+            {
+              "id": "e2e-testing",
+              "name": "End-to-End Testing",
+              "nameZh": "端對端測試",
+              "source": {
+                "human": "options/testing/e2e-testing.md",
+                "ai": "ai/options/testing/e2e-testing.ai.yaml"
+              }
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "full-coverage-testing",
+      "name": "Full Coverage Testing Standards",
+      "nameZh": "全覆蓋測試標準",
+      "source": {
+        "human": "core/testing-standards.md",
+        "ai": "ai/standards/full-coverage-testing.ai.yaml"
+      },
+      "category": "skill",
+      "skillName": "testing-guide",
+      "description": "Behavior-completeness full coverage paradigm: ratchet CI, anti-fake-test rules (no tautology/business-logic mock), STUB marker protocol (pre-push + deploy gates), @ac traceability. Replaces pyramid thresholds (XSPEC-178)."
+    },
+    {
+      "id": "documentation-structure",
+      "name": "Documentation Structure",
+      "nameZh": "文件結構",
+      "source": {
+        "human": "core/documentation-structure.md",
+        "ai": "ai/standards/documentation-structure.ai.yaml"
+      },
+      "category": "skill",
+      "skillName": "documentation-guide",
+      "description": "Standard directory structure for project documentation"
+    },
+    {
+      "id": "documentation-lifecycle",
+      "name": "Documentation Lifecycle",
+      "nameZh": "文件生命週期",
+      "source": {
+        "human": "core/documentation-lifecycle.md",
+        "ai": "ai/standards/documentation-lifecycle.ai.yaml"
+      },
+      "category": "reference",
+      "skillName": null,
+      "description": "When to update docs, when to check them, and who is responsible"
+    },
+    {
+      "id": "documentation-writing",
+      "name": "Documentation Writing Standards",
+      "nameZh": "文件撰寫標準",
+      "source": {
+        "human": "core/documentation-writing-standards.md",
+        "ai": "ai/standards/documentation-writing-standards.ai.yaml"
+      },
+      "category": "reference",
+      "skillName": null,
+      "description": "Content requirements and writing guidelines for different project types"
+    },
+    {
+      "id": "self-review-protocol",
+      "name": "Self-Review Protocol",
+      "nameZh": "自我審查協議",
+      "source": {
+        "human": "core/self-review-protocol.md",
+        "ai": "ai/standards/self-review-protocol.ai.yaml"
+      },
+      "category": "reference",
+      "skillName": null,
+      "description": "Mandatory self-review pass on large markdown edits (>50 lines) before commit; catches 7 categories of internal cross-reference inconsistencies (diagram/step mismatch, changelog reference errors, count drift, stale templates, wrong tool references, placeholder vs rule misalignment, language/terminology consistency)"
+    },
+    {
+      "id": "ai-instruction-standards",
+      "name": "AI Instruction File Standards",
+      "nameZh": "AI 指令檔案規範",
+      "source": {
+        "human": "core/ai-instruction-standards.md",
+        "ai": "ai/standards/ai-instruction-standards.ai.yaml"
+      },
+      "category": "skill",
+      "skillName": "ai-instruction-standards",
+      "description": "Best practices for creating AI instruction files with universal vs project-specific separation"
+    },
+    {
+      "id": "project-structure",
+      "name": "Project Structure",
+      "nameZh": "專案結構",
+      "source": {
+        "human": "core/project-structure.md",
+        "ai": "ai/standards/project-structure.ai.yaml"
+      },
+      "category": "skill",
+      "skillName": "project-structure-guide",
+      "description": "Standard directory conventions for source code organization"
+    },
+    {
+      "id": "error-code-standards",
+      "name": "Error Code Standards",
+      "nameZh": "錯誤碼標準",
+      "source": {
+        "human": "core/error-code-standards.md",
+        "ai": "ai/standards/error-codes.ai.yaml"
+      },
+      "category": "skill",
+      "skillName": "error-code-guide",
+      "description": "Standardized error code format and categorization"
+    },
+    {
+      "id": "logging-standards",
+      "name": "Logging Standards",
+      "nameZh": "日誌標準",
+      "source": {
+        "human": "core/logging-standards.md",
+        "ai": "ai/standards/logging.ai.yaml"
+      },
+      "category": "skill",
+      "skillName": "logging-guide",
+      "description": "Structured logging format and best practices"
+    },
+    {
+      "id": "test-completeness-dimensions",
+      "name": "Test Completeness Dimensions",
+      "nameZh": "測試完整性維度",
+      "source": {
+        "human": "core/test-completeness-dimensions.md",
+        "ai": "ai/standards/test-completeness-dimensions.ai.yaml"
+      },
+      "category": "skill",
+      "skillName": "test-coverage-assistant",
+      "description": "Framework for evaluating test coverage completeness across 10 dimensions"
+    },
+    {
+      "id": "flow-based-testing",
+      "name": "Flow-Based Testing",
+      "nameZh": "流程解構測試",
+      "source": {
+        "human": "core/flow-based-testing.md",
+        "ai": "ai/standards/flow-based-testing.ai.yaml"
+      },
+      "category": "skill",
+      "skillName": "e2e-assistant",
+      "description": "Flow decomposition methodology for testing multi-step processes with branch coverage"
+    },
+    {
+      "id": "mock-boundary",
+      "name": "Mock Boundary Standards",
+      "nameZh": "Mock 邊界規則",
+      "source": {
+        "human": "core/mock-boundary.md",
+        "ai": "ai/standards/mock-boundary.ai.yaml"
+      },
+      "category": "skill",
+      "skillName": "testing-guide",
+      "description": "Rules defining what can and cannot be mocked to prevent hollow tests"
+    },
+    {
+      "id": "security-testing",
+      "name": "Security Testing Standards",
+      "nameZh": "安全測試標準",
+      "source": {
+        "human": "core/security-testing.md",
+        "ai": "ai/standards/security-testing.ai.yaml"
+      },
+      "category": "skill",
+      "skillName": "security-scan-assistant",
+      "description": "SAST, dependency auditing, DAST, and secret scanning methodology"
+    },
+    {
+      "id": "llm-output-validation",
+      "name": "LLM Output Validation Standards",
+      "nameZh": "LLM 輸出驗證標準",
+      "source": {
+        "human": "core/llm-output-validation.md",
+        "ai": "ai/standards/llm-output-validation.ai.yaml"
+      },
+      "category": "testing",
+      "description": "Standards for validating LLM and AI agent outputs: schema conformance, hallucination detection, prompt regression"
+    },
+    {
+      "id": "mutation-testing",
+      "name": "Mutation Testing Standards",
+      "nameZh": "突變測試標準",
+      "source": {
+        "human": "core/mutation-testing.md",
+        "ai": "ai/standards/mutation-testing.ai.yaml"
+      },
+      "category": "skill",
+      "skillName": "test-coverage-assistant",
+      "description": "Mutation testing methodology to evaluate test suite effectiveness"
+    },
+    {
+      "id": "test-driven-development",
+      "name": "Test-Driven Development",
+      "nameZh": "測試驅動開發",
+      "source": {
+        "human": "core/test-driven-development.md",
+        "ai": "ai/standards/test-driven-development.ai.yaml",
+        "guide": "methodologies/guides/tdd-guide.md"
+      },
+      "category": "skill",
+      "skillName": "tdd-assistant",
+      "description": "Red-Green-Refactor methodology for TDD workflow"
+    },
+    {
+      "id": "behavior-driven-development",
+      "name": "Behavior-Driven Development",
+      "nameZh": "行為驅動開發",
+      "source": {
+        "human": "core/behavior-driven-development.md",
+        "ai": "ai/standards/behavior-driven-development.ai.yaml",
+        "guide": "methodologies/guides/bdd-guide.md"
+      },
+      "category": "skill",
+      "skillName": "bdd-assistant",
+      "description": "Given-When-Then format for behavior specification with Three Amigos collaboration"
+    },
+    {
+      "id": "acceptance-test-driven-development",
+      "name": "Acceptance Test-Driven Development",
+      "nameZh": "驗收測試驅動開發",
+      "source": {
+        "human": "core/acceptance-test-driven-development.md",
+        "ai": "ai/standards/acceptance-test-driven-development.ai.yaml",
+        "guide": "methodologies/guides/atdd-guide.md"
+      },
+      "category": "skill",
+      "skillName": "atdd-assistant",
+      "description": "Acceptance criteria defined upfront through specification workshops and PO collaboration"
+    },
+    {
+      "id": "reverse-engineering",
+      "name": "Reverse Engineering Standards",
+      "nameZh": "反向工程標準",
+      "source": {
+        "human": "core/reverse-engineering-standards.md",
+        "ai": "ai/standards/reverse-engineering-standards.ai.yaml"
+      },
+      "category": "skill",
+      "skillName": "reverse-engineer",
+      "description": "Standards for reverse engineering existing code into structured SDD specifications with certainty framework"
+    },
+    {
+      "id": "forward-derivation",
+      "name": "Forward Derivation Standards",
+      "nameZh": "正向推演標準",
+      "source": {
+        "human": "core/forward-derivation-standards.md",
+        "ai": "ai/standards/forward-derivation-standards.ai.yaml"
+      },
+      "category": "skill",
+      "skillName": "forward-derivation",
+      "description": "Standards for deriving BDD scenarios, TDD test skeletons, and ATDD acceptance tests from approved SDD specifications"
+    },
+    {
+      "id": "ai-agreement",
+      "name": "AI Agreement Standards",
+      "nameZh": "AI 協議標準",
+      "source": {
+        "human": "core/ai-agreement-standards.md",
+        "ai": "ai/standards/ai-agreement-standards.ai.yaml"
+      },
+      "category": "reference",
+      "description": "Protocols for establishing service-level agreements and context contracts between AI agents"
+    },
+    {
+      "id": "ai-command-behavior",
+      "name": "AI Command Behavior Standards",
+      "nameZh": "AI 命令行為標準",
+      "source": {
+        "human": "core/ai-command-behavior.md",
+        "ai": "ai/standards/ai-command-behavior.ai.yaml"
+      },
+      "category": "reference",
+      "description": "Standard structure for specifying AI Agent runtime behavior in command/skill definition files"
+    },
+    {
+      "id": "ai-response-navigation",
+      "name": "AI Response Navigation Standards",
+      "nameZh": "AI 回應導航標準",
+      "source": {
+        "human": "core/ai-response-navigation.md",
+        "ai": "ai/standards/ai-response-navigation.ai.yaml"
+      },
+      "category": "reference",
+      "description": "Every substantive AI response must include contextual next-step suggestions with recommended options"
+    },
+    {
+      "id": "virtual-organization",
+      "name": "Virtual Organization Standards",
+      "nameZh": "虛擬組織標準",
+      "source": {
+        "human": "core/virtual-organization-standards.md",
+        "ai": "ai/standards/virtual-organization-standards.ai.yaml"
+      },
+      "category": "reference",
+      "description": "Standards for AI agent integration into virtual organizational structures including MCP tools and skill management"
+    },
+    {
+      "id": "refactoring-standards",
+      "name": "Refactoring Standards",
+      "nameZh": "重構標準",
+      "source": {
+        "human": "core/refactoring-standards.md",
+        "ai": "ai/standards/refactoring-standards.ai.yaml",
+        "guide": "core/guides/refactoring-guide.md"
+      },
+      "category": "skill",
+      "skillName": "refactoring-assistant",
+      "description": "Comprehensive refactoring guidelines with tactical, strategic, and legacy code safety strategies including decision matrix"
+    },
+    {
+      "id": "requirement-engineering",
+      "name": "Requirement Engineering Standards",
+      "nameZh": "需求工程標準",
+      "source": {
+        "human": "core/requirement-engineering.md",
+        "ai": "ai/standards/requirement-engineering.ai.yaml",
+        "guide": "methodologies/guides/requirement-engineering-guide.md"
+      },
+      "category": "skill",
+      "skillName": "requirement-assistant",
+      "description": "Requirements engineering lifecycle, elicitation, specification, and validation standards based on IEEE 830, SWEBOK v4.0, and ISO 25010"
+    },
+    {
+      "id": "security-standards",
+      "name": "Security Standards",
+      "nameZh": "安全標準",
+      "source": {
+        "human": "core/security-standards.md",
+        "ai": "ai/standards/security-standards.ai.yaml",
+        "guide": "core/guides/security-guide.md"
+      },
+      "category": "reference",
+      "skillName": null,
+      "description": "Comprehensive security development standards covering OWASP Top 10, authentication, authorization, cryptography, and security testing"
+    },
+    {
+      "id": "performance-standards",
+      "name": "Performance Standards",
+      "nameZh": "效能標準",
+      "source": {
+        "human": "core/performance-standards.md",
+        "ai": "ai/standards/performance-standards.ai.yaml",
+        "guide": "core/guides/performance-guide.md"
+      },
+      "category": "reference",
+      "skillName": null,
+      "description": "Performance engineering standards covering metrics (RED/USE/Golden Signals), testing, optimization, Core Web Vitals, and capacity planning"
+    },
+    {
+      "id": "accessibility-standards",
+      "name": "Accessibility Standards",
+      "nameZh": "無障礙標準",
+      "source": {
+        "human": "core/accessibility-standards.md",
+        "ai": "ai/standards/accessibility-standards.ai.yaml"
+      },
+      "category": "reference",
+      "skillName": null,
+      "description": "WCAG 2.1 Level AA accessibility standards covering POUR principles, keyboard navigation, ARIA, color/contrast, and testing"
+    },
+    {
+      "id": "developer-memory",
+      "name": "Developer Persistent Memory Standards",
+      "nameZh": "開發者持久記憶標準",
+      "source": {
+        "human": "core/developer-memory.md",
+        "ai": "ai/standards/developer-memory.ai.yaml"
+      },
+      "category": "reference",
+      "skillName": null,
+      "description": "Structured system for capturing, retrieving, and surfacing developer experience insights across conversations and projects"
+    },
+    {
+      "id": "project-context-memory",
+      "name": "Project Context Memory Standards",
+      "nameZh": "專案情境記憶標準",
+      "source": {
+        "human": "core/project-context-memory.md",
+        "ai": "ai/standards/project-context-memory.ai.yaml"
+      },
+      "category": "reference",
+      "skillName": null,
+      "description": "System for capturing, retrieving, and enforcing project-specific context, architectural decisions, and domain knowledge"
+    },
+    {
+      "id": "knowledge-graph-memory",
+      "name": "Knowledge Graph Memory Standards",
+      "nameZh": "知識圖記憶標準",
+      "source": {
+        "human": "core/knowledge-graph-memory.md",
+        "ai": "ai/standards/knowledge-graph-memory.ai.yaml"
+      },
+      "category": "reference",
+      "skillName": "knowledge-graph",
+      "description": "Relationship schema for traversing specs, decisions, and code as a graph (related/impacts/supersedes front-matter -> IMPACTS/SUPERSEDES edges); complements vector memory with structural multi-hop queries; engine-optional with Markdown degradation; basis for self-evolving (SAGE) confidence"
+    },
+    {
+      "id": "context-aware-loading",
+      "name": "Context-Aware Standard Loading",
+      "nameZh": "上下文感知標準載入",
+      "source": {
+        "human": "core/context-aware-loading.md",
+        "ai": "ai/standards/context-aware-loading.ai.yaml"
+      },
+      "category": "reference",
+      "skillName": null,
+      "description": "Protocol for AI tools to selectively load standards based on task context, reducing token usage and improving focus"
+    },
+    {
+      "id": "project-discovery",
+      "name": "Project Discovery",
+      "nameZh": "專案現況評估",
+      "source": {
+        "human": null,
+        "ai": null
+      },
+      "category": "skill",
+      "skillName": "project-discovery",
+      "description": "Assess project health, architecture, dependencies and risks before adding features to existing codebases"
+    },
+    {
+      "id": "csharp-style",
+      "name": "C# Style Guide",
+      "nameZh": "C# 風格指南",
+      "source": "extensions/languages/csharp-style.md",
+      "category": "extension",
+      "skillName": null,
+      "description": "C# naming conventions and code style rules",
+      "applicability": "C# projects"
+    },
+    {
+      "id": "php-style",
+      "name": "PHP Style Guide",
+      "nameZh": "PHP 風格指南",
+      "source": "extensions/languages/php-style.md",
+      "category": "extension",
+      "skillName": null,
+      "description": "PHP 8.1+ PSR-12 style guide",
+      "applicability": "PHP 8.1+ projects"
+    },
+    {
+      "id": "fat-free-patterns",
+      "name": "Fat-Free Framework Patterns",
+      "nameZh": "Fat-Free 框架模式",
+      "source": "extensions/frameworks/fat-free-patterns.md",
+      "category": "extension",
+      "skillName": null,
+      "description": "Development patterns for Fat-Free Framework v3.8+",
+      "applicability": "Fat-Free Framework projects"
+    },
+    {
+      "id": "zh-tw-locale",
+      "name": "Traditional Chinese Locale",
+      "nameZh": "繁體中文本地化",
+      "source": "extensions/locales/zh-tw.md",
+      "category": "extension",
+      "skillName": null,
+      "description": "Traditional Chinese (Taiwan) localization for all standards",
+      "applicability": "Traditional Chinese speaking teams"
+    },
+    {
+      "id": "copilot-integration",
+      "name": "GitHub Copilot Instructions",
+      "nameZh": "GitHub Copilot 指令",
+      "source": "integrations/github-copilot/copilot-instructions.md",
+      "category": "integration",
+      "skillName": null,
+      "description": "Custom instructions for GitHub Copilot Chat",
+      "targetPath": ".github/copilot-instructions.md"
+    },
+    {
+      "id": "cursor-integration",
+      "name": "Cursor Rules",
+      "nameZh": "Cursor 規則",
+      "source": "integrations/cursor/.cursorrules",
+      "category": "integration",
+      "skillName": null,
+      "description": "AI assistant rules for Cursor IDE",
+      "targetPath": ".cursorrules"
+    },
+    {
+      "id": "windsurf-integration",
+      "name": "Windsurf Rules",
+      "nameZh": "Windsurf 規則",
+      "source": "integrations/windsurf/.windsurfrules",
+      "category": "integration",
+      "skillName": null,
+      "description": "AI assistant rules for Windsurf IDE",
+      "targetPath": ".windsurfrules"
+    },
+    {
+      "id": "cline-integration",
+      "name": "Cline Rules",
+      "nameZh": "Cline 規則",
+      "source": "integrations/cline/.clinerules",
+      "category": "integration",
+      "skillName": null,
+      "description": "AI assistant rules for Cline",
+      "targetPath": ".clinerules"
+    },
+    {
+      "id": "antigravity-integration",
+      "name": "Google Antigravity Instructions",
+      "nameZh": "Google Antigravity 指令",
+      "source": "integrations/google-antigravity/INSTRUCTIONS.md",
+      "category": "integration",
+      "skillName": null,
+      "description": "System prompt snippets for Google Antigravity agent",
+      "targetPath": "See integration README"
+    },
+    {
+      "id": "openspec-integration",
+      "name": "OpenSpec Integration",
+      "nameZh": "OpenSpec 整合",
+      "source": "integrations/openspec/",
+      "category": "integration",
+      "skillName": null,
+      "description": "Spec-Driven Development tooling integration for OpenSpec",
+      "targetPath": "See integration README",
+      "note": "SDD tool, not AI coding assistant. Manual integration only."
+    },
+    {
+      "id": "speckit-integration",
+      "name": "Spec Kit Integration",
+      "nameZh": "Spec Kit 整合",
+      "source": "integrations/spec-kit/",
+      "category": "integration",
+      "skillName": null,
+      "description": "Lightweight specification tracking tool integration",
+      "targetPath": "See integration README",
+      "note": "SDD tool, not AI coding assistant. Manual integration only."
+    },
+    {
+      "id": "requirement-checklist",
+      "name": "Requirement Checklist Template",
+      "nameZh": "需求檢核清單模板",
+      "source": "templates/requirement-checklist.md",
+      "category": "skill",
+      "skillName": "requirement-assistant",
+      "description": "Checklist for reviewing requirement documents"
+    },
+    {
+      "id": "requirement-template",
+      "name": "Requirement Template",
+      "nameZh": "需求模板",
+      "source": "templates/requirement-template.md",
+      "category": "skill",
+      "skillName": "requirement-assistant",
+      "description": "Template for writing user stories"
+    },
+    {
+      "id": "requirement-document-template",
+      "name": "Requirement Document Template",
+      "nameZh": "需求文件模板",
+      "source": "templates/requirement-document-template.md",
+      "category": "skill",
+      "skillName": "requirement-assistant",
+      "description": "Template for writing comprehensive requirement documents"
+    },
+    {
+      "id": "acceptance-criteria-traceability",
+      "name": "Acceptance Criteria Traceability Standards",
+      "nameZh": "驗收條件追蹤標準",
+      "source": {
+        "human": "core/acceptance-criteria-traceability.md",
+        "ai": "ai/standards/acceptance-criteria-traceability.ai.yaml"
+      },
+      "category": "reference",
+      "skillName": null,
+      "description": "AC-to-test traceability matrix, coverage calculation (with not_implemented gate), and spec generation quality rules"
+    },
+    {
+      "id": "feature-manifest-standard",
+      "name": "Feature Manifest Standard",
+      "nameZh": "功能盤點清單標準",
+      "source": {
+        "human": "core/feature-manifest-standard.md",
+        "ai": "ai/standards/feature-manifest-standard.ai.yaml"
+      },
+      "category": "reference",
+      "skillName": null,
+      "description": "Machine-readable FM-NNN feature inventory format for migration/refactoring projects; FEATURE_STUB protocol and completeness gates"
+    },
+    {
+      "id": "behavior-snapshot",
+      "name": "Behavior Snapshot Standard",
+      "nameZh": "行為快照標準",
+      "source": {
+        "human": "core/behavior-snapshot.md",
+        "ai": "ai/standards/behavior-snapshot.ai.yaml"
+      },
+      "category": "reference",
+      "skillName": null,
+      "description": "Multi-modal golden-file snapshot format (HTTP/CLI/File/Event adapters) for migration parity verification and refactoring characterization (Gate 0/1 protocol)"
+    },
+    {
+      "id": "user-journey-testing",
+      "name": "User Journey Testing Standard",
+      "nameZh": "使用者旅程測試標準",
+      "source": {
+        "human": "core/user-journey-testing.md",
+        "ai": "ai/standards/user-journey-testing.ai.yaml"
+      },
+      "category": "skill",
+      "skillName": "journey-test-assistant",
+      "description": "TESTPLAN format for connected, sequential, stateful user journey tests; personas + T-NNN test groups with explicit dependency chains, mapped 1:1 to journey E2E describe()/it() blocks with graceful environment skip"
+    },
+    {
+      "id": "feature-discovery-standards",
+      "name": "Feature Discovery Standards",
+      "nameZh": "功能發現方法論標準",
+      "source": {
+        "human": "core/feature-discovery-standards.md",
+        "ai": "ai/standards/feature-discovery-standards.ai.yaml"
+      },
+      "category": "reference",
+      "skillName": null,
+      "description": "Language-agnostic methodology for exhaustive feature discovery in legacy systems; Deterministic-First principle, Software Form Taxonomy (7 forms), five static foundations, dynamic/human observation protocols, cross-layer validation matrix"
+    },
+    {
+      "id": "multi-environment-e2e-testing",
+      "name": "Multi-Environment E2E Testing",
+      "nameZh": "多環境 E2E 測試標準",
+      "source": {
+        "human": "core/multi-environment-e2e-testing.md",
+        "ai": "ai/standards/multi-environment-e2e-testing.ai.yaml"
+      },
+      "category": "testing",
+      "skillName": null,
+      "description": "E2E test configuration across multiple deployment targets; BASE_URL baked in test config; self-checking runner scripts; environment capability matrix; CI gate mapping; credential handling rules"
+    },
+    {
+      "id": "migration-template",
+      "name": "Migration Plan Template",
+      "nameZh": "遷移計畫模板",
+      "source": "templates/migration-template.md",
+      "category": "template",
+      "skillName": null,
+      "description": "Template for planning technology migrations",
+      "applicability": "Migration projects"
+    },
+    {
+      "id": "systematic-debugging",
+      "name": "Systematic Debugging Workflow",
+      "nameZh": "系統化除錯工作流",
+      "source": {
+        "human": "core/systematic-debugging.md",
+        "ai": "ai/standards/systematic-debugging.ai.yaml"
+      },
+      "category": "skill",
+      "skillName": null,
+      "description": "Four-phase debugging workflow (Root Cause → Pattern Analysis → Hypothesis Testing → Fix) with 3-Strike Rule"
+    },
+    {
+      "id": "model-selection",
+      "name": "AI Model Selection Strategy",
+      "nameZh": "AI 模型分級選擇策略",
+      "source": {
+        "human": "core/model-selection.md",
+        "ai": "ai/standards/model-selection.ai.yaml"
+      },
+      "category": "skill",
+      "skillName": null,
+      "description": "Two-axis model selection: model tier (reasoning ceiling × specification definiteness) × effort (reasoning depth), plus reverse-exclusion hard boundaries and four-state capability routing"
+    },
+    {
+      "id": "agent-dispatch",
+      "name": "Agent Dispatch & Parallel Coordination",
+      "nameZh": "代理派遣與並行協調",
+      "source": {
+        "human": "core/agent-dispatch.md",
+        "ai": "ai/standards/agent-dispatch.ai.yaml"
+      },
+      "category": "skill",
+      "skillName": null,
+      "description": "Parallel sub-agent dispatch: independent-domain criterion (no shared mutable state), four-state status protocol, conflict detection, prompt design principles"
+    },
+    {
+      "id": "git-worktree",
+      "name": "Git Worktree Isolation",
+      "nameZh": "Git Worktree 隔離開發",
+      "source": {
+        "human": "core/git-worktree.md",
+        "ai": "ai/standards/git-worktree.ai.yaml"
+      },
+      "category": "reference",
+      "skillName": null,
+      "description": "Git worktree lifecycle management: setup → baseline → execute → merge → cleanup"
+    },
+    {
+      "id": "class-level-fix",
+      "name": "Class-Level Fix Standard",
+      "nameZh": "類別層修正標準",
+      "source": {
+        "human": "core/class-level-fix.md",
+        "ai": "ai/standards/class-level-fix.ai.yaml"
+      },
+      "category": "skill",
+      "skillName": null,
+      "description": "Aim a fix at the set, not the member. Walk the set from the source the system reads, never from a typed list; print the denominator and what was excluded; prove the check non-vacuous per sub-set"
+    },
+    {
+      "id": "verification-evidence",
+      "name": "Verification Evidence Standard",
+      "nameZh": "驗證證據標準",
+      "source": {
+        "human": "core/verification-evidence.md",
+        "ai": "ai/standards/verification-evidence.ai.yaml"
+      },
+      "category": "skill",
+      "skillName": null,
+      "description": "Iron Law: no verification evidence = no completion claim. RED-GREEN cycle for bug fixes. Evidence validity: a tool can fail silently and its output is indistinguishable from a real result"
+    },
+    {
+      "id": "adr-standards",
+      "name": "Architecture Decision Records",
+      "nameZh": "架構決策記錄",
+      "source": {
+        "human": "core/adr-standards.md",
+        "ai": "ai/standards/adr-standards.ai.yaml",
+        "guide": "skills/adr-assistant/guide.md"
+      },
+      "category": "skill",
+      "skillName": "adr-assistant",
+      "description": "Lightweight, version-controlled records of significant architectural decisions with context, options, and rationale"
+    },
+    {
+      "id": "retrospective-standards",
+      "name": "Retrospective Standards",
+      "nameZh": "回顧標準",
+      "source": {
+        "human": "core/retrospective-standards.md",
+        "ai": "ai/standards/retrospective-standards.ai.yaml",
+        "guide": "skills/retrospective-assistant/guide.md"
+      },
+      "category": "skill",
+      "skillName": "retrospective-assistant",
+      "description": "Structured team retrospectives for Sprint and Release cycles with facilitation techniques and action item tracking"
+    },
+    {
+      "id": "observability-standards",
+      "name": "Observability Standards",
+      "nameZh": "可觀測性標準",
+      "source": {
+        "human": "core/observability-standards.md",
+        "ai": "ai/standards/observability-standards.ai.yaml"
+      },
+      "category": "core",
+      "description": "Three pillars observability framework (Logs, Metrics, Traces) with Golden Signals and maturity model"
+    },
+    {
+      "id": "slo-standards",
+      "name": "SLO Standards",
+      "nameZh": "SLO 標準",
+      "source": {
+        "human": "core/slo-standards.md",
+        "ai": "ai/standards/slo-standards.ai.yaml"
+      },
+      "category": "core",
+      "description": "SLI/SLO/Error Budget definitions, setting methodology, and service templates"
+    },
+    {
+      "id": "alerting-standards",
+      "name": "Alerting Standards",
+      "nameZh": "告警標準",
+      "source": {
+        "human": "core/alerting-standards.md",
+        "ai": "ai/standards/alerting-standards.ai.yaml"
+      },
+      "category": "core",
+      "description": "Alert severity classification, escalation, noise reduction, and SLO-based alerting"
+    },
+    {
+      "id": "runbook-standards",
+      "name": "Runbook Standards",
+      "nameZh": "Runbook 標準",
+      "source": {
+        "human": "core/runbook-standards.md",
+        "ai": "ai/standards/runbook-standards.ai.yaml"
+      },
+      "category": "core",
+      "description": "Runbook writing, maintenance, drills, and alert integration"
+    },
+    {
+      "id": "postmortem-standards",
+      "name": "Postmortem Standards",
+      "nameZh": "事後檢討標準",
+      "source": {
+        "human": "core/postmortem-standards.md",
+        "ai": "ai/standards/postmortem-standards.ai.yaml"
+      },
+      "category": "core",
+      "description": "Blameless postmortem process, root cause analysis, action items tracking, and organizational learning"
+    },
+    {
+      "id": "tech-debt-standards",
+      "name": "Tech Debt Management Standards",
+      "nameZh": "技術債管理標準",
+      "source": {
+        "human": "core/tech-debt-standards.md",
+        "ai": "ai/standards/tech-debt-standards.ai.yaml"
+      },
+      "category": "core",
+      "description": "Tech debt taxonomy, registry, budget, impact matrix, and metrics"
+    },
+    {
+      "id": "feature-flag-standards",
+      "name": "Feature Flag Standards",
+      "nameZh": "Feature Flag 標準",
+      "source": {
+        "human": "core/feature-flag-standards.md",
+        "ai": "ai/standards/feature-flag-standards.ai.yaml"
+      },
+      "category": "core",
+      "description": "Feature flag types, lifecycle, TTL, audit, and decay detection"
+    },
+    {
+      "id": "environment-standards",
+      "name": "Environment Standards",
+      "nameZh": "環境管理標準",
+      "source": {
+        "human": "core/environment-standards.md",
+        "ai": "ai/standards/environment-standards.ai.yaml"
+      },
+      "category": "core",
+      "description": "Environment tiers, configuration management, parity, and secret management"
+    },
+    {
+      "id": "containerization-standards",
+      "name": "Containerization Standards",
+      "nameZh": "容器化標準",
+      "source": {
+        "human": "core/containerization-standards.md",
+        "ai": "ai/standards/containerization-standards.ai.yaml"
+      },
+      "category": "core",
+      "description": "Container image build best practices, tagging, security scanning, and registry management"
+    },
+    {
+      "id": "deprecation-standards",
+      "name": "Deprecation & Sunset Standards",
+      "nameZh": "退役與下架標準",
+      "source": {
+        "human": "core/deprecation-standards.md",
+        "ai": "ai/standards/deprecation-standards.ai.yaml"
+      },
+      "category": "core",
+      "description": "API deprecation, feature sunset, system decommission lifecycle"
+    },
+    {
+      "id": "knowledge-transfer-standards",
+      "name": "Knowledge Transfer Standards",
+      "nameZh": "知識傳承標準",
+      "source": {
+        "human": "core/knowledge-transfer-standards.md",
+        "ai": "ai/standards/knowledge-transfer-standards.ai.yaml"
+      },
+      "category": "core",
+      "description": "Onboarding, handoff, bus factor assessment, and code tour"
+    },
+    {
+      "id": "test-data-standards",
+      "name": "Test Data Management Standards",
+      "nameZh": "測試資料管理標準",
+      "source": {
+        "human": "core/test-data-standards.md",
+        "ai": "ai/standards/test-data-standards.ai.yaml"
+      },
+      "category": "core",
+      "description": "Test data strategies, anonymization, fixtures, isolation, and anti-patterns"
+    },
+    {
+      "id": "chaos-engineering-standards",
+      "name": "Chaos Engineering Standards",
+      "nameZh": "混沌工程標準",
+      "source": {
+        "human": "core/chaos-engineering-standards.md",
+        "ai": "ai/standards/chaos-engineering-standards.ai.yaml"
+      },
+      "category": "core",
+      "description": "Chaos experiment design, fault injection, safety guardrails, and SLO integration"
+    },
+    {
+      "id": "supply-chain-security-standards",
+      "name": "Supply Chain Security Standards",
+      "nameZh": "供應鏈安全標準",
+      "source": {
+        "human": "core/supply-chain-security-standards.md",
+        "ai": "ai/standards/supply-chain-security-standards.ai.yaml"
+      },
+      "category": "core",
+      "description": "SBOM formats, dependency audit, SLSA levels, license compliance"
+    },
+    {
+      "id": "estimation-standards",
+      "name": "Estimation Standards",
+      "nameZh": "估算標準",
+      "source": {
+        "human": "core/estimation-standards.md",
+        "ai": "ai/standards/estimation-standards.ai.yaml"
+      },
+      "category": "core",
+      "description": "Estimation methods, calibration, anti-patterns, confidence levels"
+    },
+    {
+      "id": "design-document-standards",
+      "name": "Design Document Standards",
+      "nameZh": "設計文件標準",
+      "source": {
+        "human": "core/design-document-standards.md",
+        "ai": "ai/standards/design-document-standards.ai.yaml"
+      },
+      "category": "core",
+      "description": "HLD/LLD templates, C4 architecture diagrams, design review checklist"
+    },
+    {
+      "id": "privacy-standards",
+      "name": "Privacy Standards",
+      "nameZh": "隱私標準",
+      "source": {
+        "human": "core/privacy-standards.md",
+        "ai": "ai/standards/privacy-standards.ai.yaml"
+      },
+      "category": "core",
+      "description": "Privacy by Design, data classification, DPIA, user rights"
+    },
+    {
+      "id": "frontend-design-standards",
+      "name": "Frontend Design Standards",
+      "nameZh": "前端設計標準",
+      "source": {
+        "human": "core/frontend-design-standards.md",
+        "ai": "ai/standards/frontend-design-standards.ai.yaml"
+      },
+      "category": "core",
+      "description": "DESIGN.md 9-section spec format, semantic color tokens, font roles, spacing scale, UI hard constraints, anti-patterns"
+    },
+    {
+      "id": "dual-phase-output",
+      "name": "Dual-Phase LLM Output Standard",
+      "nameZh": "雙階段 LLM 輸出標準",
+      "source": {
+        "human": "core/dual-phase-output.md",
+        "ai": "ai/standards/dual-phase-output.ai.yaml"
+      },
+      "category": "core",
+      "description": "Dual-phase LLM output pattern: <analysis> thinking discarded, <summary> structured conclusion retained. Saves 1000-3500 tokens per review invocation."
+    },
+    {
+      "id": "circuit-breaker",
+      "name": "Circuit Breaker Standard",
+      "nameZh": "通用斷路器標準",
+      "source": {
+        "human": "core/circuit-breaker.md",
+        "ai": "ai/standards/circuit-breaker.ai.yaml"
+      },
+      "category": "core",
+      "description": "3-state circuit breaker (CLOSED/HALF_OPEN/OPEN) to prevent API stampede from consecutive failures. Default failureThreshold: 3."
+    },
+    {
+      "id": "token-budget",
+      "name": "Token Budget Zone Standard",
+      "nameZh": "Token 閾值四區模型",
+      "source": {
+        "human": "core/token-budget.md",
+        "ai": "ai/standards/token-budget.ai.yaml"
+      },
+      "category": "core",
+      "description": "4-zone token budget model (safe/warning/danger/blocking) for graceful degradation before hitting hard token limits."
+    },
+    {
+      "id": "security-decision",
+      "name": "Security Decision Standard",
+      "nameZh": "安全決策鐵律",
+      "source": {
+        "human": "core/security-decision.md",
+        "ai": "ai/standards/security-decision.ai.yaml"
+      },
+      "category": "core",
+      "description": "deny>ask>allow arbitration rule with projectSettings trust radius protection. deny always wins regardless of source priority."
+    },
+    {
+      "id": "capability-declaration",
+      "name": "Capability Declaration Standard",
+      "nameZh": "Fail-Closed 能力聲明",
+      "source": {
+        "human": "core/capability-declaration.md",
+        "ai": "ai/standards/capability-declaration.ai.yaml"
+      },
+      "category": "core",
+      "description": "Fail-Closed capability defaults for all tools and adapters: isConcurrencySafe, isReadOnly, requiresUserConfirmation all default to safe values."
+    },
+    {
+      "id": "immutability-first",
+      "name": "Immutability-First Architecture Standard",
+      "nameZh": "不可變性設計原則",
+      "source": {
+        "human": "core/immutability-first.md",
+        "ai": "ai/standards/immutability-first.ai.yaml"
+      },
+      "category": "core",
+      "description": "System-level immutability: DTO fields as readonly, ReadonlyArray<T> for arrays, spread syntax for mutations, deep immutability across parallel boundaries."
+    },
+    {
+      "id": "failure-source-taxonomy",
+      "name": "Failure Source Taxonomy Standard",
+      "nameZh": "失敗來源分類法",
+      "source": {
+        "human": "core/failure-source-taxonomy.md",
+        "ai": "ai/standards/failure-source-taxonomy.ai.yaml"
+      },
+      "category": "core",
+      "description": "8-class failureSource dimension (why) on top of TaskStatus (what), enabling Recovery Recipe Registry to precisely match strategies per failure type."
+    },
+    {
+      "id": "recovery-recipe-registry",
+      "name": "Recovery Recipe Registry Standard",
+      "nameZh": "恢復食譜註冊表",
+      "source": {
+        "human": "core/recovery-recipe-registry.md",
+        "ai": "ai/standards/recovery-recipe-registry.ai.yaml"
+      },
+      "category": "core",
+      "description": "Unified YAML-configurable Recovery Recipe format keyed by failureSource (XSPEC-045), with 6 built-in strategies and 5 default recipes, backward-compatible fallback."
+    },
+    {
+      "id": "retry-standards",
+      "name": "Retry Standards",
+      "nameZh": "重試策略標準",
+      "source": {
+        "human": "core/retry-standards.md",
+        "ai": "ai/standards/retry-standards.ai.yaml"
+      },
+      "category": "core",
+      "description": "Exponential backoff with full jitter, max_attempts cap, and failure-source-aware retry rules (DEC-043 Wave 1 Reliability, XSPEC-067, trial)."
+    },
+    {
+      "id": "timeout-standards",
+      "name": "Timeout Standards",
+      "nameZh": "Timeout 標準",
+      "source": {
+        "human": "core/timeout-standards.md",
+        "ai": "ai/standards/timeout-standards.ai.yaml"
+      },
+      "category": "core",
+      "description": "Cascading 0.8x per-layer timeout budget, deadline propagation via absolute timestamps, circuit-breaker integration (DEC-043 Wave 1 Reliability, XSPEC-067, trial)."
+    },
+    {
+      "id": "health-check-standards",
+      "name": "Health Check Standards",
+      "nameZh": "健康檢查標準",
+      "source": {
+        "human": "core/health-check-standards.md",
+        "ai": "ai/standards/health-check-standards.ai.yaml"
+      },
+      "category": "core",
+      "description": "Liveness/readiness/startup probe separation, deep health check scope (critical deps only), structured JSON response (DEC-043 Wave 1 Reliability, XSPEC-067, trial)."
+    },
+    {
+      "id": "standard-admission-criteria",
+      "name": "Standard Admission Criteria",
+      "nameZh": "標準納入條件",
+      "source": {
+        "human": "core/standard-admission-criteria.md",
+        "ai": "ai/standards/standard-admission-criteria.ai.yaml"
+      },
+      "category": "core",
+      "description": "Four admission gates (Evidence / Scope / Non-overlapping / AI-executable) for new UDS standards, with explicit rejection protocol (DEC-043 Wave 1 Governance Meta, XSPEC-070, trial)."
+    },
+    {
+      "id": "standard-lifecycle-management",
+      "name": "Standard Lifecycle Management",
+      "nameZh": "標準生命週期管理",
+      "source": {
+        "human": "core/standard-lifecycle-management.md",
+        "ai": "ai/standards/standard-lifecycle-management.ai.yaml"
+      },
+      "category": "core",
+      "description": "5-state lifecycle machine (Proposed/Trial/Active/Deprecated/Archived) with legal transitions and required frontmatter fields (DEC-043 Wave 1 Governance Meta, XSPEC-070, trial)."
+    },
+    {
+      "id": "skill-standard-alignment-check",
+      "name": "Skill-Standard Alignment Check",
+      "nameZh": "Skill 與 Standard 對齊檢查",
+      "source": {
+        "human": "core/skill-standard-alignment-check.md",
+        "ai": "ai/standards/skill-standard-alignment-check.ai.yaml"
+      },
+      "category": "core",
+      "description": "Skills must anchor to a Standard; Standards may exist without a Skill. Orphan-skill detection workflow (DEC-043 Wave 1 Governance Meta, XSPEC-070, trial)."
+    },
+    {
+      "id": "translation-lifecycle-standards",
+      "name": "Translation Lifecycle Standards",
+      "nameZh": "翻譯生命週期標準",
+      "source": {
+        "human": "core/translation-lifecycle-standards.md",
+        "ai": "ai/standards/translation-lifecycle-standards.ai.yaml"
+      },
+      "category": "core",
+      "description": "MISSING vs OUTDATED distinction, semver-aware severity (PATCH/MINOR/MAJOR), and automation integration (pre-commit hook, release gate) for multi-locale documentation"
+    },
+    {
+      "id": "push-standards",
+      "name": "Git Push Safety Gates",
+      "nameZh": "Git Push 安全閘門標準",
+      "source": {
+        "human": "core/push-standards.md",
+        "ai": "ai/standards/push-standards.ai.yaml"
+      },
+      "category": "skill",
+      "skillName": "push",
+      "description": "Git push safety gates, protected branch detection, force-push guardrails, pre-push quality gate enforcement, and push receipt audit trail"
+    },
+    {
+      "id": "no-cicd-deployment",
+      "name": "No-CI/CD Deployment Strategy",
+      "nameZh": "無 CI/CD 部署策略",
+      "source": {
+        "human": "core/no-cicd-deployment.md",
+        "ai": "ai/standards/no-cicd-deployment.ai.yaml"
+      },
+      "category": "core",
+      "description": "Reliable deployment strategy without CI/CD platforms: shell scripts with fail-fast, smoke test verification, Blue-Green rollback"
+    },
+    {
+      "id": "rollback-standards",
+      "name": "Rollback Standards",
+      "nameZh": "回滾標準",
+      "source": {
+        "human": "core/rollback-standards.md",
+        "ai": "ai/standards/rollback-standards.ai.yaml"
+      },
+      "category": "core",
+      "description": "Rollback trigger conditions, auto vs manual decisions, and error budget integration"
+    },
+    {
+      "id": "cd-deployment-strategies",
+      "name": "CD Deployment Strategies",
+      "nameZh": "CD 部署策略",
+      "source": {
+        "human": "core/cd-deployment-strategies.md",
+        "ai": "ai/standards/cd-deployment-strategies.ai.yaml"
+      },
+      "category": "core",
+      "description": "Strategy selection matrix for blue-green, canary, rolling, and recreate deployments"
+    },
+    {
+      "id": "pipeline-security-gates",
+      "name": "Pipeline Security Gates",
+      "nameZh": "CI Pipeline 安全閘門",
+      "source": {
+        "human": "core/pipeline-security-gates.md",
+        "ai": "ai/standards/pipeline-security-gates.ai.yaml"
+      },
+      "category": "core",
+      "description": "Security checkpoints embedded in CI pipeline — SAST, DAST, SCA, secrets scan with block/warn/log behavior"
+    },
+    {
+      "id": "slo-sli",
+      "name": "SLO/SLI Definition Standards",
+      "nameZh": "SLO/SLI 定義標準",
+      "source": {
+        "human": "core/slo-sli.md",
+        "ai": "ai/standards/slo-sli.ai.yaml"
+      },
+      "category": "core",
+      "description": "SLI selection per service type, SLO target-setting methodology, error budget policies, and multi-window burn-rate alerting"
+    },
+    {
+      "id": "runbook",
+      "name": "Runbook Writing Standards",
+      "nameZh": "Runbook 撰寫標準",
+      "source": {
+        "human": "core/runbook.md",
+        "ai": "ai/standards/runbook.ai.yaml"
+      },
+      "category": "core",
+      "description": "Required sections, reproducible steps, naming conventions, review cadence, and drill frequency for operational runbooks"
+    },
+    {
+      "id": "incident-response",
+      "name": "Incident Response Standards",
+      "nameZh": "事件回應標準",
+      "source": {
+        "human": "core/incident-response.md",
+        "ai": "ai/standards/incident-response.ai.yaml"
+      },
+      "category": "core",
+      "description": "Severity classification, IC role, stakeholder communication, blameless postmortem, on-call rotation, and incident metrics"
+    },
+    {
+      "id": "license-compliance",
+      "name": "License Compliance Standards",
+      "nameZh": "授權合規標準",
+      "version": "6.7.5",
+      "source": {
+        "human": "core/license-compliance.md",
+        "ai": "ai/standards/license-compliance.ai.yaml"
+      },
+      "category": "core",
+      "description": "License tier classification, automated scanning in CI, SBOM generation, attribution notices, violation remediation, ClearlyDefined API, AST PII analysis, and EmbeddingProvider copyright similarity"
+    },
+    {
+      "id": "verification-oracle",
+      "name": "Verification Oracle Standards",
+      "nameZh": "驗證 Oracle 標準",
+      "version": "6.7.5",
+      "source": {
+        "human": "core/verification-oracle.md",
+        "ai": "ai/standards/verification-oracle.ai.yaml"
+      },
+      "category": "core",
+      "description": "Ground-truth oracle as a first-class artifact, oracle-ability grading, fail-closed verification gate, sustained re-verification (correctness as CI invariant), audit evidence, and self-serve frontier ceiling — the correctness profile of the governance-gate family"
+    },
+    {
+      "id": "model-provenance",
+      "name": "Model Provenance Policy Standards",
+      "nameZh": "模型來源政策標準",
+      "version": "6.7.5",
+      "source": {
+        "human": "core/model-provenance.md",
+        "ai": "ai/standards/model-provenance.ai.yaml"
+      },
+      "category": "core",
+      "description": "Model origin registry (vendor/jurisdiction/origin class), provenance policy schema with local-weights distinction, fail-closed enforcement at every model-selection point, audit evidence, reference policy packs, and unknown-origin fail-closed — the provenance (source) profile of the governance-gate family"
+    },
+    {
+      "id": "resource-cost-boundary",
+      "name": "Resource / Cost Boundary Declaration Standards",
+      "nameZh": "資源／成本邊界宣告標準",
+      "version": "6.7.5",
+      "source": {
+        "human": "core/resource-cost-boundary.md",
+        "ai": "ai/standards/resource-cost-boundary.ai.yaml"
+      },
+      "category": "core",
+      "description": "Explicit, machine-readable, fail-closed resource budget declaration for LLM execution units — a token/iteration/retry/cost/wallclock/rate taxonomy, a resource_budget block, a check-resource-budget gate (undeclared warns, runtime breach aborts), and convergence of existing budget mechanisms as reference implementations (cost dimension of boundary materialization)"
+    },
+    {
+      "id": "pii-classification",
+      "name": "PII Classification and Handling Standards",
+      "nameZh": "PII 分類與處理標準",
+      "source": {
+        "human": "core/pii-classification.md",
+        "ai": "ai/standards/pii-classification.ai.yaml"
+      },
+      "category": "core",
+      "description": "Three-tier PII sensitivity classification, data minimization, masking in non-production, retention schedules, and cross-border transfer controls"
+    },
+    {
+      "id": "audit-trail",
+      "name": "Audit Trail Standards",
+      "nameZh": "稽核追蹤標準",
+      "source": {
+        "human": "core/audit-trail.md",
+        "ai": "ai/standards/audit-trail.ai.yaml"
+      },
+      "category": "core",
+      "description": "Mandatory auditable events, record schema, immutability, retention periods, query/export, and SIEM integration"
+    },
+    {
+      "id": "schema-evolution",
+      "name": "Schema Evolution Standards",
+      "nameZh": "Schema 演進標準",
+      "source": {
+        "human": "core/schema-evolution.md",
+        "ai": "ai/standards/schema-evolution.ai.yaml"
+      },
+      "category": "core",
+      "description": "Backward-compatible change patterns, prohibited breaking changes, expand-contract migration, schema versioning, and CI compatibility checks"
+    },
+    {
+      "id": "data-contract",
+      "name": "Data Contract Standards",
+      "nameZh": "資料契約標準",
+      "source": {
+        "human": "core/data-contract.md",
+        "ai": "ai/standards/data-contract.ai.yaml"
+      },
+      "category": "core",
+      "description": "Data contract specification format, quality SLOs, breaking-change governance, automated contract testing, and consumer registration"
+    },
+    {
+      "id": "data-pipeline",
+      "name": "Data Pipeline Standards",
+      "nameZh": "資料管線標準",
+      "source": {
+        "human": "core/data-pipeline.md",
+        "ai": "ai/standards/data-pipeline.ai.yaml"
+      },
+      "category": "core",
+      "description": "Idempotency, error handling with DLQs, checkpointing, data lineage, pipeline observability SLOs, and testing requirements"
+    },
+    {
+      "id": "iac-design-principles",
+      "name": "Infrastructure as Code Design Principles",
+      "nameZh": "基礎設施即程式碼設計原則",
+      "source": {
+        "human": "core/iac-design-principles.md",
+        "ai": "ai/standards/iac-design-principles.ai.yaml"
+      },
+      "category": "core",
+      "description": "Four IaC principles (reproducible, immutable, idempotent, versioned), remote state with locking, and drift detection with three-category classification"
+    },
+    {
+      "id": "container-image-standards",
+      "name": "Container Image Build and Security Standards",
+      "nameZh": "容器映像建構與安全標準",
+      "source": {
+        "human": "core/container-image-standards.md",
+        "ai": "ai/standards/container-image-standards.ai.yaml"
+      },
+      "category": "core",
+      "description": "Dockerfile five principles (multi-stage, non-root, distroless, no secrets, SBOM labels), SBOM embedding via syft/trivy, and CVE scanning block policy"
+    },
+    {
+      "id": "secret-management-standards",
+      "name": "Secret Management and Credential Hygiene Standards",
+      "nameZh": "機密管理與憑證衛生標準",
+      "source": {
+        "human": "core/secret-management-standards.md",
+        "ai": "ai/standards/secret-management-standards.ai.yaml"
+      },
+      "category": "core",
+      "description": "Three secret source tiers (Vault, Cloud KMS, SOPS), rotation policies by credential type, hardcoded secret prevention, and safe injection patterns"
+    },
+    {
+      "id": "prd-standards",
+      "name": "Product Requirements Document Standards",
+      "nameZh": "產品需求文件標準",
+      "source": {
+        "human": "core/prd-standards.md",
+        "ai": "ai/standards/prd-standards.ai.yaml"
+      },
+      "category": "core",
+      "description": "PRD five sections (Problem, Persona, Metrics, Scope, Constraints), PRD-to-user-story bridge with metric traceability, and post-kickoff revision policy"
+    },
+    {
+      "id": "product-metrics-standards",
+      "name": "Product Metrics Framework Standards",
+      "nameZh": "產品指標框架標準",
+      "source": {
+        "human": "core/product-metrics-standards.md",
+        "ai": "ai/standards/product-metrics-standards.ai.yaml"
+      },
+      "category": "core",
+      "description": "Framework selection matrix (AARRR/HEART/North Star), North Star four criteria, three-level metric hierarchy, and anti-vanity metric rule"
+    },
+    {
+      "id": "user-story-mapping",
+      "name": "User Story Mapping Standards",
+      "nameZh": "使用者故事地圖標準",
+      "source": {
+        "human": "core/user-story-mapping.md",
+        "ai": "ai/standards/user-story-mapping.ai.yaml"
+      },
+      "category": "core",
+      "description": "Three-layer story map (Backbone, Walking Skeleton, Detail Stories), MVP horizontal slice rule, INVEST compliance per story, and GWT acceptance criteria"
+    },
+    {
+      "id": "secure-op",
+      "name": "Secure-Op Standard",
+      "nameZh": "AI Agent 安全操作標準",
+      "source": {
+        "human": "core/secure-op.md",
+        "ai": "ai/standards/secure-op.ai.yaml"
+      },
+      "category": "security",
+      "description": "AI Agent secure operation methodology: Veto-based decision, SOBR risk scoring, Fail-Closed principle, tamper-evident audit chain, HITL escalation, and prompt injection defense"
+    },
+    {
+      "id": "server-ops-security",
+      "name": "Server Operations Security",
+      "nameZh": "伺服器操作安全標準",
+      "source": {
+        "human": "core/server-ops-security.md",
+        "ai": "ai/standards/server-ops-security.ai.yaml"
+      },
+      "category": "security",
+      "description": "SSH hardening, host configuration, privilege management, bastion patterns, patch management SLA, and network isolation for AI Agent production environments"
+    },
+    {
+      "id": "container-security",
+      "name": "Container Security",
+      "nameZh": "容器安全標準",
+      "source": {
+        "human": "core/container-security.md",
+        "ai": "ai/standards/container-security.ai.yaml"
+      },
+      "category": "security",
+      "description": "Container image hardening, registry security, runtime protection, secrets management, Kubernetes network policy, and supply chain integrity for AI Agent production environments"
+    },
+    {
+      "id": "adversarial-test",
+      "name": "Adversarial Test Standards",
+      "nameZh": "對抗性測試標準",
+      "source": {
+        "human": "core/adversarial-test.md",
+        "ai": "ai/standards/adversarial-test.ai.yaml"
+      },
+      "category": "testing",
+      "description": "Red-team corpus design for AI agents: OWASP LLM Top 10 adversarial probes (prompt injection LLM01, PII exfiltration LLM06, privilege escalation LLM08, source-agent spoofing)"
+    },
+    {
+      "id": "policy-as-code-testing",
+      "name": "Policy as Code Testing Standards",
+      "nameZh": "Policy as Code 測試標準",
+      "source": {
+        "human": "core/policy-as-code-testing.md",
+        "ai": "ai/standards/policy-as-code-testing.ai.yaml"
+      },
+      "category": "testing",
+      "description": "OPA Rego unit test standards: _test.rego file conventions, ALLOW/DENY/boundary cases, Fail-Closed default, CI opa test integration, anti-patterns (array.concat on sets)"
+    },
+    {
+      "id": "sast-advanced",
+      "name": "Advanced SAST Standards",
+      "nameZh": "進階 SAST 標準",
+      "source": {
+        "human": "core/sast-advanced.md",
+        "ai": "ai/standards/sast-advanced.ai.yaml"
+      },
+      "category": "security",
+      "description": "CodeQL semantic code analysis + secret scanning + Biome security rules. Complements dependency auditing with deep static analysis detecting injection vulnerabilities."
+    },
+    {
+      "id": "prompt-regression",
+      "name": "Prompt Regression Standards",
+      "nameZh": "Prompt 回歸測試標準",
+      "source": {
+        "human": "core/prompt-regression.md",
+        "ai": "ai/standards/prompt-regression.ai.yaml"
+      },
+      "category": "testing",
+      "description": "Golden SHA-256 checksum tests for AI agent prompt files. Detects unintended prompt changes in CI; requires documented acknowledgment when checksums are updated."
+    },
+    {
+      "id": "supply-chain-attestation",
+      "name": "Supply Chain Attestation Standards",
+      "nameZh": "供應鏈溯源標準",
+      "source": {
+        "human": "core/supply-chain-attestation.md",
+        "ai": "ai/standards/supply-chain-attestation.ai.yaml"
+      },
+      "category": "security",
+      "description": "CycloneDX SBOM generation, SLSA provenance (L1/L2), and cosign signing for verifiable software supply chain integrity from source to deployed artefact."
+    },
+    {
+      "id": "cost-budget-test",
+      "name": "Cost Budget Test Standards",
+      "nameZh": "成本預算測試標準",
+      "source": {
+        "human": "core/cost-budget-test.md",
+        "ai": "ai/standards/cost-budget-test.ai.yaml"
+      },
+      "category": "testing",
+      "description": "Unit tests for AI agent token budget zone classification boundaries (safe/warning/danger/blocking), pipeline cost thresholds, and runaway-loop prevention guards."
+    },
+    {
+      "id": "replay-test",
+      "name": "Replay Test Standards",
+      "nameZh": "回放測試標準",
+      "source": {
+        "human": "core/replay-test.md",
+        "ai": "ai/standards/replay-test.ai.yaml"
+      },
+      "category": "testing",
+      "description": "Golden fixture recording and deterministic replay for AI agent pipelines. Enables customer bug reproduction, verdict regression detection, and incident investigation without a live LLM."
+    },
+    {
+      "id": "smoke-test",
+      "name": "Smoke Test Standards",
+      "nameZh": "煙霧測試標準",
+      "source": {
+        "human": "core/smoke-test.md",
+        "ai": "ai/standards/smoke-test.ai.yaml"
+      },
+      "category": "testing",
+      "description": "Post-deployment sanity checks verifying critical paths (health endpoint, core API) complete in under 30 seconds with zero external dependencies."
+    },
+    {
+      "id": "property-based-testing",
+      "name": "Property-Based Testing Standards",
+      "nameZh": "屬性基礎測試標準",
+      "source": {
+        "human": "core/property-based-testing.md",
+        "ai": "ai/standards/property-based-testing.ai.yaml"
+      },
+      "category": "testing",
+      "description": "fast-check / Hypothesis property tests for pure functions: range clamping, determinism, monotonicity, round-trip. Complements example-based unit tests by generating hundreds of random inputs."
+    },
+    {
+      "id": "disaster-recovery-drill",
+      "name": "Disaster Recovery Drill Standards",
+      "nameZh": "災難恢復演練標準",
+      "source": {
+        "human": "core/disaster-recovery-drill.md",
+        "ai": "ai/standards/disaster-recovery-drill.ai.yaml"
+      },
+      "category": "operations",
+      "description": "Quarterly DR drill protocol: RTO/RPO targets, backup restore verification, Game Day exercises, drill records retained 12 months."
+    },
+    {
+      "id": "flaky-test-management",
+      "name": "Flaky Test Management Standards",
+      "nameZh": "不穩定測試管理標準",
+      "source": {
+        "human": "core/flaky-test-management.md",
+        "ai": "ai/standards/flaky-test-management.ai.yaml"
+      },
+      "category": "testing",
+      "description": "Policies for detecting, quarantining (< 48h), and eliminating (< 30 days) flaky tests. Retry policy, root cause documentation, and quarantine annotation conventions."
+    },
+    {
+      "id": "data-migration-testing",
+      "name": "Data Migration Testing Standards",
+      "nameZh": "資料遷移測試標準",
+      "source": {
+        "human": "core/data-migration-testing.md",
+        "ai": "ai/standards/data-migration-testing.ai.yaml"
+      },
+      "category": "testing",
+      "description": "Standards for database schema migration tests: up/down/idempotency/data-preservation coverage. Requires isolated in-memory DB per test, verifiable rollback path, and data integrity after ALTER/DROP."
+    },
+    {
+      "id": "chaos-injection-tests",
+      "name": "Chaos Injection Test Standards",
+      "nameZh": "混沌注入測試標準",
+      "source": {
+        "human": "core/chaos-injection-tests.md",
+        "ai": "ai/standards/chaos-injection-tests.ai.yaml"
+      },
+      "category": "testing",
+      "description": "Executable chaos injection tests for AI agent systems: LLM timeout/rate-limit, DB disconnect rollback, policy-engine fail-closed, and inter-agent blast-radius containment tests."
+    },
+    {
+      "id": "release-quality-manifest",
+      "name": "Release Quality Manifest Standards",
+      "nameZh": "發布品質宣言標準",
+      "source": {
+        "human": "core/release-quality-manifest.md",
+        "ai": "ai/standards/release-quality-manifest.ai.yaml"
+      },
+      "category": "deployment",
+      "description": "Machine-readable per-release Quality Manifest aggregating all gate results (coverage, mutation, CVE, SAST, E2E, container scan, SBOM, LLM hallucination). Auto-generated by CI; customer-shareable."
+    },
+    {
+      "id": "release-readiness-gate",
+      "name": "Release Readiness Gate",
+      "nameZh": "釋出準備閘門",
+      "source": {
+        "human": "core/release-readiness-gate.md",
+        "ai": "ai/standards/release-readiness-gate.ai.yaml"
+      },
+      "category": "deployment",
+      "description": "Single aggregated release gate covering 16 quality dimensions (Security, a11y, Performance, Contract, DB Migration, Cross-flow Regression, Operational Readiness, i18n, Browser Compat, Capacity, Compliance, Docs, Rollback, Smoke, Feature Flags, Multi-Gate Flow). Tiered sign-off template with RQM integration."
+    },
+    {
+      "id": "contract-testing-standards",
+      "name": "Contract Testing Standards",
+      "nameZh": "合約測試標準",
+      "source": {
+        "human": "core/contract-testing-standards.md",
+        "ai": "ai/standards/contract-testing-standards.ai.yaml"
+      },
+      "category": "testing",
+      "description": "Consumer-driven contract testing (Pact/Spring Cloud Contract): consumer-driven flow, schema matchers, N-1 backward compatibility window, can-i-deploy release gate. Applies to projects with API consumers."
+    },
+    {
+      "id": "cross-flow-regression",
+      "name": "Cross-Flow Regression",
+      "nameZh": "跨流程回歸測試",
+      "source": {
+        "human": "core/cross-flow-regression.md",
+        "ai": "ai/standards/cross-flow-regression.ai.yaml"
+      },
+      "category": "testing",
+      "description": "Cross-flow regression complementing per-flow Multi-Gate: Critical User Journey (CUJ) suite, sequential state threading, inter-flow state contamination detection. CUJ pass rate ≥ 95% required per release."
+    },
+    {
+      "id": "browser-compatibility-standards",
+      "name": "Browser Compatibility Standards",
+      "nameZh": "瀏覽器相容性標準",
+      "source": {
+        "human": "core/browser-compatibility-standards.md",
+        "ai": "ai/standards/browser-compatibility-standards.ai.yaml"
+      },
+      "category": "testing",
+      "description": "Browser/device support matrix (Tier-1/2/3), Playwright matrix config, viewport coverage (360/768/1280px), real iOS device testing, release gate. Applies to frontend/web projects; N/A for CLI/backend."
+    }
+  ]
+}

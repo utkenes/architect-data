@@ -1,0 +1,10 @@
+:jbake-title: Context Diagram Generator
+
+== Context Diagram Generator
+
+ifndef::projectRootDir[:projectRootDir: ../../..]
+
+[source, markdown]
+----
+include::{projectRootDir}/prompts/Context-Diagram-Generator.md[]
+----

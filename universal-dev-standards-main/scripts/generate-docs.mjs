@@ -1,0 +1,230 @@
+import fs from 'fs';
+import path from 'path';
+import { fileURLToPath } from 'url';
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+const ROOT_DIR = path.join(__dirname, '..');
+
+const manifestPath = path.join(ROOT_DIR, 'uds-manifest.json');
+const packageJsonPath = path.join(ROOT_DIR, 'cli', 'package.json');
+const readmeFiles = [
+  path.join(ROOT_DIR, 'README.md'),
+  path.join(ROOT_DIR, 'locales/zh-TW/README.md'),
+  path.join(ROOT_DIR, 'locales/zh-CN/README.md')
+];
+const securityFiles = [
+  path.join(ROOT_DIR, 'SECURITY.md'),
+  path.join(ROOT_DIR, 'locales/zh-TW/SECURITY.md'),
+  path.join(ROOT_DIR, 'locales/zh-CN/SECURITY.md')
+];
+
+function generateStatsTable(manifest, lang = 'en') {
+  const t = {
+    en: { cat: 'Category', count: 'Count', desc: 'Description', core: 'Core Standards', guidelines: 'Universal development guidelines', skills: 'AI Skills', interactive: 'Interactive skills', slash: 'Slash Commands', quick: 'Quick actions', cli: 'CLI Commands', cliDesc: 'Project setup & maintenance' },
+    zh: { cat: '類別', count: '數量', desc: '說明', core: '核心標準', guidelines: '通用開發準則', skills: 'AI Skills', interactive: '互動式技能', slash: '斜線命令', quick: '快速操作', cli: 'CLI 指令', cliDesc: '專案設定與維護' },
+    cn: { cat: '类别', count: '数量', desc: '说明', core: '核心标准', guidelines: '通用开发准则', skills: 'AI Skills', interactive: '互动式技能', slash: '斜线命令', quick: '快速操作', cli: 'CLI 命令', cliDesc: '项目设置与维护' }
+  }[lang] || t.en;
+
+  // CLI Commands count is computed by scripts/sync-manifest.mjs from the
+  // actual Commander registrations in cli/bin/uds.js (manifest.stats.cli_commands)
+  // — NOT hardcoded here — so it can't silently drift like the other stats
+  // in this table already don't (core_standards/skills/slash_commands).
+  return `
+| ${t.cat} | ${t.count} | ${t.desc} |
+|----------|-------|-------------|
+| **${t.core}** | ${manifest.stats.core_standards} | ${t.guidelines} |
+| **${t.skills}** | ${manifest.stats.skills} | ${t.interactive} |
+| **${t.slash}** | ${manifest.stats.slash_commands} | ${t.quick} |
+| **${t.cli}** | ${manifest.stats.cli_commands} | ${t.cliDesc} |`.trim();
+}
+
+/**
+ * Look up the release date for `version` from CHANGELOG.md's own
+ * "## [X.Y.Z] - YYYY-MM-DD" heading (Keep a Changelog format).
+ *
+ * This is the authoritative source — CHANGELOG.md is hand-dated by a human
+ * at release time (release-workflow.md Step 3, BEFORE Step 4 which runs
+ * pre-release-check.sh → docs:sync), and that date does not change on
+ * re-runs. `new Date()` does change on every run, which silently rewrote
+ * the README "Released" date to whatever day `docs:sync` happened to be
+ * invoked on — including days that were not a release at all.
+ *
+ * Returns null if no dated entry exists yet for this version (e.g.
+ * docs:sync run before CHANGELOG.md was updated for the current bump).
+ */
+function getReleaseDateFromChangelog(version) {
+  const changelogPath = path.join(ROOT_DIR, 'CHANGELOG.md');
+  if (!fs.existsSync(changelogPath)) return null;
+  const content = fs.readFileSync(changelogPath, 'utf8');
+  const escaped = version.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const regex = new RegExp(`^## \\[${escaped}\\]\\s*-\\s*(\\d{4}-\\d{2}-\\d{2})`, 'm');
+  const match = content.match(regex);
+  return match ? match[1] : null;
+}
+
+function syncReadmeVersions(version) {
+  console.log('📦 Syncing README versions...');
+  const releaseDate = getReleaseDateFromChangelog(version);
+
+  if (!releaseDate) {
+    console.warn(`⚠️  CHANGELOG.md has no dated entry for ${version} yet — skipping README version/date sync.`);
+    console.warn('   Add the "## [' + version + '] - YYYY-MM-DD" CHANGELOG entry first, then re-run docs:sync.');
+    return;
+  }
+
+  // Determine pre-release label
+  let preReleaseLabel = '';
+  if (version.includes('-')) {
+    preReleaseLabel = ' (Pre-release)';
+  }
+
+  // Pattern: **Version**: X.Y.Z ... | **Released**: ... | ...
+  // Pattern: **版本**: X.Y.Z ... | **發布日期**: ... | ...
+  // Pattern: **版本**: X.Y.Z ... | **发布日期**: ... | ...
+  const patterns = [
+    { regex: /(\*\*Version\*\*:\s*)[^\|]+(\|\s*\*\*Released\*\*:\s*)[^\|]+/, replacement: `$1${version}${preReleaseLabel} $2${releaseDate} ` },
+    { regex: /(\*\*版本\*\*:\s*)[^\|]+(\|\s*\*\*發布日期\*\*:\s*)[^\|]+/, replacement: `$1${version}${preReleaseLabel} $2${releaseDate} ` },
+    { regex: /(\*\*版本\*\*:\s*)[^\|]+(\|\s*\*\*发布日期\*\*:\s*)[^\|]+/, replacement: `$1${version}${preReleaseLabel} $2${releaseDate} ` }
+  ];
+
+  readmeFiles.forEach(filePath => {
+    if (!fs.existsSync(filePath)) return;
+    let content = fs.readFileSync(filePath, 'utf8');
+    const relPath = path.relative(ROOT_DIR, filePath);
+    let updated = false;
+
+    for (const { regex, replacement } of patterns) {
+      if (regex.test(content)) {
+        content = content.replace(regex, replacement);
+        updated = true;
+        break;
+      }
+    }
+
+    if (updated) {
+      fs.writeFileSync(filePath, content);
+      console.log(`✅ Version synced in: ${relPath} → ${version}`);
+    }
+  });
+}
+
+function syncSecurityVersions(version, stableVersion) {
+  console.log('🔒 Syncing SECURITY.md supported versions...');
+  const isPrerelease = version.includes('-');
+
+  const tables = {
+    en: isPrerelease
+      ? `| Version | Supported | 支援狀態 |\n|---------|-----------|--------|\n| ${version} | ✅ Pre-release | 預發布版本 |\n| ${stableVersion} | ✅ Latest stable | 最新正式版 |\n| < ${stableVersion.split('.')[0]}.0.0 | ❌ End of life | 已終止支援 |`
+      : `| Version | Supported | 支援狀態 |\n|---------|-----------|--------|\n| ${version} | ✅ Latest stable | 最新正式版 |\n| < ${version.split('.')[0]}.0.0 | ❌ End of life | 已終止支援 |`,
+    zh: isPrerelease
+      ? `| 版本 | 支援狀態 |\n|------|--------|\n| ${version} | ✅ 預發布版本 |\n| ${stableVersion} | ✅ 最新正式版 |\n| < ${stableVersion.split('.')[0]}.0.0 | ❌ 已終止支援 |`
+      : `| 版本 | 支援狀態 |\n|------|--------|\n| ${version} | ✅ 最新正式版 |\n| < ${version.split('.')[0]}.0.0 | ❌ 已終止支援 |`,
+    cn: isPrerelease
+      ? `| 版本 | 支持状态 |\n|------|--------|\n| ${version} | ✅ 预发布版本 |\n| ${stableVersion} | ✅ 最新正式版 |\n| < ${stableVersion.split('.')[0]}.0.0 | ❌ 已终止支持 |`
+      : `| 版本 | 支持状态 |\n|------|--------|\n| ${version} | ✅ 最新正式版 |\n| < ${version.split('.')[0]}.0.0 | ❌ 已终止支持 |`
+  };
+
+  const regex = /<!-- UDS_SUPPORTED_VERSIONS_START -->[\s\S]*?<!-- UDS_SUPPORTED_VERSIONS_END -->/g;
+
+  securityFiles.forEach(filePath => {
+    if (!fs.existsSync(filePath)) return;
+    let content = fs.readFileSync(filePath, 'utf8');
+    const relPath = path.relative(ROOT_DIR, filePath);
+    let lang = 'en';
+    if (filePath.includes('zh-TW')) lang = 'zh';
+    if (filePath.includes('zh-CN')) lang = 'cn';
+
+    if (regex.test(content)) {
+      regex.lastIndex = 0;
+      content = content.replace(regex, `<!-- UDS_SUPPORTED_VERSIONS_START -->\n${tables[lang]}\n<!-- UDS_SUPPORTED_VERSIONS_END -->`);
+      fs.writeFileSync(filePath, content);
+      console.log(`✅ Security versions synced in: ${relPath}`);
+    }
+  });
+}
+
+/**
+ * Sync the "AI Tool Support" table's Skills/Slash Commands numeric columns
+ * for Claude Code and OpenCode. Per uds-manifest.json's `agent_support`
+ * block both tools have tier "complete" with skills: true / slash_commands:
+ * "native" — i.e. they ship the FULL skills/ and skills/commands/
+ * directories with no subset curation, so this is the same metric as the
+ * Features stats table above (manifest.stats.skills / .slash_commands), not
+ * a narrower "verified compatible" count. Other rows (Cursor, Cline, ...)
+ * intentionally stay qualitative ("Core", "18+") because those tools only
+ * get a partial/simulated subset — do not templatize those.
+ */
+function syncAiToolSupportCounts(manifest) {
+  console.log('🤖 Syncing AI Tool Support skill/command counts...');
+  const { skills, slash_commands: commands } = manifest.stats;
+
+  readmeFiles.forEach(filePath => {
+    if (!fs.existsSync(filePath)) return;
+    let content = fs.readFileSync(filePath, 'utf8');
+    let changed = false;
+
+    for (const tool of ['Claude Code', 'OpenCode']) {
+      const rowRegex = new RegExp(
+        `(\\| \\*\\*${tool}\\*\\* \\| [^|]+ \\| \\*\\*)\\d+(\\*\\* \\| \\*\\*)\\d+(\\*\\* \\|)`
+      );
+      if (rowRegex.test(content)) {
+        content = content.replace(rowRegex, `$1${skills}$2${commands}$3`);
+        changed = true;
+      }
+    }
+
+    if (changed) {
+      fs.writeFileSync(filePath, content);
+      console.log(`✅ AI Tool Support counts synced in: ${path.relative(ROOT_DIR, filePath)}`);
+    }
+  });
+}
+
+async function injectDocs() {
+  console.log('📝 Injecting data into documentation...');
+  const manifest = JSON.parse(fs.readFileSync(manifestPath, 'utf8'));
+  const packageJson = JSON.parse(fs.readFileSync(packageJsonPath, 'utf8'));
+
+  // Read stable version from plugin.json (marketplace = latest stable)
+  const pluginJsonPath = path.join(ROOT_DIR, '.claude-plugin', 'plugin.json');
+  let stableVersion = packageJson.version;
+  if (fs.existsSync(pluginJsonPath)) {
+    const pluginJson = JSON.parse(fs.readFileSync(pluginJsonPath, 'utf8'));
+    stableVersion = pluginJson.version;
+  }
+
+  // Sync README version lines from package.json
+  syncReadmeVersions(packageJson.version);
+
+  // Sync SECURITY.md supported versions table
+  syncSecurityVersions(packageJson.version, stableVersion);
+
+  // Sync AI Tool Support table's Claude Code / OpenCode skill+command counts
+  syncAiToolSupportCounts(manifest);
+
+  readmeFiles.forEach(filePath => {
+    if (!fs.existsSync(filePath)) return;
+
+    let content = fs.readFileSync(filePath, 'utf8');
+    let lang = 'en';
+    if (filePath.includes('zh-TW')) lang = 'zh';
+    if (filePath.includes('zh-CN')) lang = 'cn';
+
+    // Inject Stats Table
+    const statsTable = generateStatsTable(manifest, lang);
+    const regex = /<!-- UDS_STATS_TABLE_START -->[\s\S]*?<!-- UDS_STATS_TABLE_END -->/g;
+
+    if (content.match(regex)) {
+      content = content.replace(regex, `<!-- UDS_STATS_TABLE_START -->
+${statsTable}
+<!-- UDS_STATS_TABLE_END -->`);
+      fs.writeFileSync(filePath, content);
+      console.log(`✅ Injected stats into: ${path.relative(ROOT_DIR, filePath)}`);
+    } else {
+      console.warn(`⚠️ Placeholder not found in: ${path.relative(ROOT_DIR, filePath)}`);
+    }
+  });
+}
+
+injectDocs().catch(console.error);

@@ -1,0 +1,11 @@
+# SPDX-FileCopyrightText: 2018 Open Networking Foundation
+# SPDX-License-Identifier: Apache-2.0
+# SPDX-FileCopyrightText: 2026 Larry L. Peterson and Bruce S. Davie
+# SPDX-License-Identifier: CC-BY-4.0
+
+Sphinx~=8.2.3
+doc8~=2.0.0
+reuse~=5.0.2
+sphinx-rtd-theme~=3.0.2
+sphinxcontrib-spelling~=8.0.1
+sphinx-multiversion~=0.2.4

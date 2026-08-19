@@ -1,0 +1,672 @@
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+
+// Mock dependencies before importing the module
+vi.mock('chalk', () => ({
+  default: {
+    bold: vi.fn((s) => s),
+    gray: vi.fn((s) => s),
+    green: vi.fn((s) => s),
+    yellow: vi.fn((s) => s),
+    red: vi.fn((s) => s),
+    cyan: vi.fn((s) => s)
+  }
+}));
+
+vi.mock('ora', () => ({
+  default: vi.fn(() => ({
+    start: vi.fn().mockReturnThis(),
+    succeed: vi.fn().mockReturnThis(),
+    warn: vi.fn().mockReturnThis(),
+    fail: vi.fn().mockReturnThis()
+  }))
+}));
+
+// Bypass DEC-044 / XSPEC-071 self-adoption guard in unit tests — the
+// real guard inspects process.cwd() (the UDS source repo) and would
+// refuse the command under test.
+vi.mock('../../src/utils/detect-self-adoption.js', () => ({
+  detectSelfAdoption: vi.fn(() => false),
+  detectSelfAdoptionDetailed: vi.fn(() => ({ isSelfAdoption: false, signals: [] })),
+  guardAgainstSelfAdoption: vi.fn(() => true),
+  formatSelfAdoptionRefuseMessage: vi.fn(() => []),
+  formatSelfAdoptionForceWarning: vi.fn(() => [])
+}));
+
+vi.mock('../../src/utils/skills-installer.js', () => ({
+  installSkillsToMultipleAgents: vi.fn(() => ({
+    success: true,
+    installations: [],
+    totalInstalled: 0,
+    totalErrors: 0,
+    allFileHashes: {}
+  })),
+  installCommandsToMultipleAgents: vi.fn(() => ({
+    success: true,
+    installations: [],
+    totalInstalled: 0,
+    totalErrors: 0,
+    allFileHashes: {}
+  })),
+  getInstalledSkillsInfoForAgent: vi.fn(() => null),
+  getAvailableSkillNames: vi.fn(() => ['test-skill'])
+}));
+
+vi.mock('../../src/config/ai-agent-paths.js', () => ({
+  getAgentConfig: vi.fn((agent) => {
+    // Return configs with supportsSkills and skills for skills-compatible agents
+    const configs = {
+      'opencode': {
+        supportsSkills: true,
+        skills: { user: '~/.opencode/skills/', project: '.opencode/skills/' },
+        commands: { project: '.opencode/command/' }
+      },
+      'claude-code': {
+        supportsSkills: true,
+        skills: { user: '~/.claude/skills/', project: '.claude/skills/' },
+        commands: null
+      },
+      'cursor': { supportsSkills: false, skills: null, commands: null },
+      'copilot': { supportsSkills: false, skills: null, commands: { project: '.github/prompts/' } }
+    };
+    return configs[agent] || { supportsSkills: false, skills: null, commands: null };
+  }),
+  getAgentDisplayName: vi.fn((agent) => agent),
+  getSkillsDirForAgent: vi.fn(() => '/test/skills'),
+  getCommandsDirForAgent: vi.fn(() => '/test/commands')
+}));
+
+vi.mock('../../src/utils/registry.js', () => ({
+  getAllStandards: vi.fn(() => [
+    { id: 'test-standard', category: 'reference', name: 'Test Standard' }
+  ]),
+  getStandardsByLevel: vi.fn(() => [
+    { id: 'test-standard', category: 'reference', name: 'Test Standard' }
+  ]),
+  getRepositoryInfo: vi.fn(() => ({
+    standards: { version: '3.0.0' },
+    skills: { version: '1.0.0' }
+  })),
+  getSkillFiles: vi.fn(() => ({})),
+  getStandardSource: vi.fn((std) => `core/${std.id}.md`),
+  getOptionSource: vi.fn((opt) => `options/${opt.id}.md`),
+  findOption: vi.fn(() => null)
+}));
+
+vi.mock('../../src/utils/detector.js', () => ({
+  detectAll: vi.fn(() => ({
+    languages: { javascript: true, typescript: false },
+    frameworks: { react: false },
+    aiTools: { claudeCode: false, cursor: false }
+  }))
+}));
+
+vi.mock('../../src/utils/copier.js', () => ({
+  copyStandard: vi.fn(() => ({ success: true, error: null, path: '/test/path' })),
+  copyIntegration: vi.fn(() => ({ success: true, error: null, path: '/test/path' }))
+}));
+
+// Mock the core manifest module (init.js imports directly from here)
+vi.mock('../../src/core/manifest.js', () => ({
+  writeManifest: vi.fn(),
+  readManifest: vi.fn(() => null),
+  manifestExists: vi.fn(() => false)
+}));
+
+vi.mock('../../src/utils/github.js', () => ({
+  downloadSkillToLocation: vi.fn(() => ({ success: true, files: [] })),
+  getInstalledSkillsInfo: vi.fn(),
+  getProjectInstalledSkillsInfo: vi.fn(),
+  writeSkillsManifest: vi.fn(),
+  getSkillsDir: vi.fn(() => '/mock/skills'),
+  getProjectSkillsDir: vi.fn(() => '/test/project/.claude/skills'),
+  getAgentConfig: vi.fn((agent) => ({
+    supportsSkills: true,
+    skills: true,
+    commands: agent === 'claude-code' ? null : true
+  })),
+  getMarketplaceSkillsInfo: vi.fn(() => ({ installed: false, version: null })),
+  getAgentDisplayName: vi.fn((agent) => agent)
+}));
+
+vi.mock('../../src/prompts/init.js', () => ({
+  promptDisplayLanguage: vi.fn(() => 'en'),
+  promptAITools: vi.fn(() => ['claude-code']),
+  promptSkillsInstallLocation: vi.fn(() => []),
+  promptSkillsUpdate: vi.fn(() => ({ action: 'none', targets: [] })),
+  promptLanguage: vi.fn(() => []),
+  promptFramework: vi.fn(() => []),
+  promptConfirm: vi.fn(() => true),
+  promptFormat: vi.fn(() => 'ai'),
+  promptStandardOptions: vi.fn(() => ({})),
+  promptContentMode: vi.fn(() => 'index'),
+  promptMethodology: vi.fn(() => null),
+  promptCommandsInstallation: vi.fn(() => []),
+  handleAgentsMdSharing: vi.fn((tools) => tools),
+  promptAgentsMd: vi.fn(() => false),
+  promptReleaseMode: vi.fn(() => 'ci-cd'),
+  promptProjectContractStep: vi.fn(() => Promise.resolve())
+}));
+
+vi.mock('../../src/prompts/integrations.js', () => ({
+  promptIntegrationConfig: vi.fn(() => ({
+    mergeStrategy: 'replace',
+    config: {}
+  }))
+}));
+
+vi.mock('../../src/utils/integration-generator.js', () => ({
+  writeIntegrationFile: vi.fn(() => ({ success: true, path: '/test/.cursorrules' })),
+  integrationFileExists: vi.fn(() => false),
+  writeAgentsMdSummary: vi.fn(() => ({ success: true, path: 'AGENTS.md', blockHashInfo: null })),
+  getToolFilePath: vi.fn((tool) => {
+    const files = {
+      cursor: '.cursorrules',
+      windsurf: '.windsurfrules',
+      cline: '.clinerules',
+      copilot: '.github/copilot-instructions.md',
+      antigravity: 'INSTRUCTIONS.md',
+      'claude-code': 'CLAUDE.md',
+      codex: 'AGENTS.md',
+      'gemini-cli': 'GEMINI.md',
+      opencode: 'AGENTS.md'
+    };
+    return files[tool] || '';
+  }),
+  getSupportedTools: vi.fn(() => ['cursor', 'windsurf', 'cline', 'copilot', 'antigravity', 'claude-code', 'codex', 'gemini-cli', 'opencode']),
+  toolsShareFile: vi.fn((t1, t2) => (t1 === 'codex' && t2 === 'opencode') || (t1 === 'opencode' && t2 === 'codex')),
+  generateComplianceInstructions: vi.fn(() => '## Standards Compliance'),
+  generateStandardsIndex: vi.fn(() => '## Standards Index'),
+  resolveContentModeForTool: vi.fn((tool, userMode) => {
+    if (userMode && userMode !== 'auto') return { contentMode: userMode, level: undefined };
+    return { contentMode: 'index', level: 2 };
+  })
+}));
+
+import { initCommand } from '../../src/commands/init.js';
+import { manifestExists as isInitialized, writeManifest } from '../../src/core/manifest.js';
+import { detectAll } from '../../src/utils/detector.js';
+import { promptConfirm, promptAITools, promptSkillsInstallLocation, promptCommandsInstallation } from '../../src/prompts/init.js';
+import { getAgentDisplayName } from '../../src/config/ai-agent-paths.js';
+import { writeIntegrationFile } from '../../src/utils/integration-generator.js';
+
+describe('Init Command', () => {
+  let consoleLogs = [];
+  let exitSpy;
+
+  beforeEach(() => {
+    consoleLogs = [];
+    vi.spyOn(console, 'log').mockImplementation((...args) => {
+      consoleLogs.push(args.join(' '));
+    });
+    exitSpy = vi.spyOn(process, 'exit').mockImplementation(() => {
+      throw new Error('process.exit called');
+    });
+    vi.spyOn(process, 'cwd').mockReturnValue('/test/project');
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+    vi.clearAllMocks();
+  });
+
+  describe('initCommand', () => {
+    it('should show warning if already initialized', async () => {
+      isInitialized.mockReturnValue(true);
+
+      await initCommand({});
+
+      const output = consoleLogs.join('\n');
+      expect(output).toContain('Standards already initialized');
+    });
+
+    it('should detect project characteristics', async () => {
+      isInitialized.mockReturnValue(false);
+      promptConfirm.mockResolvedValue(false);
+
+      await initCommand({});
+
+      expect(detectAll).toHaveBeenCalledWith('/test/project');
+    });
+
+    it('should show detected languages', async () => {
+      isInitialized.mockReturnValue(false);
+      promptConfirm.mockResolvedValue(false);
+
+      await initCommand({});
+
+      const output = consoleLogs.join('\n');
+      expect(output).toContain('javascript');
+    });
+
+    it('should proceed with installation when confirmed', async () => {
+      isInitialized.mockReturnValue(false);
+      promptConfirm.mockResolvedValue(true);
+
+      await expect(initCommand({})).rejects.toThrow('process.exit called');
+
+      const output = consoleLogs.join('\n');
+      expect(output).toContain('Standards initialized successfully');
+    });
+
+    it('should cancel installation when not confirmed', async () => {
+      isInitialized.mockReturnValue(false);
+      promptConfirm.mockResolvedValue(false);
+
+      await initCommand({});
+
+      const output = consoleLogs.join('\n');
+      expect(output).toContain('Installation cancelled');
+    });
+
+    it('should show configuration summary', async () => {
+      isInitialized.mockReturnValue(false);
+      promptConfirm.mockResolvedValue(true);
+
+      await expect(initCommand({})).rejects.toThrow('process.exit called');
+
+      const output = consoleLogs.join('\n');
+      expect(output).toContain('Configuration Summary');
+    });
+
+    it('should show next steps after installation', async () => {
+      isInitialized.mockReturnValue(false);
+      promptConfirm.mockResolvedValue(true);
+
+      await expect(initCommand({})).rejects.toThrow('process.exit called');
+
+      const output = consoleLogs.join('\n');
+      expect(output).toContain('Next steps');
+      expect(output).toContain('.standards');
+    });
+
+    it('should use marketplace location when --skills-location=marketplace', async () => {
+      isInitialized.mockReturnValue(false);
+
+      await expect(initCommand({
+        yes: true,
+        skillsLocation: 'marketplace'
+      })).rejects.toThrow('process.exit called');
+
+      const output = consoleLogs.join('\n');
+      expect(output).toContain('Plugin Marketplace');
+    });
+
+    it('should use project location when --skills-location=project', async () => {
+      isInitialized.mockReturnValue(false);
+
+      await expect(initCommand({
+        yes: true,
+        skillsLocation: 'project'
+      })).rejects.toThrow('process.exit called');
+
+      const output = consoleLogs.join('\n');
+      expect(output).toContain('install/update to project');
+    });
+  });
+
+  describe('OpenCode Skills Support', () => {
+    it('should treat OpenCode as a skills-compatible tool', async () => {
+      // In --yes mode, AI tools come from detectAll
+      // Mock detectAll to return only opencode detected
+      detectAll.mockReturnValue({
+        languages: { javascript: true },
+        frameworks: {},
+        aiTools: { opencode: true, claudeCode: false, cursor: false }
+      });
+
+      isInitialized.mockReturnValue(false);
+
+      await expect(initCommand({ yes: true })).rejects.toThrow('process.exit called');
+
+      const output = consoleLogs.join('\n');
+      // When only OpenCode is detected with --yes, skills should be offered
+      // Default is marketplace for skills-compatible tools
+      expect(output).toContain('Plugin Marketplace');
+    });
+
+    it('should offer skills when both Claude Code and OpenCode are selected', async () => {
+      // Mock detectAll to return both claude-code and opencode detected
+      detectAll.mockReturnValue({
+        languages: { javascript: true },
+        frameworks: {},
+        aiTools: { claudeCode: true, opencode: true, cursor: false }
+      });
+
+      isInitialized.mockReturnValue(false);
+
+      await expect(initCommand({ yes: true })).rejects.toThrow('process.exit called');
+
+      const output = consoleLogs.join('\n');
+      // Both tools support skills, so skills should be offered
+      expect(output).toContain('Plugin Marketplace');
+    });
+
+    it('should NOT offer skills when OpenCode is selected with non-skills tools', async () => {
+      // In --yes mode, AI tools come from detectAll, not promptAITools
+      // Mock detectAll to return opencode + cursor detected
+      detectAll.mockReturnValue({
+        languages: { javascript: true },
+        frameworks: {},
+        aiTools: { opencode: true, cursor: true, claudeCode: false }
+      });
+
+      isInitialized.mockReturnValue(false);
+
+      await expect(initCommand({ yes: true })).rejects.toThrow('process.exit called');
+
+      // When non-skills tools (cursor) are included, skills should not be offered
+      const output = consoleLogs.join('\n');
+      expect(output).not.toContain('Plugin Marketplace');
+    });
+  });
+
+  describe('Manifest Generation in Non-Interactive Mode', () => {
+    it('should save standard options to manifest in non-interactive mode', async () => {
+      isInitialized.mockReturnValue(false);
+
+      await expect(initCommand({ yes: true })).rejects.toThrow('process.exit called');
+
+      // Verify writeManifest was called with correct options
+      expect(writeManifest).toHaveBeenCalled();
+      const manifestArg = writeManifest.mock.calls[0][0];
+
+      expect(manifestArg.options).toEqual({
+        display_language: 'en',
+        workflow: 'github-flow',
+        merge_strategy: 'squash',
+        output_language: 'english',
+        test_levels: ['unit-testing', 'integration-testing', 'system-testing', 'e2e-testing'],
+        release_mode: 'ci-cd'
+      });
+    });
+
+    it('should save detected aiTools to manifest in non-interactive mode', async () => {
+      // Mock detectAll to return Claude Code detected
+      detectAll.mockReturnValue({
+        languages: { javascript: true },
+        frameworks: {},
+        aiTools: { claudeCode: true, cursor: false }
+      });
+
+      isInitialized.mockReturnValue(false);
+
+      await expect(initCommand({ yes: true })).rejects.toThrow('process.exit called');
+
+      // Verify writeManifest was called with correct aiTools
+      expect(writeManifest).toHaveBeenCalled();
+      const manifestArg = writeManifest.mock.calls[0][0];
+
+      expect(manifestArg.aiTools).toEqual(['claude-code']);
+    });
+
+    it('should save multiple detected aiTools to manifest', async () => {
+      // Mock detectAll to return multiple AI tools detected
+      detectAll.mockReturnValue({
+        languages: { javascript: true },
+        frameworks: {},
+        aiTools: { claudeCode: true, opencode: true, cursor: false }
+      });
+
+      isInitialized.mockReturnValue(false);
+
+      await expect(initCommand({ yes: true })).rejects.toThrow('process.exit called');
+
+      // Verify writeManifest was called with correct aiTools
+      expect(writeManifest).toHaveBeenCalled();
+      const manifestArg = writeManifest.mock.calls[0][0];
+
+      expect(manifestArg.aiTools).toContain('claude-code');
+      expect(manifestArg.aiTools).toContain('opencode');
+    });
+
+    it('should respect custom options from CLI flags', async () => {
+      isInitialized.mockReturnValue(false);
+
+      await expect(initCommand({
+        yes: true,
+        workflow: 'gitflow',
+        mergeStrategy: 'merge-commit',
+        outputLang: 'traditional-chinese',
+        testLevels: 'unit-testing,e2e-testing'
+      })).rejects.toThrow('process.exit called');
+
+      // Verify writeManifest was called with custom options
+      expect(writeManifest).toHaveBeenCalled();
+      const manifestArg = writeManifest.mock.calls[0][0];
+
+      expect(manifestArg.options.workflow).toBe('gitflow');
+      expect(manifestArg.options.merge_strategy).toBe('merge-commit');
+      expect(manifestArg.options.output_language).toBe('traditional-chinese');
+      expect(manifestArg.options.test_levels).toEqual(['unit-testing', 'e2e-testing']);
+    });
+
+    it('should save options even when using marketplace skills location', async () => {
+      // Mock detectAll to return Claude Code (triggers Skills/marketplace)
+      detectAll.mockReturnValue({
+        languages: { javascript: true },
+        frameworks: {},
+        aiTools: { claudeCode: true }
+      });
+
+      isInitialized.mockReturnValue(false);
+
+      await expect(initCommand({ yes: true })).rejects.toThrow('process.exit called');
+
+      // Verify options are saved regardless of skills location
+      expect(writeManifest).toHaveBeenCalled();
+      const manifestArg = writeManifest.mock.calls[0][0];
+
+      expect(manifestArg.options.workflow).toBe('github-flow');
+      expect(manifestArg.options.merge_strategy).toBe('squash');
+    });
+
+    it('should auto-install commands for detected commands-supported agents', async () => {
+      // Mock detectAll to return opencode (supports commands)
+      detectAll.mockReturnValue({
+        languages: { javascript: true },
+        frameworks: {},
+        aiTools: { opencode: true, claudeCode: false }
+      });
+
+      isInitialized.mockReturnValue(false);
+
+      await expect(initCommand({ yes: true })).rejects.toThrow('process.exit called');
+
+      // Verify manifest includes commands installation
+      expect(writeManifest).toHaveBeenCalled();
+      const manifestArg = writeManifest.mock.calls[0][0];
+
+      expect(manifestArg.commands.installed).toBe(true);
+      // Commands installations now use {agent, level} format
+      expect(manifestArg.commands.installations.some(i => i.agent === 'opencode')).toBe(true);
+    });
+
+    it('should not install commands for agents that do not support commands', async () => {
+      // Mock detectAll to return only claude-code (no file-based commands)
+      detectAll.mockReturnValue({
+        languages: { javascript: true },
+        frameworks: {},
+        aiTools: { claudeCode: true, cursor: false }
+      });
+
+      isInitialized.mockReturnValue(false);
+
+      await expect(initCommand({ yes: true })).rejects.toThrow('process.exit called');
+
+      // Verify manifest does not include commands installation
+      expect(writeManifest).toHaveBeenCalled();
+      const manifestArg = writeManifest.mock.calls[0][0];
+
+      expect(manifestArg.commands.installed).toBe(false);
+      expect(manifestArg.commands.installations).toEqual([]);
+    });
+
+    it('should install commands for multiple commands-supported agents', async () => {
+      // Mock detectAll to return opencode and copilot (both support commands)
+      detectAll.mockReturnValue({
+        languages: { javascript: true },
+        frameworks: {},
+        aiTools: { opencode: true, copilot: true }
+      });
+
+      isInitialized.mockReturnValue(false);
+
+      await expect(initCommand({ yes: true })).rejects.toThrow('process.exit called');
+
+      // Verify manifest includes both agents
+      expect(writeManifest).toHaveBeenCalled();
+      const manifestArg = writeManifest.mock.calls[0][0];
+
+      expect(manifestArg.commands.installed).toBe(true);
+      // Commands installations now use {agent, level} format
+      expect(manifestArg.commands.installations.some(i => i.agent === 'opencode')).toBe(true);
+      expect(manifestArg.commands.installations.some(i => i.agent === 'copilot')).toBe(true);
+    });
+  });
+
+  describe('Restart Agent Message with Multiple Tools', () => {
+    it('should show single tool name when one tool is installed via interactive mode', async () => {
+      isInitialized.mockReturnValue(false);
+
+      // Mock AI tools selection: only OpenCode
+      promptAITools.mockResolvedValue(['opencode']);
+
+      // Mock skills installation: OpenCode at project level
+      promptSkillsInstallLocation.mockResolvedValue([
+        { agent: 'opencode', level: 'project' }
+      ]);
+
+      // Mock commands installation: skip
+      promptCommandsInstallation.mockResolvedValue([]);
+
+      // Mock display name to return proper name
+      getAgentDisplayName.mockImplementation((agent) => {
+        const names = {
+          'opencode': 'OpenCode',
+          'claude-code': 'Claude Code'
+        };
+        return names[agent] || agent;
+      });
+
+      promptConfirm.mockResolvedValue(true);
+
+      await expect(initCommand({})).rejects.toThrow('process.exit called');
+
+      const output = consoleLogs.join('\n');
+      // Should show "Restart OpenCode to load new Skills"
+      expect(output).toContain('OpenCode');
+      expect(output).toMatch(/Restart.*OpenCode.*to load new Skills/);
+    });
+
+    it('should show multiple tool names joined by "/" when multiple tools are installed', async () => {
+      isInitialized.mockReturnValue(false);
+
+      // Mock AI tools selection: Claude Code and OpenCode
+      promptAITools.mockResolvedValue(['claude-code', 'opencode']);
+
+      // Mock skills installation: both tools at project level
+      promptSkillsInstallLocation.mockResolvedValue([
+        { agent: 'claude-code', level: 'project' },
+        { agent: 'opencode', level: 'project' }
+      ]);
+
+      // Mock commands installation: skip
+      promptCommandsInstallation.mockResolvedValue([]);
+
+      // Mock display names
+      getAgentDisplayName.mockImplementation((agent) => {
+        const names = {
+          'opencode': 'OpenCode',
+          'claude-code': 'Claude Code'
+        };
+        return names[agent] || agent;
+      });
+
+      promptConfirm.mockResolvedValue(true);
+
+      await expect(initCommand({})).rejects.toThrow('process.exit called');
+
+      const output = consoleLogs.join('\n');
+      // Should contain both tool names separated by " / "
+      expect(output).toContain('Claude Code');
+      expect(output).toContain('OpenCode');
+      // Verify the combined format
+      expect(output).toMatch(/Restart.*Claude Code.*\/.*OpenCode.*to load new Skills|Restart.*OpenCode.*\/.*Claude Code.*to load new Skills/);
+    });
+
+    it('should deduplicate tool names when same tool has user and project level', async () => {
+      isInitialized.mockReturnValue(false);
+
+      // Mock AI tools selection: only OpenCode
+      promptAITools.mockResolvedValue(['opencode']);
+
+      // Mock skills installation: OpenCode at both user and project level
+      promptSkillsInstallLocation.mockResolvedValue([
+        { agent: 'opencode', level: 'user' },
+        { agent: 'opencode', level: 'project' }
+      ]);
+
+      // Mock commands installation: skip
+      promptCommandsInstallation.mockResolvedValue([]);
+
+      // Mock display name
+      getAgentDisplayName.mockImplementation((agent) => {
+        const names = {
+          'opencode': 'OpenCode',
+          'claude-code': 'Claude Code'
+        };
+        return names[agent] || agent;
+      });
+
+      promptConfirm.mockResolvedValue(true);
+
+      await expect(initCommand({})).rejects.toThrow('process.exit called');
+
+      const output = consoleLogs.join('\n');
+      // Should show "OpenCode" only once (deduplicated)
+      const matches = output.match(/Restart.*OpenCode.*to load new Skills/g);
+      expect(matches).not.toBeNull();
+      // Verify OpenCode appears only once in the restart message (not "OpenCode / OpenCode")
+      expect(output).not.toMatch(/OpenCode.*\/.*OpenCode/);
+    });
+
+    it('should fallback to "Claude Code" when skillsInstallations is empty (marketplace mode)', async () => {
+      // In non-interactive mode with marketplace, skillsInstallations is not set
+      detectAll.mockReturnValue({
+        languages: { javascript: true },
+        frameworks: {},
+        aiTools: { claudeCode: true }
+      });
+
+      isInitialized.mockReturnValue(false);
+
+      await expect(initCommand({ yes: true })).rejects.toThrow('process.exit called');
+
+      const output = consoleLogs.join('\n');
+      // Should fallback to "Claude Code" when skillsInstallations is empty
+      expect(output).toMatch(/Restart.*Claude Code.*to load new Skills/);
+    });
+  });
+
+  describe('installedStandards flow to integration installer', () => {
+    it('should pass installed standards from standards-installer to integration-generator', async () => {
+      isInitialized.mockReturnValue(false);
+      promptConfirm.mockResolvedValue(true);
+
+      // Default mock: getAllStandards returns [{ id: 'test-standard', category: 'reference' }]
+      // getStandardSource returns 'core/test-standard.md'
+      // copyStandard returns { success: true }
+      // So standardsResults.standards = ['core/test-standard.md']
+      // After basename: ['test-standard.md']
+
+      await expect(initCommand({})).rejects.toThrow('process.exit called');
+
+      // Verify writeIntegrationFile received the installed standards (not empty array)
+      expect(writeIntegrationFile).toHaveBeenCalled();
+      const calls = writeIntegrationFile.mock.calls;
+      // Find a call and check the config argument (2nd param)
+      const configArg = calls[0][1];
+      expect(configArg.installedStandards).toContain('test-standard.md');
+    });
+  });
+});

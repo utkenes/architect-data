@@ -1,0 +1,118 @@
+[tag=example]
+== Quality Scenarios Example
+
+=== Performance Quality Scenarios
+
+[cols="20,80"]
+|===
+| **Quality Goal** | **Performance**
+| **Scenario ID** | PERF-001
+| **Scenario Name** | Peak Load Response Time
+| **Source** | End customer using web browser
+| **Stimulus** | User clicks "Add to Cart" button
+| **Environment** | Peak shopping period (Black Friday) with 50,000 concurrent users
+| **Artifact** | E-commerce web application
+| **Response** | System processes the request and updates cart
+| **Response Measure** | Response time < 2 seconds for 95% of requests
+| **Priority** | High
+| **Test Approach** | Load testing with JMeter simulating 50,000 concurrent users
+|===
+
+[cols="20,80"]
+|===
+| **Quality Goal** | **Performance**
+| **Scenario ID** | PERF-002
+| **Scenario Name** | Database Query Performance
+| **Source** | Product search service
+| **Stimulus** | Complex product search query with multiple filters
+| **Environment** | Normal operating conditions with 10,000 concurrent users
+| **Artifact** | Product catalog database and search service
+| **Response** | Return filtered product results
+| **Response Measure** | Query execution time < 500ms for 99% of searches
+| **Priority** | High
+| **Test Approach** | Database performance testing with real product data (1M+ products)
+|===
+
+=== Scalability Quality Scenarios
+
+[cols="20,80"]
+|===
+| **Quality Goal** | **Scalability**
+| **Scenario ID** | SCALE-001
+| **Scenario Name** | Automatic Horizontal Scaling
+| **Source** | Kubernetes monitoring system
+| **Stimulus** | CPU utilization exceeds 80% for 5 minutes
+| **Environment** | Production environment during traffic spike
+| **Artifact** | Microservices running in Kubernetes cluster
+| **Response** | System automatically scales up pod replicas
+| **Response Measure** | New pods deployed within 2 minutes, CPU utilization returns to <70%
+| **Priority** | Medium
+| **Test Approach** | Chaos engineering and automated scaling tests
+|===
+
+=== Security Quality Scenarios
+
+[cols="20,80"]
+|===
+| **Quality Goal** | **Security**
+| **Scenario ID** | SEC-001
+| **Scenario Name** | SQL Injection Attack Prevention
+| **Source** | Malicious user/automated attack tool
+| **Stimulus** | Attempts SQL injection through product search form
+| **Environment** | Production system exposed to internet
+| **Artifact** | Web application input validation and database access layer
+| **Response** | System blocks malicious input and logs security event
+| **Response Measure** | 100% of injection attempts blocked, alert sent to security team within 30 seconds
+| **Priority** | Critical
+| **Test Approach** | Penetration testing with OWASP testing methodology
+|===
+
+[cols="20,80"]
+|===
+| **Quality Goal** | **Security**
+| **Scenario ID** | SEC-002
+| **Scenario Name** | Personal Data Access Control
+| **Source** | Customer service representative
+| **Stimulus** | Attempts to access customer personal data
+| **Environment** | Normal business operations
+| **Artifact** | User management system and access control layer
+| **Response** | System verifies authorization and grants/denies access
+| **Response Measure** | Only authorized roles can access PII, all access attempts logged for audit
+| **Priority** | Critical
+| **Test Approach** | Role-based access testing and audit log verification
+|===
+
+=== Availability Quality Scenarios
+
+[cols="20,80"]
+|===
+| **Quality Goal** | **Availability**
+| **Scenario ID** | AVAIL-001
+| **Scenario Name** | Database Failover Recovery
+| **Source** | Hardware failure
+| **Stimulus** | Primary database server becomes unavailable
+| **Environment** | Production system during normal business hours
+| **Artifact** | Database cluster with primary/replica configuration
+| **Response** | System automatically fails over to replica database
+| **Response Measure** | Service restored within 60 seconds, < 5 minutes total downtime
+| **Priority** | High
+| **Test Approach** | Disaster recovery testing with scheduled failover exercises
+|===
+
+=== Usability Quality Scenarios
+
+[cols="20,80"]
+|===
+| **Quality Goal** | **Usability**
+| **Scenario ID** | USAB-001
+| **Scenario Name** | Mobile Checkout Process
+| **Source** | New customer using mobile device
+| **Stimulus** | Attempts to complete purchase using smartphone
+| **Environment** | Mobile web browser on 4G network
+| **Artifact** | Mobile-optimized checkout interface
+| **Response** | Customer successfully completes purchase
+| **Response Measure** | 90% of users complete checkout in <3 minutes without assistance
+| **Priority** | Medium
+| **Test Approach** | User experience testing with target demographic on various devices
+|===
+[tag=example]

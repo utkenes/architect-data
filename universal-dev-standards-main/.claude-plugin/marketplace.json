@@ -1,0 +1,33 @@
+{
+  "name": "asia-ostrich",
+  "owner": {
+    "name": "AsiaOstrich",
+    "email": "contact@asiaostrich.com"
+  },
+  "metadata": {
+    "description": "Official Universal Development Standards marketplace for Claude Code skills",
+    "homepage": "https://github.com/AsiaOstrich/universal-dev-standards",
+    "documentation": "https://github.com/AsiaOstrich/universal-dev-standards/blob/main/skills/README.md"
+  },
+  "plugins": [
+    {
+      "name": "universal-dev-standards",
+      "source": "./skills",
+      "description": "23 skills for development standards: commit messages, code review, testing, documentation, git workflow, release management, and more. Language-agnostic and framework-agnostic.",
+      "version": "6.7.5",
+      "license": "CC BY 4.0",
+      "keywords": [
+        "standards",
+        "skills",
+        "development",
+        "code-review",
+        "testing",
+        "commit-messages",
+        "documentation",
+        "git-workflow",
+        "semver",
+        "best-practices"
+      ]
+    }
+  ]
+}

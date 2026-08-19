@@ -1,0 +1,10 @@
+:jbake-title: Risk Assessment Matrix
+
+== Risk Assessment Matrix
+
+ifndef::projectRootDir[:projectRootDir: ../../..]
+
+[source, markdown]
+----
+include::{projectRootDir}/prompts/Risk-Assessment-Matrix.md[]
+----

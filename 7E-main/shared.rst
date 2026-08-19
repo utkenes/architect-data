@@ -1,0 +1,55 @@
+.. SPDX-FileCopyrightText: 2026 Larry L. Peterson and Bruce S. Davie
+.. SPDX-License-Identifier: CC-BY-4.0
+
+.. include:: chapters.rst
+
+Chapter |Shared|:  Mediating Access
+==============================================
+
+Chapter |Intro| highlights the challenge of multiplexing multiple users on a
+shared network, but focuses on how that problem manifests on switches.
+They buffer packets that need to be sent on a given output port, and
+decide which of those packets to send next (typically the one at the
+head of the queue). When connected to a point-to-point link, there is
+no fear that someone else might try to use that link at the same time
+you do. (There is a node at the other end of the link, but traffic
+being transmitted in each direction is managed independently, without
+the risk of interference.)
+
+Another possibility is to connect multiple nodes directly to a shared
+communication medium, a so-called *multi-access network*.  Wireless
+networks are an obvious example, where the "shared medium" is the
+space carrying radio signals. There are also wired examples, with the
+original Ethernet being the most widely deployed. Just as with
+multiple people in a room trying to talk at the same time, multiple
+nodes simultaneously initiating a transmission will interfere with each
+other. Some strategy is needed to decide whose turn it is to transmit
+(or speak) next.
+
+This chapter looks at three approaches, as adopted by three different
+network technologies. Wi-Fi and the Mobile Cellular Network\ [#]_ are
+two wireless examples; *Passive Optical Networks (PON)*\ —colloquially
+known as Fiber-to-the-Home—is the third. In addition to illustrating
+three different approaches to mediating access to shared resources,
+all three technologies can be categorized as *access networks*,
+indicating that they are the immediate network that edge hosts connect
+to, thereby being indirectly connected to the rest of the Internet.
+It is common for access networks to implement some form of
+authentication to ensure that the connecting host has permission to
+access its resources in the first place. Establishing identity is
+often the first step before resource allocation takes place.
+
+.. [#] For simplicity, we refer to the mobile cellular network as 5G,
+       except when we are making a point about issues that span
+       generations of the technology.
+
+Before looking at our three example networks in detail, we first take
+a closer look at the problems they are trying to solve, and the design
+options for addressing those problems. We also include a short primer
+on the unique challenges of managing radio spectrum.
+
+.. include:: shared/design.rst
+.. include:: shared/spectrum.rst
+.. include:: shared/wifi.rst
+.. include:: shared/cellular.rst
+.. include:: shared/pon.rst

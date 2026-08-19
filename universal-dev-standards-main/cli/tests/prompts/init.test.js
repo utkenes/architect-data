@@ -1,0 +1,592 @@
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+
+// Mock dependencies before importing the module
+vi.mock('chalk', () => {
+  // Create a chainable mock that works both as function and object
+  const createChainableMock = () => {
+    const fn = (s) => s;
+    fn.bold = (s) => s;
+    return fn;
+  };
+
+  return {
+    default: {
+      bold: (s) => s,
+      gray: (s) => s,
+      green: (s) => s,
+      yellow: (s) => s,
+      red: (s) => s,
+      cyan: (s) => s,
+      blue: (s) => s,
+      // Support chalk.white and chalk.white.bold
+      white: createChainableMock()
+    }
+  };
+});
+
+// Use hoisted to define mocks before vi.mock
+const { mockSelect, mockCheckbox, mockConfirm, mockInput } = vi.hoisted(() => ({
+  mockSelect: vi.fn(),
+  mockCheckbox: vi.fn(),
+  mockConfirm: vi.fn(),
+  mockInput: vi.fn()
+}));
+
+vi.mock('@inquirer/prompts', () => ({
+  select: mockSelect,
+  checkbox: mockCheckbox,
+  confirm: mockConfirm,
+  input: mockInput,
+  Separator: class Separator {
+    constructor(text) { this.text = text; this.type = 'separator'; }
+  }
+}));
+
+import {
+  promptAITools,
+  promptSkillsInstallLocation,
+  promptCommandsInstallation,
+  promptSkillsUpdate,
+  promptStandardsScope,
+  promptFormat,
+  promptGitWorkflow,
+  promptMergeStrategy,
+  promptOutputLanguage,
+  promptTestLevels,
+  promptStandardOptions,
+  promptInstallMode,
+  promptSkillsUpgrade,
+  promptLanguage,
+  promptFramework,
+  promptLocale,
+  promptIntegrations,
+  promptConfirm
+} from '../../src/prompts/init.js';
+
+describe('Init Prompts', () => {
+  let consoleLogs = [];
+
+  beforeEach(() => {
+    consoleLogs = [];
+    vi.spyOn(console, 'log').mockImplementation((...args) => {
+      consoleLogs.push(args.join(' '));
+    });
+    mockSelect.mockReset(); mockCheckbox.mockReset(); mockConfirm.mockReset(); mockInput.mockReset();
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+    vi.clearAllMocks();
+  });
+
+  describe('promptAITools', () => {
+    it('should return selected AI tools', async () => {
+      mockCheckbox.mockResolvedValue(['claude-code', 'cursor']);
+
+      const result = await promptAITools({});
+
+      expect(result).toEqual(['claude-code', 'cursor']);
+    });
+
+    it('should return empty array when nothing selected', async () => {
+      mockCheckbox.mockResolvedValue([]);
+
+      const result = await promptAITools({});
+
+      expect(result).toEqual([]);
+    });
+  });
+
+  describe('promptSkillsInstallLocation', () => {
+    it('should show marketplace tip for Claude Code', async () => {
+      mockCheckbox.mockResolvedValue(['claude-code:user']);
+
+      await promptSkillsInstallLocation(['claude-code']);
+
+      // Verify marketplace tip is shown in console output
+      const output = consoleLogs.join('\n');
+      expect(output).toContain('/plugin install universal-dev-standards@asia-ostrich');
+    });
+
+    it('should return user location', async () => {
+      mockCheckbox.mockResolvedValue(['claude-code:user']);
+
+      const result = await promptSkillsInstallLocation(['claude-code']);
+
+      expect(result).toEqual([{ agent: 'claude-code', level: 'user' }]);
+    });
+
+    it('should return project location', async () => {
+      mockCheckbox.mockResolvedValue(['claude-code:project']);
+
+      const result = await promptSkillsInstallLocation(['claude-code']);
+
+      expect(result).toEqual([{ agent: 'claude-code', level: 'project' }]);
+    });
+
+    it('should return empty array when none selected', async () => {
+      mockCheckbox.mockResolvedValue(['none']);
+
+      const result = await promptSkillsInstallLocation(['claude-code']);
+
+      expect(result).toEqual([]);
+    });
+
+    it('should prompt for Cursor skills installation (added Jan 2026, v2.3.35)', async () => {
+      // Cursor now supports SKILL.md as of v2.3.35 (Jan 2026)
+      mockCheckbox.mockResolvedValue(['cursor:project']);
+
+      const result = await promptSkillsInstallLocation(['cursor']);
+
+      expect(result).toEqual([{ agent: 'cursor', level: 'project' }]);
+    });
+
+    it('should support multi-agent selection', async () => {
+      mockCheckbox.mockResolvedValue(['claude-code:user', 'opencode:project']);
+
+      const result = await promptSkillsInstallLocation(['claude-code', 'opencode']);
+
+      expect(result).toEqual([
+        { agent: 'claude-code', level: 'user' },
+        { agent: 'opencode', level: 'project' }
+      ]);
+    });
+  });
+
+  describe('promptCommandsInstallation', () => {
+    it('should return user level location', async () => {
+      mockCheckbox.mockResolvedValue(['opencode:user']);
+
+      const result = await promptCommandsInstallation(['opencode']);
+
+      expect(result).toEqual([{ agent: 'opencode', level: 'user' }]);
+    });
+
+    it('should return project level location', async () => {
+      mockCheckbox.mockResolvedValue(['opencode:project']);
+
+      const result = await promptCommandsInstallation(['opencode']);
+
+      expect(result).toEqual([{ agent: 'opencode', level: 'project' }]);
+    });
+
+    it('should prompt for Cursor commands installation (added Jan 2026, v2.3.35)', async () => {
+      // Cursor now supports commands as of v2.3.35 (Jan 2026)
+      mockCheckbox.mockResolvedValue(['cursor:project']);
+
+      const result = await promptCommandsInstallation(['cursor']);
+
+      expect(result).toEqual([{ agent: 'cursor', level: 'project' }]);
+    });
+
+    it('should return empty array when empty selection', async () => {
+      mockCheckbox.mockResolvedValue([]);
+
+      const result = await promptCommandsInstallation(['opencode']);
+
+      expect(result).toEqual([]);
+    });
+
+    it('should support multi-agent selection with different levels', async () => {
+      mockCheckbox.mockResolvedValue(['opencode:user', 'copilot:project']);
+
+      const result = await promptCommandsInstallation(['opencode', 'copilot']);
+
+      expect(result).toEqual([
+        { agent: 'opencode', level: 'user' },
+        { agent: 'copilot', level: 'project' }
+      ]);
+    });
+
+    it('should deduplicate same agent with both levels, keeping project', async () => {
+      mockCheckbox.mockResolvedValue(['opencode:user', 'opencode:project']);
+
+      const result = await promptCommandsInstallation(['opencode']);
+
+      expect(result).toEqual([
+        { agent: 'opencode', level: 'project' }
+      ]);
+    });
+  });
+
+  describe('promptSkillsInstallLocation deduplication', () => {
+    it('should deduplicate same agent selected at both levels, keeping project', async () => {
+      mockCheckbox.mockResolvedValue(['claude-code:user', 'claude-code:project']);
+
+      const result = await promptSkillsInstallLocation(['claude-code']);
+
+      expect(result).toEqual([
+        { agent: 'claude-code', level: 'project' }
+      ]);
+    });
+
+    it('should show warning when deduplicating', async () => {
+      mockCheckbox.mockResolvedValue(['claude-code:user', 'claude-code:project']);
+
+      await promptSkillsInstallLocation(['claude-code']);
+
+      const output = consoleLogs.join('\n');
+      expect(output).toContain('Claude Code');
+    });
+
+    it('should not deduplicate different agents', async () => {
+      mockCheckbox.mockResolvedValue(['claude-code:user', 'opencode:project']);
+
+      const result = await promptSkillsInstallLocation(['claude-code', 'opencode']);
+
+      expect(result).toEqual([
+        { agent: 'claude-code', level: 'user' },
+        { agent: 'opencode', level: 'project' }
+      ]);
+    });
+  });
+
+  describe('promptSkillsUpdate', () => {
+    it('should return none when nothing needs update', async () => {
+      const result = await promptSkillsUpdate(
+        { installed: true, version: '1.0.0' },
+        { installed: true, version: '1.0.0' },
+        '1.0.0'
+      );
+
+      expect(result).toEqual({ action: 'none', targets: [] });
+    });
+
+    it('should prompt for update when project needs update', async () => {
+      mockSelect.mockResolvedValue('project');
+
+      const result = await promptSkillsUpdate(
+        { installed: true, version: '0.9.0' },
+        null,
+        '1.0.0'
+      );
+
+      expect(result).toEqual({ action: 'project', targets: ['project'] });
+    });
+
+    it('should prompt for update when user needs update', async () => {
+      mockSelect.mockResolvedValue('user');
+
+      const result = await promptSkillsUpdate(
+        null,
+        { installed: true, version: '0.9.0' },
+        '1.0.0'
+      );
+
+      expect(result).toEqual({ action: 'user', targets: ['user'] });
+    });
+
+    it('should return both targets when both selected', async () => {
+      mockSelect.mockResolvedValue('both');
+
+      const result = await promptSkillsUpdate(
+        { installed: true, version: '0.9.0' },
+        { installed: true, version: '0.8.0' },
+        '1.0.0'
+      );
+
+      expect(result).toEqual({ action: 'both', targets: ['project', 'user'] });
+    });
+  });
+
+  describe('promptStandardsScope', () => {
+    it('should return full when no skills', async () => {
+      const result = await promptStandardsScope(false);
+
+      expect(result).toBe('full');
+    });
+
+    it('should prompt when skills installed', async () => {
+      mockSelect.mockResolvedValue('minimal');
+
+      const result = await promptStandardsScope(true);
+
+      expect(result).toBe('minimal');
+    });
+  });
+
+  describe('promptFormat', () => {
+    it('should return selected format', async () => {
+      mockSelect.mockResolvedValue('ai');
+
+      const result = await promptFormat();
+
+      expect(result).toBe('ai');
+    });
+
+    it('should return human format', async () => {
+      mockSelect.mockResolvedValue('human');
+
+      const result = await promptFormat();
+
+      expect(result).toBe('human');
+    });
+
+    it('should return both format', async () => {
+      mockSelect.mockResolvedValue('both');
+
+      const result = await promptFormat();
+
+      expect(result).toBe('both');
+    });
+  });
+
+  describe('promptGitWorkflow', () => {
+    it('should return github-flow', async () => {
+      mockSelect.mockResolvedValue('github-flow');
+
+      const result = await promptGitWorkflow();
+
+      expect(result).toBe('github-flow');
+    });
+
+    it('should return gitflow', async () => {
+      mockSelect.mockResolvedValue('gitflow');
+
+      const result = await promptGitWorkflow();
+
+      expect(result).toBe('gitflow');
+    });
+  });
+
+  describe('promptMergeStrategy', () => {
+    it('should return squash', async () => {
+      mockSelect.mockResolvedValue('squash');
+
+      const result = await promptMergeStrategy();
+
+      expect(result).toBe('squash');
+    });
+
+    it('should return merge-commit', async () => {
+      mockSelect.mockResolvedValue('merge-commit');
+
+      const result = await promptMergeStrategy();
+
+      expect(result).toBe('merge-commit');
+    });
+  });
+
+  describe('promptOutputLanguage', () => {
+    it('should return english', async () => {
+      mockSelect.mockResolvedValue('english');
+
+      const result = await promptOutputLanguage();
+
+      expect(result).toBe('english');
+    });
+
+    it('should return bilingual when displayLanguage is zh-tw', async () => {
+      mockSelect.mockResolvedValue('bilingual');
+
+      const result = await promptOutputLanguage('zh-tw');
+
+      expect(result).toBe('bilingual');
+    });
+
+    it('should return bilingual when displayLanguage is zh-cn', async () => {
+      mockSelect.mockResolvedValue('bilingual');
+
+      const result = await promptOutputLanguage('zh-cn');
+
+      expect(result).toBe('bilingual');
+    });
+
+    it('should work with default displayLanguage (en)', async () => {
+      mockSelect.mockResolvedValue('traditional-chinese');
+
+      const result = await promptOutputLanguage();
+
+      expect(result).toBe('traditional-chinese');
+    });
+
+    it('should accept displayLanguage parameter', async () => {
+      mockSelect.mockResolvedValue('english');
+
+      // Should not throw when displayLanguage is provided
+      const result = await promptOutputLanguage('en');
+
+      expect(result).toBe('english');
+    });
+  });
+
+  describe('promptTestLevels', () => {
+    it('should return selected test levels', async () => {
+      mockCheckbox.mockResolvedValue(['unit-testing', 'integration-testing']);
+
+      const result = await promptTestLevels();
+
+      expect(result).toEqual(['unit-testing', 'integration-testing']);
+    });
+  });
+
+  describe('promptStandardOptions', () => {
+    it('should return options for level 1', async () => {
+      mockSelect.mockResolvedValue('english');
+
+      const result = await promptStandardOptions(1);
+
+      expect(result).toHaveProperty('output_language');
+    });
+
+    it('should return more options for level 2+ with experimental', async () => {
+      mockSelect
+        .mockResolvedValueOnce('github-flow')
+        .mockResolvedValueOnce('squash')
+        .mockResolvedValueOnce('english');
+      mockCheckbox.mockResolvedValueOnce(['unit-testing']);
+
+      const result = await promptStandardOptions(2, 'en', { experimental: true });
+
+      expect(result).toHaveProperty('workflow');
+      expect(result).toHaveProperty('merge_strategy');
+      expect(result).toHaveProperty('output_language');
+      expect(result).toHaveProperty('test_levels');
+    });
+
+    it('should default merge_strategy and test_levels without experimental', async () => {
+      mockSelect
+        .mockResolvedValueOnce('github-flow')
+        .mockResolvedValueOnce('english');
+
+      const result = await promptStandardOptions(2);
+
+      expect(result.workflow).toBe('github-flow');
+      expect(result.merge_strategy).toBe('squash');
+      expect(result.output_language).toBe('english');
+      expect(result.test_levels).toEqual(['unit-testing', 'integration-testing', 'system-testing', 'e2e-testing']);
+    });
+
+    it('should pass displayLanguage to promptOutputLanguage', async () => {
+      mockSelect.mockResolvedValue('bilingual');
+
+      const result = await promptStandardOptions(1, 'zh-cn');
+
+      expect(result.output_language).toBe('bilingual');
+    });
+
+    it('should use default displayLanguage when not provided', async () => {
+      mockSelect.mockResolvedValue('english');
+
+      const result = await promptStandardOptions(1);
+
+      expect(result.output_language).toBe('english');
+    });
+  });
+
+  describe('promptInstallMode', () => {
+    it('should return skills mode', async () => {
+      mockSelect.mockResolvedValue('skills');
+
+      const result = await promptInstallMode();
+
+      expect(result).toBe('skills');
+    });
+
+    it('should return full mode', async () => {
+      mockSelect.mockResolvedValue('full');
+
+      const result = await promptInstallMode();
+
+      expect(result).toBe('full');
+    });
+  });
+
+  describe('promptSkillsUpgrade', () => {
+    it('should return upgrade action', async () => {
+      mockSelect.mockResolvedValue('upgrade');
+
+      const result = await promptSkillsUpgrade('0.9.0', '1.0.0');
+
+      expect(result).toBe('upgrade');
+    });
+
+    it('should return keep action', async () => {
+      mockSelect.mockResolvedValue('keep');
+
+      const result = await promptSkillsUpgrade('0.9.0', '1.0.0');
+
+      expect(result).toBe('keep');
+    });
+  });
+
+  // promptLevel tests removed — Level system no longer exists
+
+  describe('promptLanguage', () => {
+    it('should return null when no languages detected', async () => {
+      const result = await promptLanguage({});
+
+      expect(result).toBeNull();
+    });
+
+    it('should return selected languages', async () => {
+      mockCheckbox.mockResolvedValue(['csharp']);
+
+      const result = await promptLanguage({ csharp: true });
+
+      expect(result).toEqual(['csharp']);
+    });
+  });
+
+  describe('promptFramework', () => {
+    it('should return null when no frameworks detected', async () => {
+      const result = await promptFramework({});
+
+      expect(result).toBeNull();
+    });
+
+    it('should return selected frameworks', async () => {
+      mockCheckbox.mockResolvedValue(['fat-free']);
+
+      const result = await promptFramework({ 'fat-free': true });
+
+      expect(result).toEqual(['fat-free']);
+    });
+  });
+
+  describe('promptLocale', () => {
+    it('should return zh-tw when confirmed', async () => {
+      mockConfirm.mockResolvedValue(true);
+
+      const result = await promptLocale();
+
+      expect(result).toBe('zh-tw');
+    });
+
+    it('should return null when not confirmed', async () => {
+      mockConfirm.mockResolvedValue(false);
+
+      const result = await promptLocale();
+
+      expect(result).toBeNull();
+    });
+  });
+
+  describe('promptIntegrations', () => {
+    it('should return selected integrations', async () => {
+      mockCheckbox.mockResolvedValue(['cursor', 'copilot']);
+
+      const result = await promptIntegrations({});
+
+      expect(result).toEqual(['cursor', 'copilot']);
+    });
+  });
+
+  describe('promptConfirm', () => {
+    it('should return true when confirmed', async () => {
+      mockConfirm.mockResolvedValue(true);
+
+      const result = await promptConfirm('Proceed?');
+
+      expect(result).toBe(true);
+    });
+
+    it('should return false when not confirmed', async () => {
+      mockConfirm.mockResolvedValue(false);
+
+      const result = await promptConfirm('Proceed?');
+
+      expect(result).toBe(false);
+    });
+  });
+});

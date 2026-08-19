@@ -1,0 +1,458 @@
+#!/usr/bin/env tsx
+/**
+ * Registry Completeness Checker
+ * 註冊表完整性檢查器
+ *
+ * Cross-platform TypeScript implementation. Run with `tsx`.
+ * This is the only copy of the comparison logic. pre-release-check.sh's
+ * step 18 calls this file directly (via its resolved $TSX). The old
+ * check-registry-completeness.sh (formerly a full second implementation,
+ * later a thin wrapper that execs this file) was removed under XSPEC-376
+ * R4/R7 — tests/scripts/check-registry-completeness.bats and
+ * scripts/reference-only-standards.json's $comment were updated in the
+ * same pass to address this file directly.
+ *
+ * Ensures every core standard has all required sync artifacts:
+ *   1. core/*.md exists → ai/standards/*.ai.yaml exists
+ *   2. core/*.md exists → standards-registry.json has entry
+ *   3. ai/standards/*.ai.yaml → .standards/*.ai.yaml (installed copy) — content
+ *      matches, not merely present. A present-but-stale copy (91 lines against
+ *      a 496-line source, XSPEC-362 W2) read as `[OK]` under an existence-only
+ *      check for months; the check exists to catch exactly that shape of drift,
+ *      so "the file is there" cannot be the whole test.
+ *   4. ai/standards/*.ai.yaml `enforcement:` blocks are complete and their
+ *      `hook_script` resolves to a real file. cli/src/compilers/claude-code
+ *      -compiler.js destructures `{ hook_script, trigger }` from this block
+ *      with no presence check upstream (base-compiler.js only requires
+ *      `enforcement != null`); a block missing either field compiles
+ *      silently into `hooks["undefined"]: [{ hooks: ["node undefined"] }]`
+ *      — no parse error, no exit 1, just a broken hook shipped in the
+ *      adopter's .claude/settings.json. Found this way in commit-message
+ *      .ai.yaml and security-standards.ai.yaml (both missing `trigger` +
+ *      `hook_script` since eff714e7, 2026-04-03) via `uds compile --target
+ *      claude-code --dry-run` on a project with only that file installed —
+ *      the field-presence check below is the general form of that probe.
+ *
+ * Check 3 (.standards/ drift) is a BLOCKING gate (XSPEC-376 R3b): a missing
+ * or content-drifted .standards/ copy exits 1, same as Check 1/2/4. Before
+ * this change it only ever produced an advisory warning (exit 0), which is
+ * how 5 real drifts (XSPEC-376 R3a) sat unnoticed across multiple releases
+ * — content that had been edited directly into the generated .standards/
+ * layer, invisible to every release gate that ran this script. See R3a's
+ * commit for how those 5 were reconciled before the gate was tightened.
+ *
+ * Escape hatch: set UDS_STANDARDS_DRIFT_OVERRIDE (any non-empty value) to
+ * downgrade a drift block to an advisory warning for THIS invocation only.
+ * There is no persistent "already used" state — the override is scoped to
+ * the environment variable being set for that one process, exactly like any
+ * other env var. Do not export it in a shell profile or bake it into any
+ * version-controlled file (CI workflow, package.json script, Dockerfile,
+ * Makefile, shell rc file): `tsx scripts/check-drift-override-clean.ts`
+ * fails the moment this variable's name appears in a tracked file, so a
+ * committed "always override" would break that separate gate instead of
+ * silently working forever.
+ *
+ * Usage: tsx scripts/check-registry-completeness.ts [--verbose]
+ */
+
+import { createHash } from 'node:crypto';
+import { existsSync, readFileSync, readdirSync } from 'node:fs';
+import { dirname, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
+import yaml from 'js-yaml';
+
+const __filename = fileURLToPath(import.meta.url);
+const SCRIPT_DIR = dirname(__filename);
+const ROOT_DIR = dirname(SCRIPT_DIR);
+
+// Verbose control (default quiet). Matches the --verbose convention landed
+// across this repo's other check-*.sh scripts in c8051d93 — [OK] lines are
+// per-item routine status (up to ~135 of them here: every core standard and
+// every ai/standards/*.ai.yaml), the bulk of this script's output once it
+// becomes part of pre-release-check.sh's step 18 instead of a lone `npm run
+// check:registry`. [MISSING]/[WARN] always print regardless of --verbose —
+// those are the lines that mean something is actually wrong.
+const VERBOSE = process.argv.includes('--verbose');
+
+// One-shot escape hatch for Check 3 (.standards/ drift is a BLOCKING gate —
+// see the file header). Truthy for any non-empty value; downgrades a drift
+// block to an advisory warning for this process only. There is nothing to
+// "reset" — simply not setting it next time is what makes the next run
+// block again.
+const DRIFT_OVERRIDE = Boolean(process.env.UDS_STANDARDS_DRIFT_OVERRIDE);
+
+const CORE_DIR = join(ROOT_DIR, 'core');
+const AI_STANDARDS_DIR = join(ROOT_DIR, 'ai', 'standards');
+const DOT_STANDARDS_DIR = join(ROOT_DIR, '.standards');
+const REGISTRY_FILE = join(ROOT_DIR, 'cli', 'standards-registry.json');
+const REFERENCE_ONLY_FILE = join(ROOT_DIR, 'scripts', 'reference-only-standards.json');
+
+// ANSI colors
+const RED = '\x1b[0;31m';
+const GREEN = '\x1b[0;32m';
+const YELLOW = '\x1b[1;33m';
+const BLUE = '\x1b[0;34m';
+const NC = '\x1b[0m';
+
+const NAME_MAP: Record<string, string> = {
+  'changelog-standards': 'changelog',
+  'code-review-checklist': 'code-review',
+  'commit-message-guide': 'commit-message',
+  'error-code-standards': 'error-codes',
+  'logging-standards': 'logging',
+  'testing-standards': 'testing',
+};
+
+// Single source: scripts/reference-only-standards.json. Do not hand-copy this
+// list — three other scripts (check-registry-completeness.sh,
+// check-standards-sync.sh, check-standards-sync.ps1) read the same file.
+//
+// NOTE: the previous inline copy also listed 'requirement-checklist',
+// 'requirement-template', 'requirement-document-template'. Those three are
+// templates/*.md, not core/*.md — listCoreMd() below only ever iterates
+// core/*.md, so those three names never matched anything here and were dead
+// entries in this script specifically. Dropped from the shared source; if a
+// future consumer needs them, add a separate list rather than reviving this
+// dead one.
+const REFERENCE_ONLY: ReadonlyArray<string> = JSON.parse(
+  readFileSync(REFERENCE_ONLY_FILE, 'utf8'),
+).referenceOnlyCore;
+
+function mapCoreToAi(coreName: string): string {
+  return NAME_MAP[coreName] ?? coreName;
+}
+
+function isReferenceOnly(name: string): boolean {
+  return REFERENCE_ONLY.includes(name);
+}
+
+function listCoreMd(): string[] {
+  if (!existsSync(CORE_DIR)) return [];
+  return readdirSync(CORE_DIR)
+    .filter((f) => f.endsWith('.md'))
+    .sort();
+}
+
+function main(): void {
+  let errors = 0;
+  let warnings = 0;
+
+  process.stdout.write('\n');
+  process.stdout.write('==========================================\n');
+  process.stdout.write('  Registry Completeness Checker\n');
+  process.stdout.write('  註冊表完整性檢查器\n');
+  process.stdout.write('==========================================\n');
+  process.stdout.write('\n');
+
+  // ───────────────────────────────────────────────────────────
+  // Check 1: core/*.md → ai/standards/*.ai.yaml
+  // ───────────────────────────────────────────────────────────
+  process.stdout.write(
+    `${BLUE}[1/4] Checking core/ → ai/standards/ completeness${NC}\n`,
+  );
+  process.stdout.write('----------------------------------------\n');
+
+  let coreCount = 0;
+  let aiMissing = 0;
+
+  const coreFiles = listCoreMd();
+  for (const filename of coreFiles) {
+    const coreBasename = filename.replace(/\.md$/, '');
+    if (isReferenceOnly(coreBasename)) continue;
+
+    coreCount += 1;
+
+    const aiName = mapCoreToAi(coreBasename);
+    const aiFile = join(AI_STANDARDS_DIR, `${aiName}.ai.yaml`);
+
+    if (existsSync(aiFile)) {
+      if (VERBOSE) {
+        process.stdout.write(
+          `  ${GREEN}[OK]${NC}      ${coreBasename}.md → ${aiName}.ai.yaml\n`,
+        );
+      }
+    } else {
+      process.stdout.write(
+        `  ${RED}[MISSING]${NC} ${coreBasename}.md → ${aiName}.ai.yaml (not found)\n`,
+      );
+      errors += 1;
+      aiMissing += 1;
+    }
+  }
+
+  process.stdout.write('\n');
+  process.stdout.write(`  Core standards: ${coreCount} | AI YAML missing: ${aiMissing}\n`);
+  process.stdout.write('\n');
+
+  // ───────────────────────────────────────────────────────────
+  // Check 2: core/*.md → standards-registry.json
+  // ───────────────────────────────────────────────────────────
+  process.stdout.write(
+    `${BLUE}[2/4] Checking core/ → standards-registry.json completeness${NC}\n`,
+  );
+  process.stdout.write('----------------------------------------\n');
+
+  let registryMissing = 0;
+  let registryContent = '';
+  if (existsSync(REGISTRY_FILE)) {
+    registryContent = readFileSync(REGISTRY_FILE, 'utf8');
+  }
+
+  for (const filename of coreFiles) {
+    const coreBasename = filename.replace(/\.md$/, '');
+    if (isReferenceOnly(coreBasename)) continue;
+
+    const aiName = mapCoreToAi(coreBasename);
+    const humanKey = `"core/${coreBasename}.md"`;
+    const aiKey = `"ai/standards/${aiName}.ai.yaml"`;
+
+    if (registryContent.includes(humanKey) || registryContent.includes(aiKey)) {
+      if (VERBOSE) {
+        process.stdout.write(
+          `  ${GREEN}[OK]${NC}      ${coreBasename}.md → registry entry found\n`,
+        );
+      }
+    } else {
+      process.stdout.write(
+        `  ${RED}[MISSING]${NC} ${coreBasename}.md → no registry entry\n`,
+      );
+      errors += 1;
+      registryMissing += 1;
+    }
+  }
+
+  process.stdout.write('\n');
+  process.stdout.write(`  Registry missing: ${registryMissing}\n`);
+  process.stdout.write('\n');
+
+  // ───────────────────────────────────────────────────────────
+  // Check 3: ai/standards/*.ai.yaml → .standards/*.ai.yaml
+  // ───────────────────────────────────────────────────────────
+  process.stdout.write(
+    `${BLUE}[3/4] Checking ai/standards/ → .standards/ installed copies${NC}\n`,
+  );
+  process.stdout.write('----------------------------------------\n');
+
+  let dotMissing = 0;
+  let dotTotal = 0;
+
+  let aiFiles: string[] = [];
+  if (existsSync(AI_STANDARDS_DIR)) {
+    aiFiles = readdirSync(AI_STANDARDS_DIR)
+      .filter((f) => f.endsWith('.ai.yaml'))
+      .sort();
+  }
+
+  let dotDrifted = 0;
+  let driftOverridden = 0;
+  const driftDetails: Array<{ name: string; sourceLines: number; installedLines: number }> = [];
+  const overriddenDetails: string[] = [];
+
+  for (const aiBasename of aiFiles) {
+    dotTotal += 1;
+    const aiFile = join(AI_STANDARDS_DIR, aiBasename);
+    const dotFile = join(DOT_STANDARDS_DIR, aiBasename);
+    if (!existsSync(dotFile)) {
+      dotMissing += 1;
+      if (DRIFT_OVERRIDE) {
+        process.stdout.write(
+          `  ${YELLOW}[OVERRIDE]${NC} ${aiBasename} → not in .standards/ (blocking suppressed by UDS_STANDARDS_DRIFT_OVERRIDE)\n`,
+        );
+        warnings += 1;
+        driftOverridden += 1;
+        overriddenDetails.push(`${aiBasename} (missing from .standards/)`);
+      } else {
+        process.stdout.write(
+          `  ${RED}[BLOCKED]${NC}  ${aiBasename} → not in .standards/ (run 'uds update' to sync)\n`,
+        );
+        errors += 1;
+      }
+      continue;
+    }
+
+    const sourceBuf = readFileSync(aiFile);
+    const installedBuf = readFileSync(dotFile);
+    // Content, not presence: a file that exists but no longer matches its
+    // source is exactly the failure mode check 3 exists to catch, and a
+    // presence-only test cannot distinguish it from a fresh sync.
+    const sourceHash = createHash('sha256').update(sourceBuf).digest('hex');
+    const installedHash = createHash('sha256').update(installedBuf).digest('hex');
+
+    if (sourceHash === installedHash) {
+      if (VERBOSE) {
+        process.stdout.write(
+          `  ${GREEN}[OK]${NC}      ${aiBasename} → .standards/ installed, content matches\n`,
+        );
+      }
+    } else {
+      const sourceLines = sourceBuf.toString('utf8').split('\n').length;
+      const installedLines = installedBuf.toString('utf8').split('\n').length;
+      dotDrifted += 1;
+      if (DRIFT_OVERRIDE) {
+        process.stdout.write(
+          `  ${YELLOW}[OVERRIDE]${NC} ${aiBasename} → .standards/ copy DRIFTED ` +
+            `(source ${sourceLines} lines vs installed ${installedLines} lines; blocking suppressed by UDS_STANDARDS_DRIFT_OVERRIDE)\n`,
+        );
+        warnings += 1;
+        driftOverridden += 1;
+        overriddenDetails.push(`${aiBasename} (${sourceLines} vs ${installedLines} lines)`);
+      } else {
+        process.stdout.write(
+          `  ${RED}[BLOCKED]${NC}  ${aiBasename} → .standards/ copy DRIFTED ` +
+            `(source ${sourceLines} lines vs installed ${installedLines} lines)\n`,
+        );
+        errors += 1;
+      }
+      driftDetails.push({ name: aiBasename, sourceLines, installedLines });
+    }
+  }
+
+  process.stdout.write('\n');
+  process.stdout.write(
+    `  AI standards: ${dotTotal} | .standards/ missing: ${dotMissing} | .standards/ content drifted: ${dotDrifted}\n`,
+  );
+  if (driftOverridden > 0) {
+    process.stdout.write(
+      `\n  ${YELLOW}⚠️  UDS_STANDARDS_DRIFT_OVERRIDE is set — ${driftOverridden} drift(s) downgraded from BLOCK to warning for this run only:${NC}\n`,
+    );
+    for (const d of overriddenDetails) {
+      process.stdout.write(`      - ${d}\n`);
+    }
+    process.stdout.write(
+      `  ${YELLOW}This override does not persist — the next run (without the variable set) will BLOCK on the same drift.${NC}\n`,
+    );
+  }
+  if (driftDetails.length > 0) {
+    process.stdout.write('\n  Drifted files (source lines vs installed lines):\n');
+    for (const d of driftDetails) {
+      process.stdout.write(`    - ${d.name}: ${d.sourceLines} vs ${d.installedLines}\n`);
+    }
+  }
+  process.stdout.write('\n');
+
+  // ───────────────────────────────────────────────────────────
+  // Check 4: ai/standards/*.ai.yaml `enforcement:` block completeness
+  // ───────────────────────────────────────────────────────────
+  process.stdout.write(
+    `${BLUE}[4/4] Checking ai/standards/ enforcement block completeness${NC}\n`,
+  );
+  process.stdout.write('----------------------------------------\n');
+
+  let enforcementCount = 0;
+  let enforcementBroken = 0;
+
+  for (const aiBasename of aiFiles) {
+    const aiFile = join(AI_STANDARDS_DIR, aiBasename);
+    let parsed: unknown;
+    try {
+      parsed = yaml.load(readFileSync(aiFile, 'utf8'));
+    } catch {
+      // check:ai-yaml already owns "does this file parse"; a parse failure
+      // here just means there is nothing to check for this file.
+      continue;
+    }
+    const enforcement = (parsed as { enforcement?: Record<string, unknown> } | null)
+      ?.enforcement;
+    if (enforcement == null) continue;
+
+    enforcementCount += 1;
+    const problems: string[] = [];
+
+    const trigger = enforcement.trigger;
+    if (typeof trigger !== 'string' || trigger.trim() === '') {
+      problems.push('missing `trigger` (compiles to hooks["undefined"])');
+    }
+
+    const hookScript = enforcement.hook_script;
+    if (typeof hookScript !== 'string' || hookScript.trim() === '') {
+      problems.push('missing `hook_script` (compiles to "node undefined")');
+    } else if (!existsSync(join(ROOT_DIR, hookScript))) {
+      problems.push(`hook_script points to a file that does not exist: ${hookScript}`);
+    }
+
+    if (problems.length === 0) {
+      if (VERBOSE) {
+        process.stdout.write(`  ${GREEN}[OK]${NC}      ${aiBasename}\n`);
+      }
+    } else {
+      enforcementBroken += 1;
+      errors += 1;
+      process.stdout.write(`  ${RED}[BROKEN]${NC}  ${aiBasename}\n`);
+      for (const p of problems) {
+        process.stdout.write(`             - ${p}\n`);
+      }
+    }
+  }
+
+  process.stdout.write('\n');
+  process.stdout.write(
+    `  Files with enforcement: blocks: ${enforcementCount} | broken: ${enforcementBroken}\n`,
+  );
+  process.stdout.write('\n');
+
+  // ───────────────────────────────────────────────────────────
+  // Summary
+  // ───────────────────────────────────────────────────────────
+  process.stdout.write('==========================================\n');
+  process.stdout.write('  Summary | 摘要\n');
+  process.stdout.write('==========================================\n');
+
+  if (errors > 0) {
+    process.stdout.write(
+      `${RED}Errors: ${errors}${NC} (Missing AI files, registry entries, broken enforcement ` +
+        'blocks, or blocked .standards/ drift)\n',
+    );
+    process.stdout.write('\n');
+    process.stdout.write('To fix errors:\n');
+    process.stdout.write('  - Create missing .ai.yaml files in ai/standards/\n');
+    process.stdout.write('  - Add missing entries to cli/standards-registry.json\n');
+    process.stdout.write(
+      '  - Run: ./scripts/check-standards-sync.sh for detailed sync info\n',
+    );
+    process.stdout.write(
+      '  - For [BROKEN] enforcement blocks: add the missing `trigger`/`hook_script`\n' +
+        '    fields, or fix the `hook_script` path, in ai/standards/<name>.ai.yaml,\n' +
+        '    then re-sync .standards/ (tsx scripts/sync-standard.ts <name>)\n',
+    );
+    process.stdout.write(
+      "  - For [BLOCKED] .standards/ drift: run 'uds update' in this project to sync\n" +
+        '    .standards/, or manually copy ai/standards/*.ai.yaml to .standards/. If\n' +
+        '    .standards/ has real content ai/standards/ lacks (edited directly into the\n' +
+        '    installed copy instead of the source), rescue that content into\n' +
+        '    ai/standards/ first — do not just overwrite it away (XSPEC-376 R3a).\n' +
+        '    One-shot override for this run only: UDS_STANDARDS_DRIFT_OVERRIDE=1\n' +
+        '    (see this file\'s header; never commit that variable to a tracked file —\n' +
+        '    tsx scripts/check-drift-override-clean.ts enforces that separately).\n',
+    );
+  }
+
+  if (warnings > 0) {
+    process.stdout.write(
+      `${YELLOW}Warnings: ${warnings}${NC} (.standards/ drift overridden by ` +
+        'UDS_STANDARDS_DRIFT_OVERRIDE for this run)\n',
+    );
+    process.stdout.write('\n');
+    process.stdout.write('To fix warnings:\n');
+    process.stdout.write("  - Run 'uds update' in this project to sync .standards/\n");
+    process.stdout.write('  - Or manually copy ai/standards/*.ai.yaml to .standards/\n');
+  }
+
+  if (errors === 0 && warnings === 0) {
+    process.stdout.write(`${GREEN}All checks passed! ✓${NC}\n`);
+    process.stdout.write(`  Core standards: ${coreCount}\n`);
+    process.stdout.write(`  AI YAML files: ${dotTotal}\n`);
+    process.stdout.write('  Registry entries: complete\n');
+    process.stdout.write('  .standards/ copies: complete\n');
+    process.stdout.write(`  Enforcement blocks: ${enforcementCount} checked, all complete\n`);
+  }
+
+  process.stdout.write('\n');
+
+  // Exit with error if there are errors (not warnings)
+  if (errors > 0) {
+    process.exit(1);
+  }
+  process.exit(0);
+}
+
+main();

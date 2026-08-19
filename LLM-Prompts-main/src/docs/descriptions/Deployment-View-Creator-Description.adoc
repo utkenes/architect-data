@@ -1,0 +1,58 @@
+// tag::purpose[]
+Design and document comprehensive system deployment architectures following arc42 Chapter 7 principles
+// end::purpose[]
+
+// tag::detailed[]
+=== Purpose
+The Deployment View Creator prompt helps systematically design and document comprehensive deployment architectures that address operational requirements, infrastructure decisions, and deployment strategies. It creates detailed deployment views following arc42 Chapter 7 principles, ensuring that infrastructure decisions are operationally-driven and well-documented.
+
+=== When to Use
+* Designing deployment architectures for new software systems
+* Creating arc42 Chapter 7 (Deployment View) documentation
+* When operational requirements are defined but deployment approach is unclear
+* Before major infrastructure decisions that will shape system operations
+* When planning cloud migration or infrastructure modernization
+* During architecture reviews to validate deployment strategies
+* When transitioning from solution design to operational implementation
+* For complex systems requiring comprehensive infrastructure planning
+
+=== What It Produces
+* **Operationally-Driven Architecture**: Deployment solutions directly tied to operational requirements
+* **Infrastructure Design**: Comprehensive infrastructure topology and component specifications
+* **Environment Strategy**: Multi-environment approach with promotion and deployment processes
+* **Network Architecture**: Security-focused network design with traffic flow documentation
+* **Deployment Automation**: CI/CD integration and deployment pattern recommendations
+* **Operational Procedures**: Monitoring, disaster recovery, and capacity planning strategies
+* **Cost Optimization**: Resource optimization and cost management strategies
+
+=== Key Benefits
+* **Operations-Focused**: Ensures every infrastructure decision supports operational requirements
+* **Systematic Approach**: 6-step process covers all aspects of deployment architecture
+* **Decision Traceability**: Clear rationale linking operational goals to infrastructure decisions
+* **Implementation Guidance**: Actionable deployment strategies and automation approaches
+* **Risk Management**: Proactive identification and mitigation of operational risks
+* **Cost Awareness**: Explicit consideration of cost optimization and resource efficiency
+
+=== Integration with arc42
+This prompt directly supports arc42 Chapter 7 (Deployment View) and connects to:
+
+* **Chapter 1 (Introduction and Goals)**: Operational goals provide foundation for deployment decisions
+* **Chapter 3 (System Scope and Context)**: External infrastructure constraints influence deployment
+* **Chapter 4 (Solution Strategy)**: Deployment architecture realizes strategic technology decisions
+* **Chapter 6 (Runtime View)**: Deployment supports runtime behavior and quality scenarios
+* **Chapter 9 (Architecture Decisions)**: Infrastructure decisions become formal ADRs
+* **Chapter 10 (Quality Requirements)**: Deployment architecture enables quality attribute achievement
+* **Chapter 11 (Risk and Technical Debt)**: Operational risks feed into risk management
+
+The deployment view serves as the bridge between logical architecture design and physical infrastructure implementation, ensuring all operational concerns are properly addressed.
+
+=== Special Features
+* **Multi-Environment Strategy**: Comprehensive approach to dev, test, staging, and production environments
+* **Security-First Design**: Integrated security architecture with network segmentation and access control
+* **Cloud-Native Patterns**: Support for modern deployment patterns like containers, serverless, and microservices
+* **Operational Excellence**: Focus on monitoring, automation, and operational procedures
+* **Disaster Recovery Planning**: Comprehensive backup, recovery, and business continuity strategies
+* **Cost Optimization**: Systematic approach to resource efficiency and cost management
+* **Compliance Integration**: Built-in consideration of regulatory and compliance requirements
+* **Evolution Planning**: Strategies for infrastructure modernization and technology refresh
+// end::detailed[]

@@ -1,0 +1,10 @@
+:jbake-title: arc42 Chapter Generator
+
+== arc42 Chapter Generator
+
+ifndef::projectRootDir[:projectRootDir: ../../..]
+
+[source, markdown]
+----
+include::{projectRootDir}/prompts/arc42-Chapter-Generator.md[]
+----

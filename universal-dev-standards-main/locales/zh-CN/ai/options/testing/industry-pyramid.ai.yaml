@@ -1,0 +1,155 @@
+# 业界测试金字塔 - AI 优化选项
+# 父标准: testing
+# 參考来源: Martin Fowler's Testing Pyramid, Google Testing Blog
+
+id: industry-pyramid
+meta:
+  parent: testing
+  version: "1.0.0"
+  language: zh-CN
+  description: 务实的 4 层测试金字塔，适合敏捷团队
+  sources:
+    - "Martin Fowler's Testing Pyramid (https://martinfowler.com/bliki/TestPyramid.html)"
+    - "Google Testing Blog (https://testing.googleblog.com)"
+
+best_for:
+  - 敏捷/Scrum 开发团队
+  - CI/CD 导向環境
+  - 中小型项目
+  - DevOps 实踐
+  - 快速迭代周期
+
+pyramid:
+  visual: |
+    ┌─────────┐
+    │   E2E   │  ←  3% (慢、成本高)
+    ├─────────┤
+    │   ST    │  ←  7% (中等速度)
+    ├─────────┤
+    │   IT    │  ← 20% (快速)
+    ├─────────┤
+    │   UT    │  ← 70% (非常快、数量多)
+    └─────────┘
+  ratio: "70/20/7/3"
+  note: "Mike Cohn 的经验建议，非强制标准"
+  rationale: |
+    - 更多单元测试 = 更快回馈
+    - 较少 E2E 测试 = 较低维护成本
+    - 集成测试捕捉界面问题
+    - 系统测试验证子系统行为（外部依赖使用 stub）
+
+levels:
+  - name: 单元测试
+    abbreviation: UT
+    percentage: 70
+    definition: 針对个别函數、方法或类别的隔離测试
+    scope: 单一函數/方法/类别
+    speed: "每个测试 < 100ms"
+    dependencies: 全部模擬
+    characteristics:
+      - 快速执行
+      - 确定性結果
+      - 無 I/O 操作
+      - 测试单一行为单元
+
+  - name: 集成测试
+    abbreviation: IT
+    percentage: 20
+    definition: 测试元件互动和数据流
+    scope: 多个元件互动
+    speed: "每个测试 < 1 秒"
+    dependencies: 真实与模拟混合
+    characteristics:
+      - 测试真实集成
+      - 可使用容器 (Testcontainers)
+      - 验证数据流
+
+  - name: 系统测试
+    abbreviation: ST
+    percentage: 7
+    definition: 测试完整子系统，外部依赖使用 stub
+    scope: 完整子系统验证
+    speed: "每个测试 < 10 秒"
+    dependencies: 内部服务真实，外部 API 使用 stub
+    characteristics:
+      - 验证子系统端对端行为
+      - 外部依赖使用 stub
+      - 在 SIT 环境中测试
+
+  - name: 端对端测试
+    abbreviation: E2E
+    percentage: 3
+    definition: 跨整体系统测试完整使用者工作流程
+    scope: 从使用者角度测试完整使用者流程
+    speed: "每个测试 30 秒到数分钟"
+    dependencies: 全部真实
+    characteristics:
+      - 模拟真实使用者行为
+      - 只测试关键路径
+      - 维护成本最高
+
+coverage_targets:
+  columns: [指標, 最低, 建议]
+  rows:
+    - [行覆蓋率, 70%, 85%]
+    - [分支覆蓋率, 60%, 80%]
+    - [函數覆蓋率, 80%, 90%]
+
+rules:
+  - id: follow-pyramid-ratio
+    trigger: 使用业界金字塔规划测试策略
+    instruction: 目标 UT/IT/ST/E2E 比例为 70/20/7/3（经验建议，非强制）
+    priority: required
+
+  - id: test-at-lowest-level
+    trigger: 决定在哪里新增测试
+    instruction: 在能提供信心的最低层级撰写测试
+    priority: recommended
+
+  - id: avoid-e2e-for-edge-cases
+    trigger: 测试邊界情况
+    instruction: 使用单元测试测试邊界情况，而非 E2E
+    priority: recommended
+
+  - id: integration-for-boundaries
+    trigger: 测试元件邊界
+    instruction: 使用集成测试验证界面契約
+    priority: recommended
+
+comparison_with_istqb:
+  columns: [业界层级, ISTQB 对应, 说明]
+  rows:
+    - [单元测试 (UT), 元件测试, 相同概念]
+    - [集成测试 (IT), 集成测试, 相同概念]
+    - [系统测试 (ST), 系统测试, 相同概念]
+    - [E2E 测试, 验收测试, 业界 E2E ≈ ISTQB 验收测试]
+
+when_to_choose:
+  choose_industry_when:
+    - 实踐敏捷/Scrum 方法論
+    - CI/CD 流程是关鍵
+    - 快速回饋是優先事项
+    - 团队小且跨職能
+    - 期望最小化文件負擔
+  avoid_industry_when:
+    - 需要正式 QA 认证
+    - 企业合規需求
+    - 專門 QA 团队偏好 ISTQB
+    - 需要稽核文件
+
+tools_by_level:
+  unit_testing:
+    javascript: [Jest, Vitest, Mocha]
+    python: [pytest, unittest]
+    java: [JUnit, TestNG]
+    csharp: [xUnit, NUnit, MSTest]
+    go: [testing package, testify]
+  integration_testing:
+    javascript: [Supertest, Testcontainers]
+    python: [pytest, Testcontainers]
+    java: [Spring Boot Test, Testcontainers]
+    csharp: [WebApplicationFactory, Testcontainers]
+  e2e_testing:
+    javascript: [Playwright, Cypress, Puppeteer]
+    python: [Playwright, Selenium]
+    java: [Selenium, Playwright]

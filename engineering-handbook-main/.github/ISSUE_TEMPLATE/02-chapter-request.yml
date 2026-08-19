@@ -1,0 +1,75 @@
+name: Chapter Request
+description: Suggest a new chapter or topic that should be added to the curriculum
+title: "Chapter request: "
+labels: ["content: request"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Suggest a topic you believe should be covered in one of the handbooks
+        (HLD or DSA today; more curricula planned).
+  - type: dropdown
+    id: book
+    attributes:
+      label: Which book?
+      options:
+        - HLD Handbook (content/hld/)
+        - DSA Handbook (content/dsa/)
+        - Proposing a brand-new book/curriculum
+    validations:
+      required: true
+  - type: input
+    id: title
+    attributes:
+      label: Proposed chapter title
+      placeholder: "Distributed Tracing at Scale"
+    validations:
+      required: true
+  - type: input
+    id: part
+    attributes:
+      label: Which part does it belong in?
+      description: |
+        HLD parts: Part 0 (Prerequisites) - Part 11 (Interview Framework), or Trade-offs Library.
+        DSA parts: Part 0 (Foundations) - Part 14 (Interview Framework), or Patterns / Editorials.
+        Use "Unsure / new part needed" if it doesn't fit anywhere existing.
+      placeholder: "HLD Part 6 - Reliability & Operations"
+    validations:
+      required: true
+  - type: textarea
+    id: why
+    attributes:
+      label: Why does this belong in the handbook?
+      description: Is it common in interviews? Essential for real-world systems? A gap in existing coverage?
+    validations:
+      required: true
+  - type: textarea
+    id: scope
+    attributes:
+      label: Suggested scope (3-8 bullet points)
+      description: What should the chapter cover?
+      placeholder: |
+        - How distributed traces propagate context (W3C Trace Context)
+        - Sampling strategies (head-based, tail-based, adaptive)
+        - OpenTelemetry collector architecture
+        - Storage backends (Tempo, Jaeger, X-Ray)
+        - Cost management at 1M+ spans/sec
+    validations:
+      required: true
+  - type: textarea
+    id: overlap
+    attributes:
+      label: Overlap with existing chapters
+      description: Does this overlap with anything already covered? Link relevant chapters.
+  - type: textarea
+    id: sources
+    attributes:
+      label: Suggested sources
+      description: Engineering blogs, papers, or books that cover this topic well.
+  - type: checkboxes
+    id: offer
+    attributes:
+      label: Willingness to contribute
+      options:
+        - label: I am willing to write this chapter myself
+        - label: I can review a draft if someone else writes it

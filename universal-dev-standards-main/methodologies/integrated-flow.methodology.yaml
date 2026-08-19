@@ -1,0 +1,872 @@
+# Integrated Flow - ATDD → SDD → BDD → TDD Methodology
+# Version: 1.0.0
+# Complete development workflow combining all test-driven methodologies
+
+$schema: "./methodology-schema.json"
+id: integrated-flow
+name: Integrated Development Flow
+nameZh: 整合開發流程
+version: 1.0.0
+description: Complete development workflow combining ATDD, SDD, BDD, and TDD for maximum quality and traceability.
+descriptionZh: 結合 ATDD、SDD、BDD 和 TDD 的完整開發工作流程，實現最高品質和可追溯性。
+status: experimental
+statusNote: "This methodology system will be redesigned in v4.0"
+statusNoteZh: "此方法論系統將在 v4.0 中重新設計"
+
+phases:
+  # ATDD Phases
+  - id: specification-workshop
+    name: Specification Workshop (ATDD)
+    nameZh: 規格工作坊 (ATDD)
+    description: Collaboratively define acceptance criteria with stakeholders
+    descriptionZh: 與利害關係人協作定義驗收條件
+    duration: "30-60 minutes"
+    emoji: "\U0001F91D"
+    methodology: atdd
+    checklist:
+      - id: po-presents
+        text: Product Owner presents user story
+        textZh: 產品負責人展示使用者故事
+        required: true
+      - id: team-questions
+        text: Team asks clarifying questions
+        textZh: 團隊提出澄清問題
+        required: true
+      - id: ac-defined
+        text: Acceptance criteria defined in Given-When-Then format
+        textZh: 以 Given-When-Then 格式定義驗收條件
+        required: true
+      - id: out-of-scope
+        text: Out of scope items documented
+        textZh: 範圍外事項已記錄
+        required: true
+    triggers:
+      entry:
+        - condition: new_feature_request
+        - condition: user_invokes_integrated_flow
+      exit:
+        - condition: acceptance_criteria_defined
+          nextPhase: spec-proposal
+    guidance:
+      prompt: |
+        ## 🤝 Phase 1: Specification Workshop (ATDD)
+
+        **Goal**: Define WHAT we're building with stakeholders.
+
+        ### User Story Template
+        ```markdown
+        ## User Story: [Title]
+
+        **As a** [role]
+        **I want** [feature]
+        **So that** [benefit]
+
+        ## Acceptance Criteria
+
+        ### AC-1: [Happy path]
+        **Given** [precondition]
+        **When** [action]
+        **Then** [expected result]
+
+        ## Out of Scope
+        - [Explicitly excluded items]
+        ```
+
+        ### Workshop Questions
+        1. What is the happy path?
+        2. What could go wrong?
+        3. What are the boundary conditions?
+
+        Let's start defining the acceptance criteria.
+      promptZh: |
+        ## 🤝 階段 1：規格工作坊 (ATDD)
+
+        **目標**：與利害關係人定義我們要建立什麼。
+
+        ### 使用者故事模板
+        ```markdown
+        ## 使用者故事：[標題]
+
+        **作為** [角色]
+        **我想要** [功能]
+        **以便** [好處]
+
+        ## 驗收條件
+
+        ### AC-1: [快樂路徑]
+        **Given** [前置條件]
+        **When** [動作]
+        **Then** [預期結果]
+
+        ## 範圍外
+        - [明確排除的事項]
+        ```
+
+        ### 工作坊問題
+        1. 快樂路徑是什麼？
+        2. 什麼可能出錯？
+        3. 邊界條件是什麼？
+
+        讓我們開始定義驗收條件。
+    reminders: []
+
+  # SDD Phases
+  - id: spec-proposal
+    name: Spec Proposal (SDD)
+    nameZh: 規格提案 (SDD)
+    description: Write technical specification based on acceptance criteria
+    descriptionZh: 根據驗收條件撰寫技術規格
+    duration: "1-4 hours"
+    emoji: "\U0001F4DD"
+    methodology: sdd
+    checklist:
+      - id: spec-created
+        text: SPEC document created with ID
+        textZh: 已建立帶 ID 的 SPEC 文件
+        required: true
+      - id: ac-linked
+        text: Acceptance criteria linked to spec
+        textZh: 驗收條件已連結到規格
+        required: true
+      - id: technical-design
+        text: Technical design documented
+        textZh: 技術設計已記錄
+        required: true
+      - id: dependencies-listed
+        text: Dependencies and risks identified
+        textZh: 依賴項和風險已識別
+        required: false
+    triggers:
+      entry:
+        - condition: acceptance_criteria_defined
+          fromPhase: specification-workshop
+      exit:
+        - condition: spec_submitted
+          nextPhase: spec-review
+    guidance:
+      prompt: |
+        ## 📝 Phase 2: Spec Proposal (SDD)
+
+        **Goal**: Document HOW we'll build it technically.
+
+        ### Spec Template
+        ```markdown
+        # [SPEC-XXX] Feature Title
+
+        ## Summary
+        Brief description of the proposed change.
+
+        ## References
+        - User Story: US-XXX
+        - Acceptance Criteria: AC-1, AC-2, AC-3
+
+        ## Motivation
+        Why is this change needed?
+
+        ## Detailed Design
+        Technical approach, affected components.
+
+        ## Dependencies
+        - [External dependencies]
+
+        ## Risks
+        - [Potential risks]
+        ```
+
+        Write the technical specification based on the acceptance criteria.
+      promptZh: |
+        ## 📝 階段 2：規格提案 (SDD)
+
+        **目標**：記錄我們如何從技術上建立它。
+
+        ### 規格模板
+        ```markdown
+        # [SPEC-XXX] 功能標題
+
+        ## 摘要
+        提議變更的簡要描述。
+
+        ## 參考
+        - 使用者故事：US-XXX
+        - 驗收條件：AC-1、AC-2、AC-3
+
+        ## 動機
+        為什麼需要這個變更？
+
+        ## 詳細設計
+        技術方法、受影響的元件。
+
+        ## 依賴項
+        - [外部依賴]
+
+        ## 風險
+        - [潛在風險]
+        ```
+
+        根據驗收條件撰寫技術規格。
+    reminders: []
+
+  - id: spec-review
+    name: Spec Review (SDD)
+    nameZh: 規格審查 (SDD)
+    description: Technical review and approval of specification
+    descriptionZh: 規格的技術審查和批准
+    duration: "1-2 days"
+    emoji: "\U0001F50D"
+    methodology: sdd
+    checklist:
+      - id: review-requested
+        text: Review requested from stakeholders
+        textZh: 已向利害關係人請求審查
+        required: true
+      - id: feedback-addressed
+        text: All feedback addressed
+        textZh: 所有回饋已處理
+        required: true
+      - id: spec-approved
+        text: Spec approved by reviewers
+        textZh: 規格已由審查者批准
+        required: true
+    triggers:
+      entry:
+        - condition: spec_submitted
+          fromPhase: spec-proposal
+      exit:
+        - condition: spec_approved
+          nextPhase: forward-derivation
+        - condition: spec_rejected
+          nextPhase: spec-proposal
+    guidance:
+      prompt: |
+        ## 🔍 Phase 3: Spec Review (SDD)
+
+        **Goal**: Get technical approval for the design.
+
+        ### Review Checklist
+        - [ ] Design addresses all acceptance criteria
+        - [ ] Technical approach is sound
+        - [ ] Dependencies are manageable
+        - [ ] Risks are acceptable
+
+        Request review from the appropriate stakeholders.
+      promptZh: |
+        ## 🔍 階段 3：規格審查 (SDD)
+
+        **目標**：獲得設計的技術批准。
+
+        ### 審查檢查清單
+        - [ ] 設計滿足所有驗收條件
+        - [ ] 技術方法是合理的
+        - [ ] 依賴項是可管理的
+        - [ ] 風險是可接受的
+
+        向適當的利害關係人請求審查。
+    reminders: []
+
+  # Forward Derivation Phase
+  - id: forward-derivation
+    name: Forward Derivation
+    nameZh: 正向推演
+    description: Automatically derive BDD scenarios and TDD test skeletons from approved spec
+    descriptionZh: 從已批准的規格自動推演 BDD 場景和 TDD 測試骨架
+    duration: "10-30 minutes"
+    emoji: "\U0001F504"
+    methodology: derivation
+    checklist:
+      - id: bdd-derived
+        text: BDD scenarios derived from acceptance criteria
+        textZh: 從驗收條件推演 BDD 場景
+        required: true
+      - id: tdd-skeleton-created
+        text: TDD test skeleton created
+        textZh: TDD 測試骨架已建立
+        required: true
+      - id: atdd-tables-generated
+        text: ATDD acceptance test tables generated
+        textZh: ATDD 驗收測試表格已生成
+        required: false
+      - id: files-reviewed
+        text: Generated files reviewed for accuracy
+        textZh: 已審查生成檔案的準確性
+        required: true
+    triggers:
+      entry:
+        - condition: spec_approved
+          fromPhase: spec-review
+      exit:
+        - condition: derivation_complete
+          nextPhase: discovery
+        - condition: skip_derivation
+          nextPhase: discovery
+    guidance:
+      prompt: |
+        ## 🔄 Phase 3.5: Forward Derivation
+
+        **Goal**: Auto-generate BDD/TDD/ATDD structures from approved spec.
+
+        ### Commands Available
+        | Command | Output | Purpose |
+        |---------|--------|---------|
+        | `/derive-bdd` | .feature | AC → Gherkin |
+        | `/derive-tdd` | .test.ts | AC → Test skeleton |
+        | `/derive-atdd` | acceptance.md | AC → Test table |
+        | `/derive-all` | All above | Full pipeline |
+
+        ### Anti-Hallucination Check
+        - SPEC has N acceptance criteria
+        - Generated outputs must have exactly N items each
+
+        Run `/derive-all specs/SPEC-XXX.md` to generate all test structures.
+      promptZh: |
+        ## 🔄 階段 3.5：正向推演
+
+        **目標**：從已批准的規格自動生成 BDD/TDD/ATDD 結構。
+
+        ### 可用命令
+        | 命令 | 輸出 | 用途 |
+        |------|------|------|
+        | `/derive-bdd` | .feature | AC → Gherkin |
+        | `/derive-tdd` | .test.ts | AC → 測試骨架 |
+        | `/derive-atdd` | acceptance.md | AC → 測試表格 |
+        | `/derive-all` | 以上全部 | 完整管道 |
+
+        ### 反幻覺檢查
+        - SPEC 有 N 個驗收條件
+        - 生成的輸出必須各有 N 個項目
+
+        執行 `/derive-all specs/SPEC-XXX.md` 以生成所有測試結構。
+    reminders: []
+
+  # BDD Phases
+  - id: discovery
+    name: Discovery (BDD)
+    nameZh: 探索 (BDD)
+    description: Explore behavior through Three Amigos collaboration
+    descriptionZh: 透過三劍客協作探索行為
+    duration: "30-60 minutes"
+    emoji: "\U0001F50E"
+    methodology: bdd
+    checklist:
+      - id: three-amigos
+        text: Three Amigos session conducted
+        textZh: 已進行三劍客會議
+        required: true
+      - id: examples-mapped
+        text: Examples mapped (rules, examples, questions)
+        textZh: 範例已對應（規則、範例、問題）
+        required: true
+      - id: scenarios-identified
+        text: Key scenarios identified
+        textZh: 關鍵場景已識別
+        required: true
+    triggers:
+      entry:
+        - condition: derivation_complete
+          fromPhase: forward-derivation
+        - condition: skip_derivation
+          fromPhase: forward-derivation
+      exit:
+        - condition: scenarios_identified
+          nextPhase: formulation
+    guidance:
+      prompt: |
+        ## 🔎 Phase 4: Discovery (BDD)
+
+        **Goal**: Explore behavior through conversation.
+
+        ### Example Mapping
+        | Color | Represents |
+        |-------|------------|
+        | Yellow | User Story |
+        | Blue | Rules/AC |
+        | Green | Examples |
+        | Red | Questions |
+
+        ### Three Amigos Questions
+        - **Business**: Why? What value?
+        - **Development**: How? Dependencies?
+        - **Testing**: What could go wrong?
+
+        Identify the key scenarios from the acceptance criteria.
+      promptZh: |
+        ## 🔎 階段 4：探索 (BDD)
+
+        **目標**：透過對話探索行為。
+
+        ### 範例對應
+        | 顏色 | 代表 |
+        |------|------|
+        | 黃色 | 使用者故事 |
+        | 藍色 | 規則/AC |
+        | 綠色 | 範例 |
+        | 紅色 | 問題 |
+
+        ### 三劍客問題
+        - **業務**：為什麼？有什麼價值？
+        - **開發**：如何做？依賴項？
+        - **測試**：什麼可能出錯？
+
+        從驗收條件識別關鍵場景。
+    reminders: []
+
+  - id: formulation
+    name: Formulation (BDD)
+    nameZh: 制定 (BDD)
+    description: Write Gherkin scenarios from discovered examples
+    descriptionZh: 從探索的範例撰寫 Gherkin 場景
+    duration: "1-2 hours"
+    emoji: "\U0001F4C4"
+    methodology: bdd
+    checklist:
+      - id: gherkin-written
+        text: Gherkin scenarios written
+        textZh: Gherkin 場景已撰寫
+        required: true
+      - id: declarative-language
+        text: Scenarios use declarative language
+        textZh: 場景使用宣告式語言
+        required: true
+      - id: scenarios-focused
+        text: Each scenario tests ONE behavior
+        textZh: 每個場景測試一個行為
+        required: true
+      - id: po-reviews
+        text: PO reviews scenarios for correctness
+        textZh: PO 審查場景的正確性
+        required: true
+    triggers:
+      entry:
+        - condition: scenarios_identified
+          fromPhase: discovery
+      exit:
+        - condition: scenarios_written
+          nextPhase: tdd-red
+    guidance:
+      prompt: |
+        ## 📄 Phase 5: Formulation (BDD)
+
+        **Goal**: Convert examples to executable Gherkin scenarios.
+
+        ### Gherkin Template
+        ```gherkin
+        Feature: [Feature name]
+
+          Scenario: [Scenario name]
+            Given [precondition]
+            When [action]
+            Then [expected outcome]
+        ```
+
+        ### Guidelines
+        - Use business language, not technical terms
+        - Keep scenarios to 3-5 steps
+        - One behavior per scenario
+
+        Write the Gherkin scenarios for the feature.
+      promptZh: |
+        ## 📄 階段 5：制定 (BDD)
+
+        **目標**：將範例轉換為可執行的 Gherkin 場景。
+
+        ### Gherkin 模板
+        ```gherkin
+        Feature: [功能名稱]
+
+          Scenario: [場景名稱]
+            Given [前置條件]
+            When [動作]
+            Then [預期結果]
+        ```
+
+        ### 指南
+        - 使用業務語言，而非技術術語
+        - 保持場景在 3-5 個步驟
+        - 每個場景一個行為
+
+        為功能撰寫 Gherkin 場景。
+    reminders: []
+
+  # TDD Phases
+  - id: tdd-red
+    name: Red Phase (TDD)
+    nameZh: 紅燈階段 (TDD)
+    description: Write failing tests based on scenarios
+    descriptionZh: 根據場景撰寫失敗的測試
+    duration: "1-5 minutes per test"
+    emoji: "\U0001F534"
+    methodology: tdd
+    checklist:
+      - id: test-written
+        text: Test written for ONE behavior
+        textZh: 為一個行為撰寫測試
+        required: true
+      - id: test-fails
+        text: Test fails for the RIGHT reason
+        textZh: 測試因正確的原因失敗
+        required: true
+      - id: descriptive-name
+        text: Test has descriptive name
+        textZh: 測試有描述性名稱
+        required: true
+    triggers:
+      entry:
+        - condition: scenarios_written
+          fromPhase: formulation
+        - condition: test_passes
+          fromPhase: tdd-refactor
+      exit:
+        - condition: test_fails
+          nextPhase: tdd-green
+    guidance:
+      prompt: |
+        ## 🔴 Phase 6: Red (TDD)
+
+        **Goal**: Write a failing test that describes expected behavior.
+
+        ### Test Guidelines
+        - Test ONE behavior at a time
+        - Use Arrange-Act-Assert pattern
+        - Descriptive test name: `should_[behavior]_when_[condition]`
+
+        Write the failing test.
+      promptZh: |
+        ## 🔴 階段 6：紅燈 (TDD)
+
+        **目標**：撰寫描述預期行為的失敗測試。
+
+        ### 測試指南
+        - 一次測試一個行為
+        - 使用 Arrange-Act-Assert 模式
+        - 描述性測試名稱：`should_[行為]_when_[條件]`
+
+        撰寫失敗的測試。
+    reminders:
+      - trigger: "time_elapsed > 10min"
+        message: "Taking too long in RED. Is the test scope too large?"
+        messageZh: "紅燈階段耗時過長。測試範圍是否太大？"
+
+  - id: tdd-green
+    name: Green Phase (TDD)
+    nameZh: 綠燈階段 (TDD)
+    description: Write minimum code to pass the test
+    descriptionZh: 撰寫最小程式碼使測試通過
+    duration: "1-10 minutes"
+    emoji: "\U0001F7E2"
+    methodology: tdd
+    checklist:
+      - id: minimum-code
+        text: MINIMUM code written to pass
+        textZh: 撰寫最小程式碼使通過
+        required: true
+      - id: test-passes
+        text: Test passes
+        textZh: 測試通過
+        required: true
+      - id: no-extra-features
+        text: No extra features added
+        textZh: 未添加額外功能
+        required: true
+    triggers:
+      entry:
+        - condition: test_fails
+          fromPhase: tdd-red
+      exit:
+        - condition: test_passes
+          nextPhase: tdd-refactor
+    guidance:
+      prompt: |
+        ## 🟢 Phase 7: Green (TDD)
+
+        **Goal**: Write MINIMUM code to make the test pass.
+
+        ### Guidelines
+        - "Fake it till you make it" is acceptable
+        - Don't over-engineer
+        - Just make it work
+
+        Implement the minimum code to pass the test.
+      promptZh: |
+        ## 🟢 階段 7：綠燈 (TDD)
+
+        **目標**：撰寫最小程式碼使測試通過。
+
+        ### 指南
+        - 「假裝直到成功」是可接受的
+        - 不要過度工程化
+        - 只要讓它能運作
+
+        實作最小程式碼使測試通過。
+    reminders:
+      - trigger: "time_elapsed > 15min"
+        message: "Taking too long in GREEN. Break down the problem."
+        messageZh: "綠燈階段耗時過長。拆分問題。"
+
+  - id: tdd-refactor
+    name: Refactor Phase (TDD)
+    nameZh: 重構階段 (TDD)
+    description: Improve code while keeping tests green
+    descriptionZh: 改進程式碼同時保持測試通過
+    duration: "5-15 minutes"
+    emoji: "\U0001F535"
+    methodology: tdd
+    checklist:
+      - id: tests-still-pass
+        text: All tests still pass
+        textZh: 所有測試仍然通過
+        required: true
+      - id: duplication-removed
+        text: Duplication removed (DRY)
+        textZh: 重複已消除 (DRY)
+        required: false
+      - id: names-improved
+        text: Names are clear
+        textZh: 命名清晰
+        required: false
+    triggers:
+      entry:
+        - condition: test_passes
+          fromPhase: tdd-green
+      exit:
+        - condition: all_bdd_scenarios_pass
+          nextPhase: demo
+        - condition: more_tests_needed
+          nextPhase: tdd-red
+    guidance:
+      prompt: |
+        ## 🔵 Phase 8: Refactor (TDD)
+
+        **Goal**: Improve code quality while keeping tests green.
+
+        ### Refactoring Checklist
+        - [ ] Remove duplication (DRY)
+        - [ ] Improve naming
+        - [ ] Extract methods if needed
+        - [ ] Run tests after each change
+
+        Refactor the code. If more behaviors need testing, return to RED.
+      promptZh: |
+        ## 🔵 階段 8：重構 (TDD)
+
+        **目標**：改進程式碼品質同時保持測試通過。
+
+        ### 重構檢查清單
+        - [ ] 消除重複 (DRY)
+        - [ ] 改進命名
+        - [ ] 如需要提取方法
+        - [ ] 每次變更後執行測試
+
+        重構程式碼。如果還有更多行為需要測試，返回紅燈階段。
+    reminders: []
+
+  # Verification Phases
+  - id: demo
+    name: Demo & Acceptance
+    nameZh: 展示與驗收
+    description: Demonstrate feature to stakeholders for acceptance
+    descriptionZh: 向利害關係人展示功能以獲得驗收
+    duration: "15-30 minutes"
+    emoji: "\U0001F3AC"
+    methodology: atdd
+    checklist:
+      - id: all-tests-pass
+        text: All acceptance tests pass
+        textZh: 所有驗收測試通過
+        required: true
+      - id: demo-prepared
+        text: Demo environment prepared
+        textZh: 展示環境已準備
+        required: true
+      - id: po-accepts
+        text: Product Owner accepts feature
+        textZh: 產品負責人接受功能
+        required: true
+    triggers:
+      entry:
+        - condition: all_bdd_scenarios_pass
+          fromPhase: tdd-refactor
+      exit:
+        - condition: feature_accepted
+          nextPhase: archive
+        - condition: criteria_refined
+          nextPhase: specification-workshop
+    guidance:
+      prompt: |
+        ## 🎬 Phase 9: Demo & Acceptance
+
+        **Goal**: Get formal acceptance from Product Owner.
+
+        ### Demo Structure
+        1. Context (1 min) - Remind story and AC
+        2. Tests (2 min) - Run tests live
+        3. Feature (5-10 min) - Walk through AC
+        4. Feedback (5 min) - Q&A
+
+        ### Outcomes
+        - ✅ Accepted → Archive
+        - 🔄 Refinement → Return to Workshop
+
+        Prepare and conduct the demo.
+      promptZh: |
+        ## 🎬 階段 9：展示與驗收
+
+        **目標**：從產品負責人獲得正式接受。
+
+        ### 展示結構
+        1. 背景 (1 分鐘) - 提醒故事和 AC
+        2. 測試 (2 分鐘) - 現場執行測試
+        3. 功能 (5-10 分鐘) - 走過 AC
+        4. 回饋 (5 分鐘) - Q&A
+
+        ### 結果
+        - ✅ 接受 → 歸檔
+        - 🔄 精煉 → 返回工作坊
+
+        準備並進行展示。
+    reminders: []
+
+  - id: archive
+    name: Archive & Complete
+    nameZh: 歸檔與完成
+    description: Archive spec, close story, merge code
+    descriptionZh: 歸檔規格、關閉故事、合併程式碼
+    duration: "15-30 minutes"
+    emoji: "\u2705"
+    methodology: sdd
+    checklist:
+      - id: spec-archived
+        text: Spec archived with PR/commit links
+        textZh: 規格已歸檔並連結 PR/commit
+        required: true
+      - id: story-closed
+        text: User story closed
+        textZh: 使用者故事已關閉
+        required: true
+      - id: code-merged
+        text: Code merged to main branch
+        textZh: 程式碼已合併到主分支
+        required: true
+    triggers:
+      entry:
+        - condition: feature_accepted
+          fromPhase: demo
+      exit: []
+    guidance:
+      prompt: |
+        ## ✅ Phase 10: Archive & Complete
+
+        **Goal**: Close out the feature properly.
+
+        ### Checklist
+        1. Archive spec with implementation links
+        2. Close user story
+        3. Merge code to main
+        4. Update documentation if needed
+
+        Congratulations! Feature complete.
+      promptZh: |
+        ## ✅ 階段 10：歸檔與完成
+
+        **目標**：正確結束功能。
+
+        ### 檢查清單
+        1. 歸檔規格並連結實作
+        2. 關閉使用者故事
+        3. 合併程式碼到 main
+        4. 如需要更新文件
+
+        恭喜！功能完成。
+    reminders: []
+
+checkpoints:
+  - id: phase-complete
+    trigger: phase_transition
+    intensity: suggest
+    action: |
+      Phase {{current_phase}} completed.
+
+      Integrated Flow Progress: {{current_phase_index}}/10 phases
+      Feature: {{feature_title}}
+
+      [1] Continue to next phase  [2] View status  [3] Commit changes
+    actionZh: |
+      階段 {{current_phase}} 完成。
+
+      整合流程進度：{{current_phase_index}}/10 個階段
+      功能：{{feature_title}}
+
+      [1] 繼續下一階段  [2] 檢視狀態  [3] 提交變更
+
+  - id: tdd-cycle-stuck
+    trigger: "time_in_tdd_phase > 30min"
+    intensity: warning
+    action: |
+      Warning: Stuck in TDD cycle for 30+ minutes.
+
+      Consider:
+      - Breaking into smaller behaviors
+      - Revisiting BDD scenarios
+      - Asking for help
+    actionZh: |
+      警告：在 TDD 循環中超過 30 分鐘。
+
+      考慮：
+      - 拆分成更小的行為
+      - 重新檢視 BDD 場景
+      - 尋求幫助
+
+commands:
+  - name: integrated-flow
+    description: Start integrated ATDD→SDD→BDD→TDD workflow
+    descriptionZh: 啟動整合的 ATDD→SDD→BDD→TDD 工作流程
+    usage: "/integrated-flow [feature]"
+    action: start_workflow
+  - name: flow-status
+    description: Show current phase in integrated flow
+    descriptionZh: 顯示整合流程的當前階段
+    usage: "/flow-status"
+    action: show_status
+  - name: flow-skip
+    description: Skip to a specific phase (advanced)
+    descriptionZh: 跳至特定階段（進階）
+    usage: "/flow-skip [phase-id]"
+    action: skip_phase
+
+integrations:
+  atdd:
+    enabled: true
+    phases: [specification-workshop, demo]
+  sdd:
+    enabled: true
+    phases: [spec-proposal, spec-review, archive]
+  forward-derivation:
+    enabled: true
+    phases: [forward-derivation]
+  bdd:
+    enabled: true
+    phases: [discovery, formulation]
+  tdd:
+    enabled: true
+    phases: [tdd-red, tdd-green, tdd-refactor]
+  checkin-standards:
+    enabled: true
+    mapping:
+      phase_complete: suggest_commit
+  code-review:
+    enabled: true
+    additionalChecks:
+      - "All acceptance criteria have tests"
+      - "Spec is approved and linked"
+      - "BDD scenarios pass"
+
+aiGuidance:
+  autoDetect: true
+  proactiveReminders: true
+  contextKeywords:
+    - "integrated flow"
+    - "full workflow"
+    - "ATDD to TDD"
+    - "complete development"
+    - "acceptance to unit"
+    - "forward derivation"
+    - "derive from spec"
+    - "spec to test"

@@ -1,0 +1,1546 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'nonce-{{ csp_nonce }}'; style-src 'unsafe-inline'; img-src data:; base-uri 'none'; form-action 'none'">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Migration Assessment — {{ project_id }}</title>
+<style>
+{% include '_styles.j2' %}
+
+/* Tab system */
+.tab-content { display: none }
+.tab-content.active { display: block }
+</style>
+</head>
+<body>
+
+<div class="header">
+  <div class="container">
+    <div class="header-inner">
+      <div class="header-logo">
+        <div class="aws-cube">BQ</div>
+        <div>
+          <h1 style="color:#fff;margin:0;font-size:1.125rem">Migration Assessment</h1>
+          <p style="color:rgba(255,255,255,.5);margin:2px 0 0 0;font-size:.75rem">BigQuery &rarr; AWS Lakehouse{% if recommended_engine == 'athena' %} (Athena){% else %} (Redshift){% endif %}</p>
+        </div>
+      </div>
+      <div class="header-meta">
+        Project: <strong>{{ project_id }}</strong> &middot;
+        {{ generated_at|timestamp }}
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="nav">
+  <div class="container">
+    <div class="nav-links">
+      <a href="#" data-tab="landing" class="active">Summary<span class="sub">&nbsp;</span></a>
+      <a href="#" data-tab="effort">Migration Effort<span class="sub">moving your data</span></a>
+      <a href="#" data-tab="query">Query Complexity<span class="sub">rewriting your SQL</span></a>
+    </div>
+  </div>
+</div>
+
+{% import '_help.j2' as help %}
+<div class="container" style="padding-top: var(--space-xl); padding-bottom: var(--space-xl);">
+
+<noscript>
+<div class="alert alert-warning">
+  <strong>JavaScript required</strong><br>
+  The entity tables need JavaScript. Summary and cost sections still work; for full entity
+  data without scripts, use the JSON files generated alongside this report.
+</div>
+</noscript>
+
+<!-- ═══════════════════════════════════════════════════════════════════════ -->
+<!-- TAB: LANDING / SUMMARY                                                 -->
+<!-- ═══════════════════════════════════════════════════════════════════════ -->
+<div id="tab-landing" class="tab-content active">
+
+{% if cost.estimate_basis_level == "LOW" %}
+<div class="alert alert-warning">
+  <strong>Low Confidence Cost Estimate</strong><br>
+  Compute cost estimates are based on incomplete data. See <a href="#assumptions">Assumptions &amp; Methodology</a> below.
+</div>
+{% endif %}
+
+<div class="section">
+  <div class="section-header">
+    <h2>Overview</h2>
+  </div>
+
+  <div class="row">
+    <div class="col-3">
+      <div class="card text-center">
+        <div class="card-body">
+          <div class="card-title">Total Entities</div>
+          <div class="stat-value">{{ summary.total_entities }}</div>
+        </div>
+      </div>
+    </div>
+    <div class="col-3">
+      <div class="card text-center">
+        <div class="card-body">
+          <div class="card-title">Tables</div>
+          <div class="stat-value">{{ summary.total_tables }}</div>
+        </div>
+      </div>
+    </div>
+    <div class="col-3">
+      <div class="card text-center">
+        <div class="card-body">
+          <div class="card-title">Total Size <span class="tip tooltip-icon" tabindex="0" data-tip="Top: BigQuery logical size (matches your console). Below: projected S3 Tables (Iceberg) footprint{% if storage_basis == 'measured' %} — measured from TABLE_STORAGE{% elif storage_basis == 'mixed' %} — measured where available, {{ pricing.physical_ratio }}x logical elsewhere{% else %} — estimated at {{ pricing.physical_ratio }}x logical{% endif %}.">i</span></div>
+          {% set lsize = summary.total_logical_size_gb|fmt_size_split %}
+          <div class="stat-value">{{ lsize[0] }} <span style="font-size:.875rem;font-weight:400">{{ lsize[1] }}</span></div>
+          <div style="font-size:.75rem;color:var(--color-text-secondary);margin-top:2px">&rarr; <strong>{{ summary.total_size_gb|fmt_size }}</strong> on S3 Tables (Iceberg)</div>
+        </div>
+      </div>
+    </div>
+    <div class="col-3">
+      <div class="card text-center">
+        <div class="card-body">
+          <div class="card-title">SQL Surface Confidence <span class="tip tooltip-icon" tabindex="0" data-tip="How much of your actual SQL the tool analyzed. Caps the reliability of all query-complexity ratings.">i</span></div>
+          <div class="stat-value">
+            <span class="badge badge-{{ summary.sql_surface_confidence|lower }} tip" tabindex="0" data-tip="{{ help.CONFIDENCE_HELP['sql_surface'][summary.sql_surface_confidence] }}" style="font-size:.875rem;padding:5px 14px">
+              {{ summary.sql_surface_confidence }}
+            </span>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Migration Readiness -->
+{% import '_donut.j2' as charts %}
+<div class="section">
+  <div class="section-header">
+    <h2>Migration Readiness</h2>
+  </div>
+
+  <div class="donut-row">
+    {{ charts.donut("Migration Effort", [
+      {"label": "Auto", "count": summary.effort_counts.AUTO or 0, "color": "green"},
+      {"label": "Assisted", "count": summary.effort_counts.ASSISTED or 0, "color": "amber"},
+      {"label": "Manual", "count": summary.effort_counts.MANUAL or 0, "color": "red"},
+    ]) }}
+    {# Scoped to SQL-owning entities (population REBUILT) — the same counts the
+       Query Complexity tab shows. summary.complexity_counts spans ALL entities
+       (plain tables can score ADAPT via the hub-entity bonus), which made the
+       landing donut disagree with the tab it summarizes (2026-08-03 sandbox validation
+       review: donut said 68 Adapt / 208, tab said 7 of 7). #}
+    {{ charts.donut("Query Complexity (SQL entities)", [
+      {"label": "Portable", "count": sql_counts.PORTABLE, "color": "green"},
+      {"label": "Adapt", "count": sql_counts.ADAPT, "color": "amber"},
+      {"label": "Rewrite", "count": sql_counts.REWRITE, "color": "red"},
+    ]) }}
+  </div>
+</div>
+
+<!-- Cost Comparison -->
+<div class="section">
+  <div class="section-header">
+    <h2>Cost Comparison</h2>
+    <span class="section-badge">monthly estimate</span>
+  </div>
+
+  {% if cost.bq_pricing_model == 'UNKNOWN' %}
+  {# MRI-2a: offline sentinel — pricing data unavailable #}
+  <div class="card" style="border-left: 4px solid var(--color-severity-info); margin-bottom: var(--space-md);">
+    <div class="card-body">
+      <p style="margin:0 0 .5rem 0;font-weight:600">Pricing data unavailable in this bundle</p>
+      <p style="margin:0 0 .5rem 0;font-size:.8125rem;color:var(--color-text-secondary)">
+        Query Engine cost comparison skipped. The engine recommendation below is signal-based only.
+        Re-run with live pricing or <code>--refresh-pricing</code> for cost figures.
+      </p>
+      {% if cost.recommendation %}
+      <p style="margin:0;font-size:.8125rem;color:var(--color-text-secondary)">
+        <strong>Engine recommendation (signal-based):</strong> {{ cost.recommendation.recommended_scenario }}
+        {% if engine_recommendation and engine_recommendation.override_reason %} — {{ engine_recommendation.override_reason }}{% endif %}
+      </p>
+      {% endif %}
+    </div>
+  </div>
+  {% else %}
+  {# Available or unavailable: both render AWS content (workload-based, valid either way) #}
+
+  {% if not cost.bq_cost_available %}
+  {# BigQuery cost unavailable — suppress comparison, render cause-specific notice #}
+  <div class="card" style="border-left: 4px solid var(--color-severity-warning); margin-bottom: var(--space-md);">
+    <div class="card-body">
+      <p style="margin:0 0 .5rem 0;font-weight:600">BigQuery cost could not be estimated for this Source.</p>
+      <p style="margin:0 0 .5rem 0;font-size:.8125rem;color:var(--color-text-secondary)">
+        {{ cost.bq_cost_unavailable_reason }}
+      </p>
+      {% set storage_line = namespace(found=None) %}
+      {% for ln in cost.bigquery_breakdown %}
+        {% if "storage" in ln.label|lower %}
+          {% set storage_line.found = ln %}
+        {% endif %}
+      {% endfor %}
+      {% if storage_line.found and storage_line.found.monthly %}
+      <p style="margin:0 0 .5rem 0;font-size:.8125rem;color:var(--color-text-muted)">
+        For reference, storage alone is approximately {{ storage_line.found.monthly|currency_precise }}/mo — compute could not be determined, so this is <em>not</em> the bill and no AWS savings comparison is shown.
+      </p>
+      {% endif %}
+      <p style="margin:0;font-size:.8125rem;color:var(--color-text-muted)">
+        Migration Effort and Query Complexity below are unaffected — they are derived from schema and query analysis, not billing.
+      </p>
+    </div>
+  </div>
+  {% else %}
+  {# BQ cost available: render cost-hero + savings tiles #}
+  <div class="cost-hero">
+    <div class="cost-hero__block">
+      {# Range basis (STANDARD capacity modelled from slots): show the modelled
+         range, not a false point (2026-08-11 MRI-1). Serializer omits None keys
+         — .get() avoids Jinja Undefined passing an `is not none` test. #}
+      {% set _bq_low = cost.get("bigquery_monthly_low") %}
+      <div class="cost-hero__label">{% if cost.bq_cost_basis == "customer_provided" %}BigQuery (customer-provided){% else %}BigQuery (Current){% if _bq_low is not none %}, modelled range{% endif %}{% endif %}</div>
+      <div class="cost-hero__value">{% if _bq_low is not none %}{{ _bq_low|currency_precise }} &ndash; {{ cost.bigquery_monthly|currency_precise }}{% else %}{{ cost.bigquery_monthly|currency_precise }}{% endif %}</div>
+      <div class="cost-hero__sub">{% for _ln in cost.bigquery_breakdown %}{% if 'capacity' in _ln.label|lower %}{{ _ln.label }}{% endif %}{% endfor %}{% if cost.bq_pricing_model == 'ON_DEMAND' %}On-Demand{% endif %}{% if cost.bq_pricing_region %} &middot; {{ cost.bq_pricing_region }}{% endif %}</div>
+    </div>
+    <div class="cost-hero__arrow"{% if cost.monthly_delta_low < 0 %} style="color: var(--color-severity-warning);"{% endif %}>
+      <svg viewBox="0 0 24 24" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14M12 5l7 7-7 7"/></svg>
+      {{ cost.monthly_delta_low|savings }}
+    </div>
+    <div class="cost-hero__block cost-hero__block--aws">
+      <div class="cost-hero__label">AWS Lakehouse{% if cost.recommendation %} ({{ cost.recommendation.recommended_scenario }}){% endif %}</div>
+      <div class="cost-hero__value" style="color: var(--color-severity-success);">{% if cost.aws_monthly_low == cost.aws_monthly_high %}{{ cost.aws_monthly_low|currency_precise }}{% else %}{{ cost.aws_monthly_low|currency_precise }} &ndash; {{ cost.aws_monthly_high|currency_precise }}{% endif %}</div>
+      <div class="cost-hero__sub">{% if cost.aws_pricing_region %}{{ cost.aws_pricing_region }}{% endif %}</div>
+    </div>
+  </div>
+
+  {# MEDIUM only: the LOW case already shows the page-top warning banner
+     pointing at the same Assumptions section — a third repeat adds nothing. #}
+  {% if cost.estimate_basis_level == "MEDIUM" %}
+  <p style="margin: calc(-1 * var(--space-sm)) 0 var(--space-md); font-size:.75rem; color:var(--color-text-muted); text-align:center;">
+    <span class="badge badge-{{ cost.estimate_basis_level|lower }} tip" tabindex="0" data-tip="{{ help.CONFIDENCE_HELP['cost'][cost.estimate_basis_level] }}">{{ cost.estimate_basis_level }}</span>
+    confidence estimate &mdash; see <a href="#assumptions">Assumptions &amp; Methodology</a> for basis, key uncertainties, and exclusions.
+  </p>
+  {% endif %}
+
+  {# Label and color follow the sign — a cost increase must never render as a
+     green "Savings" (2026-07-31 sandbox validation). When the delta range straddles
+     zero (AWS high bound costs more, low bound saves — the Intelligent-Tiering
+     month-1 vs steady-state spread), show both bounds. #}
+  {% set _delta_color = "var(--color-severity-success)" if cost.monthly_delta_low >= 0 else "var(--color-severity-warning)" %}
+  {% set _straddles = cost.monthly_delta_low < 0 and cost.monthly_delta_high > 0 %}
+  {# Range-basis BQ cost (2026-08-11 MRI-1): the low delta is computed against the
+     BQ measured minimum — the committable figure — with the upside shown as a
+     subtitle instead of a bare point anchored to the modelled upper estimate. #}
+  {% set _bq_range_basis = cost.get("bigquery_monthly_low") is not none %}
+  <div class="row" style="margin-bottom: var(--space-lg);">
+    <div class="col-6">
+      <div class="card text-center">
+        <div class="card-body">
+          <div class="card-title">{% if cost.monthly_delta_low >= 0 %}Monthly Savings{% elif _straddles %}Monthly Cost vs BigQuery{% else %}Monthly Cost Increase{% endif %}</div>
+          <div class="fs-3 fw-bold" style="color: {{ _delta_color }};">{{ cost.monthly_delta_low|savings }}</div>
+          {% if _straddles %}<div class="text-muted" style="font-size:.75rem">worst case (all storage hot) &mdash; up to {{ cost.monthly_delta_high|savings }} at storage-tiering steady state</div>
+          {% elif _bq_range_basis and cost.monthly_delta_high > cost.monthly_delta_low %}<div class="text-muted" style="font-size:.75rem">vs BigQuery measured minimum &mdash; up to {{ cost.monthly_delta_high|savings }} vs the modelled upper estimate</div>{% endif %}
+        </div>
+      </div>
+    </div>
+    <div class="col-6">
+      <div class="card text-center">
+        <div class="card-body">
+          <div class="card-title">{% if cost.annual_savings_low >= 0 %}Annual Savings{% elif _straddles %}Annual Cost vs BigQuery{% else %}Annual Cost Increase{% endif %}</div>
+          <div class="fs-3 fw-bold" style="color: {{ _delta_color }};">{{ cost.annual_savings_low|savings_annual }}</div>
+          {% if _straddles %}<div class="text-muted" style="font-size:.75rem">worst case &mdash; up to {{ cost.annual_savings_high|savings_annual }} at steady state</div>
+          {% elif _bq_range_basis and cost.annual_savings_high > cost.annual_savings_low %}<div class="text-muted" style="font-size:.75rem">vs BigQuery measured minimum &mdash; up to {{ cost.annual_savings_high|savings_annual }}</div>{% endif %}
+        </div>
+      </div>
+    </div>
+  </div>
+  {% endif %}{# end bq_cost_available check — savings tiles above, AWS sections below render for both #}
+
+
+  {% if cost.aws_scenarios %}
+  <h3 style="margin-bottom: var(--space-md);">AWS Deployment Options</h3>
+  {% for scenario in cost.aws_scenarios %}
+  <details class="scenario{% if scenario.is_recommended %} scenario-recommended{% endif %}{% if scenario.not_recommended_reason %} scenario-demoted{% endif %}"{% if scenario.is_recommended %} open{% endif %}>
+    <summary>
+      <span class="scenario-row">
+        <span class="scenario-label">
+          {{ scenario.label }}
+          {% if scenario.is_recommended %}<span class="badge badge-high" style="margin-left:.5rem">RECOMMENDED</span>{% endif %}
+          {% if scenario.not_recommended_reason %}<span class="badge badge-demoted tip" tabindex="0" style="margin-left:.5rem" data-tip="{{ scenario.not_recommended_reason }}">NOT RECOMMENDED FOR YOUR USAGE</span>{% endif %}
+        </span>
+        <span class="scenario-cost">{{ scenario.monthly_total|currency_precise }}</span>
+        <span class="scenario-delta">
+          {# customer_provided is a total-only figure (compute+storage inseparable):
+             scenarios shift storage across the BQ/AWS boundary, so deltas against it
+             rank scenarios but aren't absolute savings (2026-08-11 MRI-2). #}
+          {% set _vs_label = "vs provided BQ total" if cost.bq_cost_basis == "customer_provided" else "cheaper than BQ" %}
+          {% set delta = cost.bigquery_monthly - scenario.monthly_total %}
+          {% if cost.bq_cost_available and cost.bigquery_monthly > 100 %}
+            {% set pct = ((delta / cost.bigquery_monthly) * 100)|round(0)|int %}
+            {% if pct >= 1 %}
+              <span style="color:var(--color-severity-success)">{{ pct }}% {{ _vs_label }}</span>
+            {% endif %}
+          {% elif cost.bq_cost_available %}
+            {% if delta > 1 %}
+              <span style="color:var(--color-severity-success)">{{ delta|savings }} vs BQ</span>
+            {% endif %}
+          {% endif %}
+        </span>
+      </span>
+    </summary>
+    <div class="card">
+      <div class="card-body" style="font-size:.8125rem">
+        {% if scenario.not_recommended_reason %}<p style="margin:0 0 .5rem 0;font-weight:600;color:var(--color-severity-warning)">{{ scenario.not_recommended_reason }}.</p>{% endif %}
+        {% if scenario.justification %}<p style="margin:0 0 .5rem 0;color:var(--color-text-secondary)">{{ scenario.justification }}</p>{% endif %}
+        {% if scenario.workload_fit_notes %}
+        <ul style="margin:0;padding-left:1.25rem">
+          {% for note in scenario.workload_fit_notes %}
+          <li>{{ note }}</li>
+          {% endfor %}
+        </ul>
+        {% endif %}
+      </div>
+    </div>
+  </details>
+  {% endfor %}
+  {% endif %}
+
+  {% if cost.bq_cost_available %}
+  {# BQ breakdown only when cost is available — AWS breakdown renders for both available and unavailable #}
+  <h3 style="margin-top: var(--space-xl); margin-bottom: var(--space-md);">BigQuery Cost Breakdown</h3>
+  <table>
+    <thead>
+      <tr>
+        <th>Line Item</th>
+        <th style="text-align:right">Monthly</th>
+        <th>Source</th>
+      </tr>
+    </thead>
+    <tbody>
+    {% for line in cost.bigquery_breakdown %}
+      <tr>
+        <td><strong>{{ line.label }}</strong>{% if line.confidence == "LOW" %} <span class="badge badge-low tip" tabindex="0" data-tip="{{ help.CONFIDENCE_HELP['cost'][line.confidence] }}">LOW CONFIDENCE</span>{% endif %}</td>
+        {# .get(): the serializer omits None-valued keys, so a range line has NO
+           "monthly" key — bare `line.monthly is not none` is Undefined-is-not-none
+           = TRUE and rendered "N/A" (Task 5: STANDARD capacity compute is a range). #}
+        <td style="text-align:right">
+          {% if line.get("monthly") is not none %}
+            {{ line.monthly|currency_precise }}
+          {% elif line.get("monthly_low") is not none and line.get("monthly_high") is not none %}
+            {{ line.monthly_low|currency_precise }} &ndash; {{ line.monthly_high|currency_precise }}
+          {% elif line.get("monthly_low") is not none %}
+            {{ line.monthly_low|currency_precise }}
+          {% else %}
+            &ndash;
+          {% endif %}
+        </td>
+        <td class="text-muted">{{ line.source_note }}</td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  {% endif %}
+
+  <h3 style="margin-top: var(--space-xl); margin-bottom: var(--space-md);">AWS Cost Breakdown (Recommended Option)</h3>
+  <table>
+    <thead>
+      <tr>
+        <th>Line Item</th>
+        <th style="text-align:right">Monthly</th>
+        <th>Source</th>
+      </tr>
+    </thead>
+    <tbody>
+    {% for line in cost.aws_lines %}
+      <tr>
+        <td><strong>{{ line.label }}</strong>{% if line.confidence == "LOW" %} <span class="badge badge-low tip" tabindex="0" data-tip="{{ help.CONFIDENCE_HELP['cost'][line.confidence] }}">LOW CONFIDENCE</span>{% endif %}</td>
+        {# .get(): the serializer omits None-valued keys, so a range line has NO
+           "monthly" key — bare `line.monthly is not none` is Undefined-is-not-none
+           = TRUE and rendered "N/A" (2026-07-31 sandbox regression). #}
+        <td style="text-align:right">
+          {% if line.get("monthly") is not none %}
+            {{ line.monthly|currency_precise }}
+          {% elif line.get("monthly_low") is not none and line.get("monthly_high") is not none %}
+            {{ line.monthly_low|currency_precise }} &ndash; {{ line.monthly_high|currency_precise }}
+          {% elif line.get("monthly_low") is not none %}
+            {{ line.monthly_low|currency_precise }}
+          {% else %}
+            &ndash;
+          {% endif %}
+        </td>
+        <td class="text-muted">{{ line.source_note }}</td>
+      </tr>
+    {% endfor %}
+    <tr style="border-top: 2px solid var(--color-border-divider); font-weight:700">
+      <td>Total</td>
+      <td style="text-align:right">{% if cost.aws_monthly_low == cost.aws_monthly_high %}{{ cost.aws_monthly_low|currency_precise }}{% else %}{{ cost.aws_monthly_low|currency_precise }} &ndash; {{ cost.aws_monthly_high|currency_precise }}{% endif %}</td>
+      <td></td>
+    </tr>
+    </tbody>
+  </table>
+
+  {% if cost.storage_tier_breakdown %}
+  <h3 style="margin-top: var(--space-lg); margin-bottom: var(--space-md);">S3 Tables Storage — Intelligent-Tiering Derivation</h3>
+  <p class="text-muted" style="font-size:.8125rem; margin-bottom: var(--space-sm);">
+    Each table's physical bytes are placed into an Intelligent-Tiering tier by its last-modified age &mdash;
+    your storage access pattern as observed at assessment time. This table derives the pattern-based
+    figure used in the cost comparison; the higher bound in the storage line above is month&nbsp;1 only.
+  </p>
+  <table>
+    <thead>
+      <tr>
+        <th>Tier</th>
+        <th style="text-align:right">Tables</th>
+        <th style="text-align:right">Data</th>
+        <th style="text-align:right">Rate ($/GB-mo)</th>
+        <th style="text-align:right">Monthly</th>
+      </tr>
+    </thead>
+    <tbody>
+    {% for row in cost.storage_tier_breakdown %}
+      {# .get(): the serializer omits None-valued keys, so absent ≡ none here #}
+      <tr{% if row.tier == "total" %} style="border-top: 2px solid var(--color-border-divider); font-weight:700"{% endif %}>
+        <td>{{ row.label }}</td>
+        <td style="text-align:right">{% if row.get("tables") is not none %}{{ row.tables }}{% else %}&mdash;{% endif %}</td>
+        <td style="text-align:right">{% if row.get("gb") is not none %}{{ row.gb|fmt_size }}{% else %}&mdash;{% endif %}</td>
+        <td style="text-align:right">{% if row.get("rate") is not none %}${{ row.rate }}{% if row.get("rate_note") %} <span class="text-muted">({{ row.rate_note }})</span>{% endif %}{% endif %}</td>
+        <td style="text-align:right">{{ row.monthly|currency_precise }}</td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  <p class="text-muted" style="font-size:.75rem; margin-top: var(--space-sm);">
+    All tiers serve reads at millisecond latency with no retrieval fees; an accessed file moves back to
+    Frequent automatically. The split uses last-modified time as an access proxy &mdash; regularly-read
+    tables stay Frequent, and full-table scans re-heat cold files.
+  </p>
+  {% endif %}
+  {% endif %}{# end MRI-2a UNKNOWN guard #}
+</div>
+
+
+<!-- Assumptions -->
+<div class="section" id="assumptions">
+  <div class="section-header">
+    <h2>Assumptions &amp; Methodology</h2>
+  </div>
+
+  {% if cost.estimate_basis or cost.pricing_notes %}
+  <div class="card" style="border-left: 4px solid var(--color-severity-info); margin-bottom: var(--space-md);">
+    <div class="card-body">
+      <h3 style="margin-top:0;font-size:.9375rem">How This Estimate Was Priced
+        {% if cost.estimate_basis %}<span class="badge badge-{{ cost.estimate_basis_level|lower }} tip" tabindex="0" data-tip="{{ help.CONFIDENCE_HELP['cost'][cost.estimate_basis_level] }}" style="margin-left:.5rem">{{ cost.estimate_basis_level }}</span>{% endif %}
+      </h3>
+      {% if cost.estimate_basis %}
+      <p style="margin-bottom:.5rem;font-size:.8125rem;color:var(--color-text-secondary)">{{ cost.estimate_basis }}</p>
+      {% endif %}
+      {% if cost.pricing_notes %}
+      <ul style="margin:0;padding-left:1.25rem;font-size:.8125rem;color:var(--color-text-secondary)">
+        {% for note in cost.pricing_notes %}
+        <li>{{ note }}</li>
+        {% endfor %}
+      </ul>
+      {% endif %}
+    </div>
+  </div>
+  {% endif %}
+
+  <div class="card" style="border-left: 4px solid var(--color-brand-orange); margin-bottom: var(--space-md);">
+    <div class="card-body">
+      <h3 style="margin-top:0;font-size:.9375rem">Target Architecture</h3>
+      <p style="margin-bottom:.5rem;font-size:.8125rem;color:var(--color-text-secondary)">This assessment models the AWS lakehouse as a <strong>decoupled storage + compute</strong> architecture:</p>
+      <ul style="margin:0;padding-left:1.25rem;font-size:.8125rem;color:var(--color-text-secondary)">
+        <li><strong>Storage:</strong> Amazon S3 Tables (managed Apache Iceberg) — a shared storage layer queryable by both Athena and Redshift</li>
+        <li><strong>Compute:</strong> Multiple Query Engine options evaluated — Athena (on-demand $5/TB scanned, or Provisioned Capacity), Redshift Serverless (RPU-based with Reservation discounts), and Redshift Provisioned RG Graviton4 (node-based with RI discounts)</li>
+        <li><strong>Best-fit selection:</strong> Workload signals (scan volume, concurrency, activity pattern) plus a cost comparison across all options determine the recommendation</li>
+      </ul>
+    </div>
+  </div>
+
+  {% if cost.recommendation and cost.recommendation.workload_profile and cost.recommendation.workload_profile.has_data %}
+  <div class="card" style="border-left: 4px solid var(--color-severity-success); margin-bottom: var(--space-md);">
+    <div class="card-body">
+      <h3 style="margin-top:0;font-size:.9375rem">Your Workload Profile (Used for Sizing)</h3>
+      <ul style="margin:0;padding-left:1.25rem;font-size:.8125rem;color:var(--color-text-secondary)">
+        {% set wp = cost.recommendation.workload_profile %}
+        <li><strong>Query volume:</strong> {{ "{:,.0f}".format(wp.queries_per_day) }} queries/day ({{ "{:,.0f}".format(wp.total_queries) }} total over {{ wp.lookback_days }} days)</li>
+        <li><strong>Data scanned:</strong> {{ "{:,.0f}".format(wp.monthly_scanned_tb) }} TB/month (avg {{ "{:,.0f}".format(wp.avg_bytes_per_query / 1048576) }} MB per query)</li>
+        <li><strong>Concurrency:</strong> ~{{ "{:.0f}".format(wp.avg_concurrent_queries) }} avg / ~{{ "{:.0f}".format(wp.peak_concurrent_queries) }} peak concurrent queries</li>
+        <li><strong>Active hours:</strong> {{ "{:.0%}".format(wp.active_hour_fraction) }} of hours have active queries</li>
+        <li style="font-size:.75rem;color:var(--color-text-tertiary)">Note: Athena (per-TB scanned) and Redshift Serverless (per-second while active) both cost nothing while idle, so your activity pattern drives the serverless-vs-provisioned choice. Fragmented activity slightly favors Athena because Redshift Serverless bills a 60-second minimum per resume, and connection-pool keep-alive queries prevent it from pausing</li>
+        <li><strong>Stored data:</strong> {{ wp.total_stored_gb|fmt_size }}</li>
+      </ul>
+    </div>
+  </div>
+  {% endif %}
+
+  <div class="card" style="border-left: 4px solid var(--color-severity-warning); margin-bottom: var(--space-md);">
+    <div class="card-body">
+      <h3 style="margin-top:0;font-size:.9375rem">Storage Assumptions</h3>
+      <ul style="margin:0;padding-left:1.25rem;font-size:.8125rem;color:var(--color-text-secondary)">
+        {% set has_rms_line = cost.aws_lines | selectattr("label", "equalto", "Redshift Managed Storage (RMS)") | list | length > 0 %}
+        <li><strong>Both engine paths:</strong> S3 Tables (Iceberg) — storage tiered from ${{ pricing.s3_tables_tier1_per_gb }}/GB ({{ pricing.aws_region }}); automatic compaction/maintenance billed separately (per-object + per-GB-processed). Serverless and Provisioned share the same decoupled Iceberg storage layer{% if has_rms_line %} &mdash; except RMS-placed tables and Redshift-native materialized views, whose bytes bill as Redshift Managed Storage (separate line in the breakdown above). If Athena were chosen instead, all bytes would stay on S3 Tables &mdash; the Athena option is priced accordingly{% else %} &mdash; Redshift Managed Storage is not billed in this architecture{% endif %}</li>
+        {% if cost.storage_tier_breakdown %}
+        <li><strong>Intelligent-Tiering:</strong> files move to Infrequent Access after 30 days without access (${{ pricing.int_ia_per_gb }}/GB) and Archive Instant Access after 90 (${{ pricing.int_aia_per_gb }}/GB), rates {{ pricing.aws_region }} &mdash; per-tier derivation in the cost breakdown above. All tiers serve reads at millisecond latency with no retrieval fees; an accessed file moves back to Frequent automatically. The split uses last-modified time as an access proxy: regularly-read tables stay Frequent, and full-table scans re-heat cold files</li>
+        {% endif %}
+        {% if storage_basis == "measured" %}
+        <li>Storage sized on <strong>measured physical bytes</strong> from BigQuery TABLE_STORAGE &mdash; 1:1 to S3 Tables (both store compressed Parquet)</li>
+        <li style="font-size:.75rem;color:var(--color-text-tertiary)">Limitations: TABLE_STORAGE may lag ~1 day for recent changes; clones/snapshots report full size (conservative)</li>
+        {% elif storage_basis == "mixed" %}
+        <li>Storage sized on <strong>mixed basis</strong> — tables covered by BigQuery TABLE_STORAGE use measured physical bytes (1:1 to S3 Tables); the remainder assumed at {{ pricing.physical_ratio }}&times; logical</li>
+        <li style="font-size:.75rem;color:var(--color-text-tertiary)">Limitations: TABLE_STORAGE may lag ~1 day for recent changes; clones/snapshots report full size (conservative)</li>
+        {% else %}
+        <li>Physical bytes unavailable &mdash; storage sized at <strong>{{ pricing.physical_ratio }}&times; logical</strong> (1 GiB BQ logical &asymp; {{ pricing.physical_ratio }} GiB on S3 Tables; typical Parquet compression)</li>
+        <li style="font-size:.75rem;color:var(--color-text-tertiary)">Typical Parquet compression is 2&ndash;5&times;; {{ pricing.physical_ratio }} reflects mid-range columnar compression</li>
+        {% endif %}
+      </ul>
+    </div>
+  </div>
+
+  {% if recommended_engine == "redshift" %}
+  <div class="card" style="border-left: 4px solid var(--color-severity-warning); margin-bottom: var(--space-md);">
+    <div class="card-body">
+      <h3 style="margin-top:0;font-size:.9375rem">Redshift Performance Features on Iceberg Storage</h3>
+      <p style="margin-bottom:.5rem;font-size:.8125rem;color:var(--color-text-secondary)">Querying open Iceberg tables (rather than Redshift Managed Storage) trades some Redshift-native optimizations for multi-engine access and an open format. Set latency expectations accordingly:</p>
+      <ul style="margin:0 0 .5rem 0;padding-left:1.25rem;font-size:.8125rem;color:var(--color-text-secondary)">
+        <li><strong>Not available on Iceberg:</strong> result caching (sub-second repeated queries), automatic materialized views (AutoMV), automatic query rewrite to MVs, and zone maps / sort keys (block-level scan skipping)</li>
+        <li><strong>At parity:</strong> manual materialized views with AUTO REFRESH, full DML (INSERT / UPDATE / DELETE / MERGE on Iceberg v2), and concurrency scaling for reads</li>
+      </ul>
+      <p style="margin:0;font-size:.75rem;color:var(--color-text-tertiary)">Query pruning on Iceberg relies on partition layout and Parquet row-group statistics. Workloads dominated by repeated dashboard queries will not see result-cache speedups on this architecture.</p>
+    </div>
+  </div>
+  {% endif %}
+
+  <div class="card" style="border-left: 4px solid var(--color-severity-warning); margin-bottom: var(--space-md);">
+    <div class="card-body">
+      <h3 style="margin-top:0;font-size:.9375rem">Compute Pricing Assumptions</h3>
+      <ul style="margin:0;padding-left:1.25rem;font-size:.8125rem;color:var(--color-text-secondary)">
+        <li><strong>Serverless On-Demand:</strong> ${{ pricing.serverless_rpu_hr }}/RPU-hr ({{ pricing.aws_region }}). BQ slot&rarr;RPU ratio: {{ pricing.slot_to_rpu_ratio }} (evidence range 0.06&ndash;0.25)</li>
+        <li><strong>Serverless Reserved (1yr, All Upfront):</strong> ~{{ pricing.serverless_1yr_all_upfront_discount_pct }}% discount (${{ pricing.serverless_1yr_all_upfront_rpu_hr }}/RPU-hr). Break-even at ~{{ pricing.serverless_1yr_all_upfront_breakeven_pct }}% utilization</li>
+        <li><strong>Serverless Reserved (1yr, No Upfront):</strong> ~{{ pricing.serverless_1yr_no_upfront_discount_pct }}% discount (${{ pricing.serverless_1yr_no_upfront_rpu_hr }}/RPU-hr). Break-even at ~{{ pricing.serverless_1yr_no_upfront_breakeven_pct }}% utilization</li>
+        <li><strong>Provisioned On-Demand:</strong> RG Graviton4 &mdash; rg.xlarge @ ${{ pricing.rg_xl_ondemand_hr }}/node-hr, rg.4xlarge @ ${{ pricing.rg_4xl_ondemand_hr }}/node-hr ({{ pricing.aws_region }}); the priced option's node type appears in its scenario row. {{ pricing.hours_per_month }} hours/month</li>
+        <li><strong>Provisioned 1yr RI:</strong> ~{{ pricing.ri_1yr_discount_pct }}% discount vs on-demand</li>
+        <li><strong>Provisioned 3yr RI:</strong> ~{{ pricing.ri_3yr_discount_pct }}% discount vs on-demand</li>
+        <li><strong>Cluster sizing:</strong> based on peak concurrent query load with 1.5 vCPU/query heuristic and 3&times; burst factor</li>
+      </ul>
+    </div>
+  </div>
+
+  {% if cost.key_uncertainties %}
+  <div class="card" style="border-left: 4px solid var(--color-severity-neutral); margin-bottom: var(--space-md);">
+    <div class="card-body">
+      <h3 style="margin-top:0;font-size:.9375rem">Key Uncertainties &mdash; Validate Before Committing</h3>
+      <ul style="margin:0;padding-left:1.25rem;font-size:.8125rem;color:var(--color-text-secondary)">
+        {% for note in cost.key_uncertainties %}
+        <li>{{ note }}</li>
+        {% endfor %}
+      </ul>
+    </div>
+  </div>
+  {% endif %}
+
+  {% if cost.scope_notes %}
+  <div class="card" style="border-left: 4px solid var(--color-severity-neutral); margin-bottom: var(--space-md);">
+    <div class="card-body">
+      <h3 style="margin-top:0;font-size:.9375rem">Not Modeled (Both Sides of the Comparison)</h3>
+      <ul style="margin:0;padding-left:1.25rem;font-size:.8125rem;color:var(--color-text-secondary)">
+        {% for note in cost.scope_notes %}
+        <li>{{ note }}</li>
+        {% endfor %}
+      </ul>
+    </div>
+  </div>
+  {% endif %}
+</div>
+
+
+{% if failures %}
+<div class="section">
+  <div class="section-header">
+    <h2>Failures</h2>
+    <span class="section-badge">{{ failures|length }} items</span>
+  </div>
+  <table>
+    <thead>
+      <tr><th>Entity</th><th>Stage</th><th>Error</th></tr>
+    </thead>
+    <tbody>
+    {% for f in failures %}
+      <tr>
+        <td><strong>{{ f.entity_name }}</strong></td>
+        <td>{{ f.stage }}</td>
+        <td class="text-muted">{{ f.error }}</td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endif %}
+
+</div><!-- end tab-landing -->
+
+<!-- ═══════════════════════════════════════════════════════════════════════ -->
+<!-- TAB: MIGRATION EFFORT                                                  -->
+<!-- ═══════════════════════════════════════════════════════════════════════ -->
+<div id="tab-effort" class="tab-content">
+
+<div class="axis" aria-label="What the Migration Effort axis measures">
+  <div class="axis-eyebrow">
+    <span class="axis-glyph"><svg width="10" height="10" viewBox="0 0 10 10" fill="none"><ellipse cx="5" cy="2.4" rx="4" ry="1.7" stroke="#fff" stroke-width="1.2"/><path d="M1 2.4v5.2c0 .94 1.79 1.7 4 1.7s4-.76 4-1.7V2.4" stroke="#fff" stroke-width="1.2"/></svg></span>
+    Axis 1 &middot; Data
+  </div>
+  <div class="axis-question">How hard is it to move each table's data?</div>
+  <div class="axis-scope">Each table below is scored on the work to land its <strong>data</strong> in
+  S3 Tables (Iceberg) &mdash; from <strong>schema &amp; storage metadata</strong>: column types, partitioning,
+  size, streaming/external sources. No SQL involved; a table can be trivial to move and still carry
+  hard-to-port SQL &mdash; that is scored on the Query Complexity tab.</div>
+  <div class="axis-scale">
+    <span class="badge badge-auto">AUTO</span><span class="badge badge-assisted">ASSISTED</span><span class="badge badge-manual">MANUAL</span>
+  </div>
+</div>
+
+<div class="section">
+  <div class="section-header">
+    <h2>Migration Effort by Table</h2>
+  </div>
+  <div class="row">
+    <div class="col-3">
+      <div class="card text-center filter-card" data-filter-category="AUTO" data-filter-target="effort" data-accent="green">
+        <div class="card-body">
+          <div class="card-title">Auto</div>
+          <div class="stat-value" style="color:var(--color-severity-success)">{{ summary.effort_counts.AUTO or 0 }}</div>
+        </div>
+      </div>
+    </div>
+    <div class="col-3">
+      <div class="card text-center filter-card" data-filter-category="ASSISTED" data-filter-target="effort" data-accent="amber">
+        <div class="card-body">
+          <div class="card-title">Assisted</div>
+          <div class="stat-value" style="color:var(--color-severity-warning)">{{ summary.effort_counts.ASSISTED or 0 }}</div>
+        </div>
+      </div>
+    </div>
+    <div class="col-3">
+      <div class="card text-center filter-card" data-filter-category="MANUAL" data-filter-target="effort" data-accent="red">
+        <div class="card-body">
+          <div class="card-title">Manual</div>
+          <div class="stat-value" style="color:var(--color-severity-error)">{{ summary.effort_counts.MANUAL or 0 }}</div>
+        </div>
+      </div>
+    </div>
+    <div class="col-3">
+      <div class="card text-center filter-card" data-filter-category="ALL" data-filter-target="effort">
+        <div class="card-body">
+          <div class="card-title">Total Tables</div>
+          <div class="stat-value">{{ summary.total_tables }}</div>
+        </div>
+      </div>
+    </div>
+  </div>
+  <span class="filter-reset" data-filter-target="effort">Clear filter</span>
+</div>
+
+{% if source_db_setup %}
+<div class="section">
+  <details>
+    <summary style="cursor:pointer; font-weight:600; margin-bottom:var(--space-sm);">Source Database Setup (run once before migration)</summary>
+    <p class="text-muted" style="font-size:.8125rem; margin-top:var(--space-xs);">These commands configure the Athena BigQuery Connector so INSERT...SELECT statements can read from BigQuery. Run once per environment.</p>
+    {% for stmt in source_db_setup %}
+    <pre><code>{{ stmt }}</code></pre>
+    {% endfor %}
+  </details>
+</div>
+{% endif %}
+
+<div class="section">
+  <p class="text-muted" style="font-size:.8125rem; margin-bottom: var(--space-sm);">Click a row to expand conversion details (DDL, lossy casts, warnings).</p>
+  <div class="table-toolbar">
+    <input type="search" class="search-input" data-search-target="effort" placeholder="Filter by entity name&hellip;" aria-label="Filter tables by entity name">
+  </div>
+  <table id="table-effort">
+    <thead>
+      <tr>
+        <th></th>
+        <th>Entity</th>
+        <th>Type</th>
+        <th title="How the entity arrives on AWS: TABLE = its data is moved; REBUILT = recreated from its SQL definition (views, materialized views, routines)">Population</th>
+        <th style="text-align:right">Rows</th>
+        <th style="text-align:right">Projected Size</th>
+        <th>Effort</th>
+      </tr>
+    </thead>
+    <tbody data-page-size="100"></tbody>
+  </table>
+</div>
+
+</div><!-- end tab-effort -->
+
+<!-- ═══════════════════════════════════════════════════════════════════════ -->
+<!-- TAB: QUERY COMPLEXITY                                                  -->
+<!-- ═══════════════════════════════════════════════════════════════════════ -->
+<div id="tab-query" class="tab-content">
+
+{% if summary.sql_surface_confidence == "LOW" %}
+<div class="alert alert-warning">
+  <strong>Low Confidence SQL Analysis</strong><br>
+  SQL surface confidence is low. Query logs were not provided or are incomplete. Re-run with query logs for higher confidence.
+</div>
+{% endif %}
+
+<div class="axis" aria-label="What the Query Complexity axis measures">
+  <div class="axis-eyebrow">
+    <span class="axis-glyph"><svg width="10" height="10" viewBox="0 0 10 10" fill="none"><path d="M3.2 2 1 5l2.2 3M6.8 2 9 5 6.8 8" stroke="#fff" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"/></svg></span>
+    Axis 2 &middot; SQL
+  </div>
+  <div class="axis-question">How hard is it to rewrite the SQL that runs on it?</div>
+  <div class="axis-scope">Entities scored per BigQuery-specific construct found in their definitions
+  and production query logs (JS UDFs, UNNEST, ARRAY, STRUCT, function drift). Tables with attributed
+  production workload show their <strong>top queries</strong> translated side-by-side to
+  {{ "Athena" if recommended_engine == "athena" else "Amazon Redshift" }} SQL (the recommended Query Engine's dialect).
+  Expand a row to see the detected constructs, rewrite guidance, and translated queries.</div>
+  <div class="axis-scale">
+    <span class="badge badge-portable">PORTABLE</span><span class="badge badge-adapt">ADAPT</span><span class="badge badge-rewrite">REWRITE</span>
+  </div>
+</div>
+
+{% if summary.workload_constructs %}
+<div class="alert alert-info">
+  <strong>BigQuery-specific SQL detected in your query workload</strong><br>
+  Your query logs contain: {{ summary.workload_constructs|join(", ") }} &mdash; in ad-hoc
+  application/BI queries not owned by any entity below. These queries will need the same kind
+  of SQL changes described on this tab when they are re-pointed at the recommended Query Engine.
+</div>
+{% endif %}
+
+<div class="section">
+  <div class="section-header">
+    <h2>Query Complexity by Entity</h2>
+  </div>
+  <div class="row">
+    <div class="col-3">
+      <div class="card text-center filter-card" data-filter-category="PORTABLE" data-filter-target="query" data-accent="green">
+        <div class="card-body">
+          <div class="card-title">Portable</div>
+          <div class="stat-value" style="color:var(--color-severity-success)">{{ sql_counts.PORTABLE }}</div>
+        </div>
+      </div>
+    </div>
+    <div class="col-3">
+      <div class="card text-center filter-card" data-filter-category="ADAPT" data-filter-target="query" data-accent="amber">
+        <div class="card-body">
+          <div class="card-title">Adapt</div>
+          <div class="stat-value" style="color:var(--color-severity-warning)">{{ sql_counts.ADAPT }}</div>
+        </div>
+      </div>
+    </div>
+    <div class="col-3">
+      <div class="card text-center filter-card" data-filter-category="REWRITE" data-filter-target="query" data-accent="red">
+        <div class="card-body">
+          <div class="card-title">Rewrite</div>
+          <div class="stat-value" style="color:var(--color-severity-error)">{{ sql_counts.REWRITE }}</div>
+        </div>
+      </div>
+    </div>
+    <div class="col-3">
+      <div class="card text-center filter-card" data-filter-category="ALL" data-filter-target="query">
+        <div class="card-body">
+          <div class="card-title" id="query-total-label">SQL Entities</div>
+          <div class="stat-value">{{ sql_counts.total }}</div>
+        </div>
+      </div>
+    </div>
+  </div>
+  <span class="filter-reset" data-filter-target="query">Clear filter</span>
+</div>
+
+<div class="section">
+  <p class="text-muted" style="font-size:.8125rem; margin-bottom: var(--space-sm);">Click a row to expand analysis details (flags, rewrite guidance, translated SQL, placement). Entities with no visible SQL surface have no details.</p>
+  <div class="table-toolbar">
+    <input type="search" class="search-input" data-search-target="query" placeholder="Filter by entity name&hellip;" aria-label="Filter entities by name">
+    <label class="show-all-toggle">
+      <input type="checkbox" id="query-show-all">
+      Show all entities (including tables with no SQL of their own)
+    </label>
+  </div>
+  <table id="table-query">
+    <thead>
+      <tr>
+        <th></th>
+        <th>Entity</th>
+        <th>Type</th>
+        <th title="How the entity arrives on AWS: TABLE = its data is moved; REBUILT = recreated from its SQL definition (views, materialized views, routines)">Population</th>
+        <th>Complexity</th>
+        <th>Source</th>
+        <th title="Production query workload from INFORMATION_SCHEMA.JOBS (last 30 days)">Workload</th>
+      </tr>
+    </thead>
+    <tbody data-page-size="100"></tbody>
+  </table>
+</div>
+
+</div><!-- end tab-query -->
+
+<div class="footer">
+  Generated by <strong>bq-assess</strong> &middot; {{ generated_at|timestamp }}
+  <div class="disclaimer">
+    <strong>Beta &amp; Disclaimer Notice</strong>
+    {% for para in disclaimer_paragraphs %}
+    <p>{{ para }}</p>
+    {% endfor %}
+  </div>
+</div>
+
+</div><!-- end container -->
+
+<script type="application/json" id="report-data">{{ report_rows|tojson }}</script>
+{# Heavy per-entity payloads (Iceberg DDL, load DML, translated SQL), chunked. Each tag
+   stays inert text until a row in the chunk is first expanded — JSON.parse of the main
+   report-data blob at page load stays small at 100k+ entity scale. #}
+{% for chunk in detail_chunks %}
+<script type="application/json" class="detail-chunk" data-chunk="{{ loop.index0 }}">{{ chunk|tojson }}</script>
+{% endfor %}
+{% for chunk in query_sample_chunks %}
+<script type="application/json" class="query-chunk" data-chunk="{{ loop.index0 }}">{{ chunk|tojson }}</script>
+{% endfor %}
+<script type="application/json" id="help-data">{{ {
+  "confidence": {
+    "effort": help.CONFIDENCE_HELP["effort"],
+    "complexity": help.CONFIDENCE_HELP["complexity"],
+    "placement": help.CONFIDENCE_HELP["placement"],
+  },
+  "category": help.CATEGORY_HELP,
+  "flags": help.FLAG_INFO,
+  "sources": help.SOURCE_LABELS,
+  "text": help.UI_TEXT,
+  "recommendedEngine": recommended_engine,
+  "topQueriesPerEntity": top_queries_per_entity,
+}|tojson }}</script>
+
+<script nonce="{{ csp_nonce }}">
+function showTab(name) {
+  document.querySelectorAll('.tab-content').forEach(function(t) { t.classList.remove('active') });
+  document.querySelectorAll('.nav-links a').forEach(function(a) { a.classList.remove('active') });
+  document.getElementById('tab-' + name).classList.add('active');
+  document.querySelector('.nav-links a[data-tab="' + name + '"]').classList.add('active');
+  window.scrollTo(0, 0);
+}
+document.querySelectorAll('.nav-links a[data-tab]').forEach(function(link) {
+  link.addEventListener('click', function(e) { e.preventDefault(); showTab(this.dataset.tab); });
+});
+// Entity tables render client-side from embedded JSON. Only the current page of
+// rows exists in the DOM, and a row's detail panel is built on first expand —
+// this keeps the report responsive for warehouses with tens of thousands of
+// entities. All content is inserted via textContent / createElement, never
+// parsed as markup, so entity names and SQL from the source project stay inert.
+var DATA = JSON.parse(document.getElementById('report-data').textContent);
+var HELP = JSON.parse(document.getElementById('help-data').textContent);
+
+// Heavy detail payloads (DDL, load DML, translated SQL) live in separate
+// .detail-chunk script tags — inert text until a row in that chunk is expanded.
+// Parsed chunks are cached; the script tag's text is released after parse.
+var DETAIL_CHUNK_TAGS = {};
+document.querySelectorAll('script.detail-chunk').forEach(function(tag) {
+  DETAIL_CHUNK_TAGS[tag.dataset.chunk] = tag;
+});
+var DETAIL_CHUNKS = {};
+
+// ONE formatter for workload figures — the row, the expanded panel, and the
+// sidecar pointer all speak the same language ("queries" = executions from
+// JOBS logs; "distinct statements" = unique query texts after dedup). Five
+// hand-built phrasings had drifted into three different terms for num_shapes
+// (2026-08-04 review).
+function fmtCount(n) { return Number(n).toLocaleString('en-US'); }
+function wlSummary(wl) {
+  var q = wl.query_count, ns = wl.num_shapes;
+  var base = fmtCount(q) + (q === 1 ? ' query' : ' queries');
+  // parenthetical only when dedup actually collapsed something
+  if (ns > 0 && ns !== q) base += ' (' + fmtCount(ns) + ' distinct statements)';
+  return base + ' · ' + wl.slot_hours + ' slot-hrs';
+}
+var QUERY_CHUNK_TAGS = {};
+document.querySelectorAll('script.query-chunk').forEach(function(tag) {
+  QUERY_CHUNK_TAGS[tag.dataset.chunk] = tag;
+});
+var QUERY_CHUNKS = {};
+// Parse ONLY the chunk carrying the expanded entity (e.query_chunk). The old
+// walk-all-chunks fallback parsed the entire sample payload on first expand —
+// tens of MB at petabyte-scale estates, blocking the main thread.
+function getQuerySamples(e) {
+  var idx = e.query_chunk;
+  if (idx == null) return null;   // entity has no embedded samples
+  if (!(idx in QUERY_CHUNKS)) {
+    var tag = QUERY_CHUNK_TAGS[idx];
+    QUERY_CHUNKS[idx] = tag ? JSON.parse(tag.textContent) : {};
+    if (tag) tag.textContent = '';  // free the raw JSON text
+  }
+  return QUERY_CHUNKS[idx][e.full_name] || null;
+}
+function detailFor(e) {
+  if (e.detail_chunk == null) return e;  // no heavy payload for this entity
+  var idx = e.detail_chunk;
+  if (!(idx in DETAIL_CHUNKS)) {
+    var tag = DETAIL_CHUNK_TAGS[idx];
+    DETAIL_CHUNKS[idx] = tag ? JSON.parse(tag.textContent) : {};
+    if (tag) tag.textContent = '';  // free the raw JSON text
+  }
+  var heavy = DETAIL_CHUNKS[idx][e.full_name] || {};
+  var merged = Object.create(e);   // prototype view: row fields + heavy fields
+  for (var k in heavy) merged[k] = heavy[k];
+  return merged;
+}
+
+// Engine metadata map — single source of truth for all engine-branching labels and tooltips (Fix 1).
+// HELP.recommendedEngine is the global recommended engine; per-entity translated_sql.target_engine
+// overrides only for the SQL code block itself.
+var SQL_HELP_BASE = "Machine-translated from the BigQuery definition (via sqlglot) as a starting point — validate before production use. ";
+var LOAD_DML_BASE = "Athena INSERT statements to load this table's Iceberg target. Chunked tables include idempotent DELETE+INSERT pairs — run chunks sequentially.";
+var ENGINE_META = {
+  athena: {
+    label: "Athena",
+    rewriteHeading: "How to rewrite for Athena",
+    sqlHelp: SQL_HELP_BASE + "Table references assume the Glue catalog database context.",
+    placementTip: "Views are recreated with CREATE VIEW on the recommended Query Engine. Athena cannot create materialized views (use Spark/Glue; Athena reads them) and UDFs require AWS Lambda (USING EXTERNAL FUNCTION) — flagged per entity.",
+    loadDmlHelp: LOAD_DML_BASE
+  },
+  redshift: {
+    label: "Redshift",
+    rewriteHeading: "How to rewrite for Redshift",
+    sqlHelp: SQL_HELP_BASE + "Iceberg table references may need an external schema prefix.",
+    placementTip: "Views and materialized views can live inside Redshift (engine-local, full dialect, auto-refresh) or in the shared Iceberg catalog (queryable by Athena, Redshift, and Spark). UDFs must be engine-local.",
+    loadDmlHelp: LOAD_DML_BASE + " Athena performs the one-time data load regardless of the recommended Query Engine — Redshift queries the loaded Iceberg tables via an external schema."
+  }
+};
+var RECOMMENDED_ENGINE = HELP.recommendedEngine || 'redshift';
+var TOP_QUERIES_PER_ENTITY = HELP.topQueriesPerEntity || 5;
+
+function el(tag, className, text) {
+  var node = document.createElement(tag);
+  if (className) node.className = className;
+  if (text !== undefined && text !== null) node.textContent = text;
+  return node;
+}
+
+function fmtSize(gb) {
+  if (gb == null) return '—';
+  if (gb >= 1000000) return (gb / 1000000).toFixed(1) + ' PB';
+  if (gb >= 1000) return (gb / 1000).toFixed(1) + ' TB';
+  if (gb >= 1) return gb.toFixed(2) + ' GB';
+  return Math.round(gb * 1000) + ' MB';
+}
+
+function tipSpan(text, tip, className) {
+  // Without tip text, render a plain span: an empty data-tip would still pop an
+  // empty tooltip bubble and steal keyboard focus.
+  if (!tip) return el('span', null, text);
+  var s = el('span', (className || 'tip'), text);
+  s.setAttribute('tabindex', '0');
+  s.setAttribute('data-tip', tip);
+  return s;
+}
+
+function badge(text, cls, tip) {
+  var s = tipSpan(text, tip, 'badge badge-' + cls + ' tip');
+  if (!tip) s.className = 'badge badge-' + cls;
+  return s;
+}
+
+function categoryBadge(cat) {
+  return badge(cat, String(cat).toLowerCase(), HELP.category[cat] || '');
+}
+
+function flagChip(flag) {
+  var info = HELP.flags[flag];
+  var label = info ? info[0] : flag.replace(/_/g, ' ');
+  var tip = info ? info[1] : flag;
+  return badge(label, 'flag', tip);
+}
+
+function preCode(text) {
+  var p = document.createElement('pre');
+  p.appendChild(el('code', null, text));
+  return p;
+}
+
+function scoreBreakdown(reasoning) {
+  var p = el('p', 'text-muted');
+  p.style.fontSize = '.8125rem';
+  var label = tipSpan('Score breakdown', HELP.text.score_tip);
+  label.style.borderBottom = '1px dotted var(--color-text-muted)';
+  label.style.cursor = 'help';
+  p.appendChild(label);
+  p.appendChild(document.createTextNode(': ' + reasoning));
+  return p;
+}
+
+function flagsParagraph(labelText, flags) {
+  var p = el('p');
+  p.appendChild(el('strong', null, labelText + ' '));
+  flags.forEach(function(f) {
+    p.appendChild(flagChip(f));
+    p.appendChild(document.createTextNode(' '));
+  });
+  return p;
+}
+
+function sectionHeading(text, tip) {
+  var h = el('h3', null, text + ' ');
+  h.style.marginTop = '1rem';
+  if (tip) h.appendChild(tipSpan('i', tip, 'tip tooltip-icon'));
+  return h;
+}
+
+function bulletList(items, muted) {
+  var ul = el('ul', muted ? 'text-muted' : null);
+  ul.style.margin = '.25rem 0';
+  ul.style.paddingLeft = '1.25rem';
+  items.forEach(function(item) { ul.appendChild(el('li', null, item)); });
+  return ul;
+}
+
+function buildEffortDetail(e) {
+  var td = document.createElement('td');
+  td.setAttribute('colspan', '7');
+  var eff = e.effort;
+
+  if (eff.reasoning) td.appendChild(scoreBreakdown(eff.reasoning));
+  if (eff.flags && eff.flags.length) td.appendChild(flagsParagraph('What to review:', eff.flags));
+
+  if (e.conversion) {
+    td.appendChild(sectionHeading('Iceberg DDL (Athena)', 'Generated CREATE TABLE for the Iceberg Storage Target, in Athena engine v3 dialect — Athena creates the tables; Redshift queries them via an external schema. Review flagged type casts and partition decisions before running.'));
+    td.appendChild(preCode(e.conversion.ddl));
+
+    var pm = e.conversion.partition_mapping;
+    if (pm) {
+      var p = el('p');
+      p.appendChild(el('strong', null, 'Partitioning: '));
+      if (pm.iceberg_transforms && pm.iceberg_transforms.length) {
+        p.appendChild(el('code', null, pm.iceberg_transforms.join(', ')));
+      } else {
+        p.appendChild(document.createTextNode('none'));
+      }
+      if (pm.sort_order && pm.sort_order.length) {
+        p.appendChild(document.createTextNode(' · '));
+        p.appendChild(el('strong', null, 'Sort order: '));
+        p.appendChild(el('code', null, pm.sort_order.join(', ')));
+      }
+      p.appendChild(el('span', 'text-muted', pm.auto_derived
+        ? HELP.text.partition_auto
+        : HELP.text.partition_manual));
+      td.appendChild(p);
+    }
+
+    var casts = e.conversion.lossy_casts;
+    if (casts && casts.length) {
+      var cp = el('p');
+      cp.appendChild(el('strong', null, 'Type casts that lose information '));
+      cp.appendChild(tipSpan('i', 'These columns have no exact Iceberg equivalent, so the mapped type loses precision or range. Confirm each one is acceptable for your data before loading.', 'tip tooltip-icon'));
+      td.appendChild(cp);
+      var table = document.createElement('table');
+      table.style.fontSize = '.8125rem';
+      table.style.marginTop = '.25rem';
+      var thead = document.createElement('thead');
+      var hr = document.createElement('tr');
+      ['Column', 'BigQuery Type', 'Iceberg Type', 'Impact'].forEach(function(h) { hr.appendChild(el('th', null, h)); });
+      thead.appendChild(hr);
+      table.appendChild(thead);
+      var tbody = document.createElement('tbody');
+      casts.forEach(function(c) {
+        var tr = document.createElement('tr');
+        var colTd = document.createElement('td');
+        colTd.appendChild(el('code', null, c.column));
+        tr.appendChild(colTd);
+        tr.appendChild(el('td', null, c.source_type));
+        tr.appendChild(el('td', null, c.iceberg_type));
+        tr.appendChild(el('td', 'text-muted', c.loss_description));
+        tbody.appendChild(tr);
+      });
+      table.appendChild(tbody);
+      td.appendChild(table);
+    }
+
+    if (e.conversion.warnings && e.conversion.warnings.length) {
+      var wp = el('p');
+      wp.appendChild(el('strong', null, 'Warnings:'));
+      td.appendChild(wp);
+      td.appendChild(bulletList(e.conversion.warnings));
+    }
+  }
+
+  if (e.storage_placement) {
+    var sp = e.storage_placement;
+    td.appendChild(sectionHeading('Storage placement', 'Where this entity\'s data lives on AWS. S3 Tables (Iceberg) is the default — open format, queryable by both engines. RMS is a hot-tier exception for type fidelity or sub-second SLA; RMS tables are Redshift-only.'));
+    var spP = el('p');
+    spP.appendChild(el('strong', null, 'Storage target: '));
+    var spLabel = sp.target === 'rms'
+      ? 'Redshift Managed Storage (native — two-phase load, see redshift_phase.sql in the migration/ directory)'
+      : 'S3 Tables (Iceberg — open, multi-engine)';
+    spP.appendChild(document.createTextNode(spLabel));
+    td.appendChild(spP);
+    if (sp.signals && sp.signals.length) {
+      var spWhy = el('p');
+      spWhy.appendChild(el('strong', null, 'Why:'));
+      td.appendChild(spWhy);
+      td.appendChild(bulletList(sp.signals, true));
+    }
+  }
+
+  if (e.migration_plan) {
+    var mp = e.migration_plan;
+    td.appendChild(sectionHeading('Load DML (Athena)', ENGINE_META[RECOMMENDED_ENGINE].loadDmlHelp));
+    if (mp.statements && mp.statements[0] && mp.statements[0].indexOf('-- TEMPLATE:') === 0) {
+      var tb = badge('TEMPLATE — needs dates', 'warning', 'This plan contains placeholder date boundaries. Replace them with actual partition boundaries before running.');
+      tb.style.marginBottom = '.5rem';
+      td.appendChild(tb);
+    }
+    var displayLimit = 5;
+    var stmts = mp.statements || [];
+    for (var si = 0; si < Math.min(stmts.length, displayLimit); si++) {
+      td.appendChild(preCode(stmts[si]));
+    }
+    if (stmts.length > displayLimit) {
+      td.appendChild(el('p', 'text-muted', '+ ' + (stmts.length - displayLimit) + ' more statements — see JSON export'));
+    }
+    if (mp.shortcomings && mp.shortcomings.length) {
+      var swp = el('p');
+      swp.style.marginTop = '1rem';
+      swp.appendChild(el('strong', null, 'Shortcomings:'));
+      td.appendChild(swp);
+      var sul = el('ul', null);
+      sul.style.margin = '.25rem 0';
+      sul.style.paddingLeft = '1.25rem';
+      sul.style.fontSize = '.8125rem';
+      mp.shortcomings.forEach(function(sc) {
+        var li = document.createElement('li');
+        var catBadge = badge(sc.category.replace(/_/g, ' '), sc.severity === 'action_required' ? 'warning' : 'low');
+        li.appendChild(catBadge);
+        li.appendChild(document.createTextNode(' ' + sc.description));
+        if (sc.remediation) {
+          li.appendChild(document.createTextNode(' — '));
+          li.appendChild(el('code', null, sc.remediation));
+          if (sc.remediation_engine) {
+            li.appendChild(el('span', 'text-muted', ' (' + sc.remediation_engine + ')'));
+          }
+        }
+        sul.appendChild(li);
+      });
+      td.appendChild(sul);
+    }
+    if (mp.post_optimization && mp.post_optimization.length) {
+      var poh = el('p');
+      poh.style.marginTop = '1rem';
+      poh.appendChild(el('strong', null, 'Post-migration steps:'));
+      td.appendChild(poh);
+      var pol = el('ul', null);
+      pol.style.margin = '.25rem 0';
+      pol.style.paddingLeft = '1.25rem';
+      pol.style.fontSize = '.8125rem';
+      mp.post_optimization.forEach(function(step) {
+        var li = document.createElement('li');
+        li.appendChild(el('strong', null, step.step_type + ': '));
+        li.appendChild(el('code', null, step.command));
+        li.appendChild(el('span', 'text-muted', ' (' + step.engine + ') — ' + step.reason));
+        pol.appendChild(li);
+      });
+      td.appendChild(pol);
+    }
+  }
+  return td;
+}
+
+function buildQueryDetail(e) {
+  var td = document.createElement('td');
+  td.setAttribute('colspan', '7');
+  var c = e.complexity;
+
+  if (c.reasoning === 'no BigQuery-specific constructs detected') {
+    td.appendChild(el('p', 'text-muted', "No BigQuery-specific SQL was found in this entity's definition — it should run on " + ENGINE_META[RECOMMENDED_ENGINE].label + " with little or no change."));
+  } else if (c.reasoning && c.reasoning !== 'no SQL surface visible — cannot assess query complexity') {
+    td.appendChild(scoreBreakdown(c.reasoning));
+  }
+
+  if (c.flags && c.flags.length) td.appendChild(flagsParagraph('What needs attention:', c.flags));
+
+  if (e.depends_on && e.depends_on.length) {
+    var dp = el('p');
+    dp.appendChild(el('strong', null, 'Reads from: '));
+    e.depends_on.forEach(function(dep, i) {
+      dp.appendChild(el('span', 'text-muted', dep));
+      if (i < e.depends_on.length - 1) dp.appendChild(document.createTextNode(', '));
+    });
+    td.appendChild(dp);
+  }
+
+  if (e.rewrite_guidance && e.rewrite_guidance.length) {
+    var engineKey = (e.translated_sql && e.translated_sql.target_engine) || RECOMMENDED_ENGINE;
+    td.appendChild(sectionHeading(ENGINE_META[engineKey].rewriteHeading));
+    td.appendChild(bulletList(e.rewrite_guidance));
+  }
+
+  if (e.translated_sql) {
+    var sqlEngineKey = e.translated_sql.target_engine || RECOMMENDED_ENGINE;
+    var sqlMeta = ENGINE_META[sqlEngineKey];
+    td.appendChild(sectionHeading('Translated ' + sqlMeta.label + ' SQL', sqlMeta.sqlHelp));
+    if (e.translated_sql.confidence === 'LOW') {
+      var lb = badge('LOW CONFIDENCE', 'low', 'The translator hit constructs it could not fully convert — expect to hand-edit this SQL.');
+      lb.style.marginBottom = '.5rem';
+      td.appendChild(lb);
+    } else if (e.translated_sql.confidence === 'MEDIUM') {
+      var mb = badge('AUTO-CONVERTED', 'medium', 'BigQuery-specific constructs (such as timezone conversions) were rewritten automatically. The SQL runs on ' + sqlMeta.label + ', but verify the noted semantics before production use.');
+      mb.style.marginBottom = '.5rem';
+      td.appendChild(mb);
+    }
+    if (e.translated_sql.warnings && e.translated_sql.warnings.length) {
+      var wl = bulletList(e.translated_sql.warnings, true);
+      wl.style.fontSize = '.8125rem';
+      td.appendChild(wl);
+    }
+    td.appendChild(preCode(e.translated_sql.redshift_sql));
+  }
+
+  if (e.has_workload && e.query_workload && e.query_workload.num_shapes > 0) {
+    var samples = getQuerySamples(e);
+    var ns = e.query_workload.num_shapes;
+    if (!samples || !samples.length) {
+      // Stats without embedded SQL: everything lives in the sidecar.
+      td.appendChild(sectionHeading('Production Queries'));
+      td.appendChild(el('p', 'text-muted', wlSummary(e.query_workload) + ' — original + translated SQL in query-workload/' + e.full_name + '.sql next to this report.'));
+    } else {
+      var showing = Math.min(TOP_QUERIES_PER_ENTITY, samples.length);
+      td.appendChild(sectionHeading('Production Queries (top ' + showing + ' of ' + fmtCount(ns) + ' distinct statements, by slot cost)'));
+      samples.slice(0, TOP_QUERIES_PER_ENTITY).forEach(function(sq, idx) {
+        var qDiv = document.createElement('div');
+        qDiv.style.marginBottom = '1.5rem';
+        qDiv.style.borderBottom = '1px solid var(--color-border)';
+        qDiv.style.paddingBottom = '1rem';
+        var header = document.createElement('p');
+        header.style.margin = '0 0 .5rem';
+        header.appendChild(el('strong', null, 'Query ' + (idx + 1)));
+        header.appendChild(document.createTextNode(' '));
+        var meta = el('span', 'text-muted', '(' + sq.s + ', ' + (sq.m / 3600000).toFixed(1) + ' slot-hrs)');
+        meta.style.fontSize = '.8125rem';
+        header.appendChild(meta);
+        qDiv.appendChild(header);
+        var grid = document.createElement('div');
+        grid.style.display = 'grid';
+        grid.style.gridTemplateColumns = '1fr 1fr';
+        grid.style.gap = '12px';
+        var origCol = document.createElement('div');
+        var origLabel = el('p', 'text-muted', 'BigQuery (original)');
+        origLabel.style.margin = '0 0 4px';
+        origLabel.style.fontSize = '11px';
+        origLabel.style.fontWeight = '600';
+        origCol.appendChild(origLabel);
+        origCol.appendChild(preCode(sq.o));
+        grid.appendChild(origCol);
+        var transCol = document.createElement('div');
+        var transLabel = el('p', 'text-muted', ENGINE_META[RECOMMENDED_ENGINE].label + ' (translated)');
+        transLabel.style.margin = '0 0 4px';
+        transLabel.style.fontSize = '11px';
+        transLabel.style.fontWeight = '600';
+        transCol.appendChild(transLabel);
+        transCol.appendChild(preCode(sq.t));
+        grid.appendChild(transCol);
+        qDiv.appendChild(grid);
+        td.appendChild(qDiv);
+      });
+      // Always point at the sidecar file — when nothing was omitted the
+      // pointer previously vanished and readers couldn't find the full set.
+      if (ns > TOP_QUERIES_PER_ENTITY) {
+        td.appendChild(el('p', 'text-muted', fmtCount(ns - TOP_QUERIES_PER_ENTITY) + ' more distinct statements omitted here — all ' + fmtCount(ns) + ' (original + translated) are in query-workload/' + e.full_name + '.sql next to this report.'));
+      } else {
+        td.appendChild(el('p', 'text-muted', 'All ' + fmtCount(ns) + ' distinct statement' + (ns === 1 ? '' : 's') + ' shown — also in query-workload/' + e.full_name + '.sql next to this report.'));
+      }
+    }
+  }
+
+  if (e.placement) {
+    var placementEngineKey = (e.translated_sql && e.translated_sql.target_engine) || RECOMMENDED_ENGINE;
+    td.appendChild(sectionHeading('Where should this live?', ENGINE_META[placementEngineKey].placementTip));
+    var hp = el('p');
+    hp.appendChild(el('strong', null, 'Recommended home: '));
+    var homeLabels = {
+      'REDSHIFT': 'Redshift (engine-local)',
+      'ICEBERG_CATALOG': 'Iceberg catalog (open, multi-engine)',
+      'LAMBDA_UDF_REQUIRED': 'Requires AWS Lambda UDF (USING EXTERNAL FUNCTION)',
+      'CREATE VIEW': 'Athena CREATE VIEW',
+      'UNSUPPORTED': 'Not supported on this Query Engine — see the flagged constructs in this row',
+      'UNKNOWN': 'Undetermined — insufficient metadata'
+    };
+    var homeLabel = homeLabels[e.placement.home] || ('Review required (' + e.placement.home + ')');
+    hp.appendChild(document.createTextNode(homeLabel));
+    td.appendChild(hp);
+    var signals = e.placement.signals || [];
+    if (signals.length) {
+      var whyP = el('p');
+      whyP.appendChild(el('strong', null, 'Why:'));
+      td.appendChild(whyP);
+      td.appendChild(bulletList(signals, true));
+    }
+    if (e.placement.home === 'REDSHIFT' && e.entity_type === 'MATERIALIZED_VIEW') {
+      var rmsNote = el('p', 'text-muted',
+        'Storage note: a Redshift-native materialized view stores its result set in ' +
+        'Redshift Managed Storage — its bytes are included in the RMS line of the AWS ' +
+        'cost breakdown (sized from the BigQuery MV\'s bytes; refresh churn not modeled).');
+      rmsNote.style.fontSize = '.8125rem';
+      td.appendChild(rmsNote);
+    }
+  }
+  return td;
+}
+
+function nonEmpty(v) {
+  // Mirrors Jinja truthiness: empty arrays are falsy (unlike JS).
+  return Array.isArray(v) ? v.length > 0 : !!v;
+}
+
+// Heavy fields (conversion, migration_plan, translated_sql) live in lazy detail
+// chunks — a non-null detail_chunk means at least one of them exists for this row.
+function effortHasDetail(e) {
+  return !!(e.effort.reasoning || nonEmpty(e.effort.flags) || e.detail_chunk != null || e.storage_placement);
+}
+
+function queryHasDetail(e) {
+  return !!(e.complexity.score > 0 || nonEmpty(e.complexity.flags) || nonEmpty(e.rewrite_guidance) || e.placement || e.has_translated_sql || e.has_workload);
+}
+
+function renderEffortRow(e, tr) {
+  // Explicit null checks: 0 rows / 0 GB are real values (empty table), not missing data.
+  var num = el('td', null, e.rows != null ? Number(e.rows).toLocaleString('en-US') : '—');
+  num.style.textAlign = 'right';
+  var sizeTd = document.createElement('td');
+  sizeTd.style.textAlign = 'right';
+  sizeTd.appendChild(tipSpan(
+    fmtSize(e.physical_size_gb),
+    'BigQuery logical: ' + fmtSize(e.logical_size_gb)
+  ));
+  var nameTd = document.createElement('td');
+  nameTd.appendChild(el('strong', null, e.full_name));
+  if (e.effort.confidence === 'LOW') {
+    nameTd.appendChild(document.createTextNode(' '));
+    nameTd.appendChild(badge('LOW CONFIDENCE', 'low', (HELP.confidence.effort || {}).LOW || ''));
+  }
+  tr.appendChild(nameTd);
+  tr.appendChild(el('td', null, e.entity_type));
+  tr.appendChild(el('td', null, e.population));
+  tr.appendChild(num);
+  tr.appendChild(sizeTd);
+  var catTd = document.createElement('td');
+  catTd.appendChild(categoryBadge(e.effort.category));
+  tr.appendChild(catTd);
+}
+
+function renderQueryRow(e, tr) {
+  var nameTd = document.createElement('td');
+  nameTd.appendChild(el('strong', null, e.full_name));
+  if (e.complexity.confidence === 'LOW') {
+    nameTd.appendChild(document.createTextNode(' '));
+    nameTd.appendChild(badge('LOW CONFIDENCE', 'low', (HELP.confidence.complexity || {}).LOW || ''));
+  }
+  tr.appendChild(nameTd);
+  tr.appendChild(el('td', null, e.entity_type));
+  tr.appendChild(el('td', null, e.population));
+  var catTd = document.createElement('td');
+  catTd.appendChild(categoryBadge(e.complexity.category));
+  tr.appendChild(catTd);
+  var srcTd = el('td', 'text-muted');
+  var src = e.complexity.confidence_source;
+  srcTd.appendChild(tipSpan(HELP.sources[src] || String(src || '').replace(/_/g, ' '),
+    HELP.text.source_tip));
+  tr.appendChild(srcTd);
+  var wlTd = document.createElement('td');
+  wlTd.style.fontSize = '.8125rem';
+  if (e.query_workload) {
+    wlTd.textContent = wlSummary(e.query_workload);
+  } else {
+    wlTd.textContent = '—';
+    wlTd.classList.add('text-muted');
+  }
+  tr.appendChild(wlTd);
+}
+
+function EntityTable(opts) {
+  var table = document.getElementById(opts.tableId);
+  var tbody = table.querySelector('tbody');
+  var columnCount = table.querySelector('thead tr').children.length;
+  var pageSize = parseInt(tbody.dataset.pageSize, 10) || 100;
+  var state = { category: 'ALL', query: '', page: 0 };
+  // Optional population-level predicate under the category/search filters
+  // (Query Complexity tab: default to SQL-owning entities only).
+  var baseFilter = opts.baseFilter || null;
+
+  // Lowercase once at load; the filter runs per keystroke over up to ~100k rows.
+  opts.rows.forEach(function(e) { e._nameLower = e.full_name.toLowerCase(); });
+  var matched = opts.rows.filter(function(e) { return !baseFilter || baseFilter(e); });
+
+  var controls = el('div', 'pagination-controls');
+  var prev = el('button', 'pg-prev', '« Prev');
+  var info = el('span', 'page-info');
+  var next = el('button', 'pg-next', 'Next »');
+  controls.appendChild(prev);
+  controls.appendChild(info);
+  controls.appendChild(next);
+  table.parentNode.insertBefore(controls, table);
+  prev.addEventListener('click', function() { if (state.page > 0) { state.page--; render(); } });
+  next.addEventListener('click', function() { state.page++; render(); });
+
+  function refilter() {
+    matched = opts.rows.filter(function(e) {
+      if (baseFilter && !baseFilter(e)) return false;
+      if (state.category !== 'ALL' && opts.categoryOf(e) !== state.category) return false;
+      if (state.query && e._nameLower.indexOf(state.query) === -1) return false;
+      return true;
+    });
+  }
+
+  function render() {
+    var items = matched;
+    var totalPages = Math.max(1, Math.ceil(items.length / pageSize));
+    if (state.page >= totalPages) state.page = totalPages - 1;
+    var start = state.page * pageSize, end = Math.min(start + pageSize, items.length);
+
+    tbody.textContent = '';
+    if (!items.length) {
+      var emptyTr = el('tr', 'empty-row');
+      var emptyTd = el('td', 'text-muted', 'No matching entities.');
+      emptyTd.colSpan = columnCount;
+      emptyTd.style.textAlign = 'center';
+      emptyTr.appendChild(emptyTd);
+      tbody.appendChild(emptyTr);
+    }
+    items.slice(start, end).forEach(function(e) {
+      var hasDetail = opts.hasDetail(e);
+      var tr = el('tr', 'entity-row' + (hasDetail ? ' has-detail' : ''));
+      var expand = el('td', 'expand-cell');
+      if (hasDetail) expand.appendChild(el('span', 'chevron'));
+      tr.appendChild(expand);
+      opts.renderRow(e, tr);
+      tbody.appendChild(tr);
+      if (hasDetail) {
+        tr.addEventListener('click', function() {
+          if (window.getSelection && String(window.getSelection())) return; // don't toggle while selecting text
+          var detail = tr.nextElementSibling;
+          if (!detail || !detail.classList.contains('detail-row')) {
+            detail = el('tr', 'detail-row');
+            // Built lazily on first expand; detailFor() parses the entity's heavy
+            // chunk (DDL/DML/SQL) on first touch and merges it over the row fields.
+            detail.appendChild(opts.buildDetail(detailFor(e)));
+            tr.parentNode.insertBefore(detail, tr.nextSibling);
+          }
+          var opening = !tr.classList.contains('expanded');
+          tr.classList.toggle('expanded', opening);
+          detail.classList.toggle('open', opening);
+        });
+      }
+    });
+
+    var showControls = items.length > pageSize;
+    controls.style.display = showControls ? '' : 'none';
+    if (showControls) {
+      var label = state.category !== 'ALL' ? ' (' + state.category + ')' : '';
+      info.textContent = 'Showing ' + (start + 1) + '–' + end + ' of ' + items.length + label;
+      prev.disabled = state.page === 0;
+      next.disabled = state.page >= totalPages - 1;
+    }
+  }
+
+  this.setCategory = function(cat) { state.category = cat; state.page = 0; refilter(); render(); };
+  this.setQuery = function(q) { state.query = q.toLowerCase().trim(); state.page = 0; refilter(); render(); };
+  this.setBaseFilter = function(fn) { baseFilter = fn; state.page = 0; refilter(); render(); };
+  render();
+}
+
+// Query Complexity default scope: entities that own SQL (views/MVs/routines —
+// population REBUILT) or have attributed production workload from query logs.
+// Plain tables with no workload only add noise; the "Show all entities" toggle
+// brings them back.
+function ownsSql(e) { return e.population === 'REBUILT' || e.has_workload; }
+
+var tables = {
+  effort: new EntityTable({
+    tableId: 'table-effort', rows: DATA.effort,
+    categoryOf: function(e) { return e.effort.category; },
+    hasDetail: effortHasDetail, renderRow: renderEffortRow, buildDetail: buildEffortDetail,
+  }),
+  query: new EntityTable({
+    tableId: 'table-query', rows: DATA.query, baseFilter: ownsSql,
+    categoryOf: function(e) { return e.complexity.category; },
+    hasDetail: queryHasDetail, renderRow: renderQueryRow, buildDetail: buildQueryDetail,
+  }),
+};
+
+// Keep the Query Complexity stat cards consistent with the table's current scope.
+function syncQueryCards(filter) {
+  var counts = { PORTABLE: 0, ADAPT: 0, REWRITE: 0, total: 0 };
+  DATA.query.forEach(function(e) {
+    if (filter && !filter(e)) return;
+    counts.total++;
+    var cat = e.complexity.category;
+    if (counts[cat] != null) counts[cat]++;
+  });
+  document.querySelectorAll('.filter-card[data-filter-target="query"]').forEach(function(card) {
+    var cat = card.dataset.filterCategory;
+    var value = card.querySelector('.stat-value');
+    if (cat === 'ALL') value.textContent = counts.total.toLocaleString('en-US');
+    else if (counts[cat] != null) value.textContent = counts[cat].toLocaleString('en-US');
+  });
+  var label = document.getElementById('query-total-label');
+  if (label) label.textContent = filter ? 'SQL Entities' : 'Total Entities';
+}
+syncQueryCards(ownsSql);
+
+var showAllBox = document.getElementById('query-show-all');
+if (showAllBox) {
+  showAllBox.addEventListener('change', function() {
+    var filter = this.checked ? null : ownsSql;
+    tables.query.setBaseFilter(filter);
+    syncQueryCards(filter);
+  });
+}
+
+function applyFilter(target, category) {
+  tables[target].setCategory(category);
+  var isAll = category === 'ALL';
+  var resetEl = document.querySelector('.filter-reset[data-filter-target="' + target + '"]');
+  if (resetEl) resetEl.classList.toggle('visible', !isAll);
+  document.querySelectorAll('.filter-card[data-filter-target="' + target + '"]').forEach(function(card) {
+    card.classList.toggle('active-filter', card.dataset.filterCategory === category);
+  });
+}
+
+function clearAllFilters(target) {
+  var input = document.querySelector('.search-input[data-search-target="' + target + '"]');
+  if (input) input.value = '';
+  tables[target].setQuery('');
+  applyFilter(target, 'ALL');
+}
+
+document.querySelectorAll('.filter-card').forEach(function(card) {
+  card.addEventListener('click', function() {
+    var target = this.dataset.filterTarget;
+    var category = this.dataset.filterCategory;
+    if (this.classList.contains('active-filter') && category !== 'ALL') {
+      applyFilter(target, 'ALL');
+    } else {
+      applyFilter(target, category);
+    }
+  });
+});
+
+document.querySelectorAll('.filter-reset').forEach(function(elm) {
+  elm.addEventListener('click', function() {
+    clearAllFilters(this.dataset.filterTarget);
+  });
+});
+
+document.querySelectorAll('.search-input[data-search-target]').forEach(function(input) {
+  var timer = null;
+  input.addEventListener('input', function() {
+    var target = this.dataset.searchTarget, value = this.value;
+    clearTimeout(timer);
+    timer = setTimeout(function() { tables[target].setQuery(value); }, 150);
+  });
+});
+
+</script>
+</body>
+</html>

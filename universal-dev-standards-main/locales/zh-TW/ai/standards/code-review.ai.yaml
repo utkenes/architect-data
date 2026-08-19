@@ -1,0 +1,148 @@
+# 程式碼審查清單 - AI 優化版
+# 來源: core/code-review-checklist.md
+
+id: code-review
+meta:
+  version: "1.2.0"
+  updated: "2026-01-05"
+  source: core/code-review-checklist.md
+  description: 系統化的程式碼品質與安全性審查清單
+  language: zh-TW
+
+options:
+  review_approach:
+    description: 選擇程式碼審查方法
+    multiSelect: true
+    choices:
+      - id: pr-review
+        file: options/code-review/pr-review.ai.yaml
+        best_for: 分散式團隊、非同步工作流程
+      - id: pair-programming
+        file: options/code-review/pair-programming.ai.yaml
+        best_for: 複雜功能、知識傳承
+      - id: automated-review
+        file: options/code-review/automated-review.ai.yaml
+        best_for: CI/CD 整合、捕捉常見問題
+
+checklist:
+  functionality:
+    - item: 程式碼執行預期的功能
+    - item: 邊緣案例已處理
+    - item: 錯誤處理適當
+    - item: 無明顯的錯誤或邏輯問題
+
+  code_quality:
+    - item: 程式碼可讀且自我說明
+    - item: 函式/方法具有單一職責
+    - item: 無程式碼重複（DRY）
+    - item: 變數/函式名稱具描述性
+    - item: 無魔術數字或硬編碼值
+
+  security:
+    - item: 無 SQL 注入漏洞
+    - item: 無 XSS 漏洞
+    - item: 輸入驗證存在
+    - item: 敏感資料未被記錄
+    - item: 認證/授權正確
+
+  performance:
+    - item: 無不必要的資料庫查詢
+    - item: 無記憶體洩漏
+    - item: 使用有效率的演算法
+    - item: 適當考慮快取
+
+  testing:
+    - item: 包含單元測試
+    - item: 測試涵蓋邊緣案例
+    - item: 測試有意義（不只是為了覆蓋率）
+
+  documentation:
+    - item: 公開 API 已記錄
+    - item: 複雜邏輯有註解
+    - item: 如需要已更新 README
+
+comment_prefixes:
+  emoji:
+    - prefix: "❗"
+      meaning: 必要變更（阻擋合併）
+    - prefix: "⚠️"
+      meaning: 建議（非阻擋）
+    - prefix: "💡"
+      meaning: 可有可無
+    - prefix: "❓"
+      meaning: 問題/釐清
+    - prefix: "📝"
+      meaning: 小問題
+    - prefix: "👍"
+      meaning: 讚賞
+
+  text:
+    - prefix: "[REQUIRED]"
+      meaning: 合併前必須修正
+    - prefix: "[SUGGESTION]"
+      meaning: 考慮變更
+    - prefix: "[QUESTION]"
+      meaning: 需要釐清
+    - prefix: "[NIT]"
+      meaning: 次要問題
+    - prefix: "[PRAISE]"
+      meaning: 做得好
+
+rules:
+  - id: review-checklist
+    trigger: 審查程式碼時
+    instruction: 系統性地檢查所有清單項目
+    priority: required
+
+  - id: constructive-feedback
+    trigger: 撰寫審查評論時
+    instruction: 建設性回饋；建議改進，而非只是批評
+    priority: required
+
+  - id: explain-why
+    trigger: 要求變更時
+    instruction: 解釋為什麼需要變更，而不只是說什麼要改
+    priority: required
+
+  - id: praise-good-code
+    trigger: 發現好的程式碼時
+    instruction: 認可並讚賞好的實作
+    priority: recommended
+
+  - id: timely-review
+    trigger: 被指派審查時
+    instruction: 在 24 小時內完成審查
+    priority: recommended
+
+examples:
+  good_comment: |
+    ❗ 這個 SQL 查詢有注入漏洞。請使用參數化查詢：
+    ```sql
+    -- 避免：
+    $"SELECT * FROM users WHERE id = {userId}"
+
+    -- 使用：
+    "SELECT * FROM users WHERE id = @userId"
+    ```
+
+  suggestion: |
+    💡 考慮將此提取為單獨的函式以便重用：
+    ```javascript
+    function validateEmail(email) {
+      return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
+    }
+    ```
+
+  praise: |
+    👍 處理這個邊緣案例做得很好！null 檢查防止了潛在的執行時錯誤。
+
+quick_reference:
+  review_areas:
+    columns: [領域, 重點]
+    rows:
+      - [功能性, 正確性和邊緣案例]
+      - [程式碼品質, 可讀性和可維護性]
+      - [安全性, 漏洞和認證]
+      - [效能, 效率和資源使用]
+      - [測試, 覆蓋率和品質]
+      - [文件, 註解和文件]

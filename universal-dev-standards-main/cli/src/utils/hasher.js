@@ -1,0 +1,491 @@
+import { createHash } from 'crypto';
+import { readFileSync, existsSync, readdirSync } from 'fs';
+import { join, relative } from 'path';
+import { UDS_MARKERS } from '../core/constants.js';
+import { resolveIntegrationFile } from '../core/constants.js';
+
+// GitHub issue #155. `git config core.autocrlf true` (the common
+// Windows default) rewrites LF to CRLF on checkout. The manifest's stored
+// hashes are computed from the LF bytes git carries in the blob (that is what
+// every non-Windows install reads), so a Windows working tree — content
+// byte-for-byte what `git status` calls clean — hashed to something else
+// entirely. Every `.standards/*` file, every skill/command file, and every
+// CLAUDE.md/AGENTS.md UDS block came back "modified" although nothing had
+// changed. Normalizing line endings before hashing (both when the manifest is
+// written and when it is compared) makes the hash line-ending agnostic, so
+// LF and CRLF checkouts of the same content agree.
+//
+// This intentionally makes "someone converted this file's line endings, text
+// otherwise identical" invisible to `uds check`/`uds update`. That is the
+// point, not a gap: line-ending convention is a checkout artifact, not
+// content a standards library should track as a modification — it is the
+// same normalization `git diff`/`git status` already apply before deciding a
+// tracked file is dirty.
+
+/**
+ * Heuristic binary-content detector, matching the approach git itself uses:
+ * a NUL byte anywhere in the first 8000 bytes marks the buffer as binary.
+ * Binary content must never be line-ending-normalized — flipping `\r\n` bytes
+ * inside an image or font would silently corrupt the hash rather than make it
+ * platform-agnostic, and could hide (or manufacture) a real difference.
+ * Every file `uds` currently manages under `.standards/`, skills, and
+ * commands is text (`.md`/`.yaml`/`.json`), but this function is the general
+ * per-file entry point (also used for arbitrary skill directory contents),
+ * so the check stays in place for whatever gets added later.
+ * @param {Buffer} buffer
+ * @returns {boolean} True if the buffer looks binary
+ */
+export function isBinaryContent(buffer) {
+  const sampleSize = Math.min(buffer.length, 8000);
+  for (let i = 0; i < sampleSize; i++) {
+    if (buffer[i] === 0) return true;
+  }
+  return false;
+}
+
+/**
+ * Normalize CRLF and lone-CR line endings to LF.
+ * @param {string} text
+ * @returns {string} Normalized text
+ */
+export function normalizeLineEndings(text) {
+  return text.replace(/\r\n/g, '\n').replace(/\r/g, '\n');
+}
+
+/**
+ * Compute SHA-256 hash for a file, normalizing line endings first (unless the
+ * file is binary — see `isBinaryContent`). `size` is the byte length of the
+ * normalized content, not the raw on-disk size, so the two stay consistent
+ * with each other for the quick-reject check in `compareFileHash`.
+ * @param {string} filePath - Absolute file path
+ * @returns {Object|null} { hash, size } or null if file doesn't exist
+ */
+export function computeFileHash(filePath) {
+  try {
+    const raw = readFileSync(filePath);
+    const content = isBinaryContent(raw)
+      ? raw
+      : Buffer.from(normalizeLineEndings(raw.toString('utf-8')), 'utf-8');
+    const hash = createHash('sha256').update(content).digest('hex');
+    return {
+      hash: `sha256:${hash}`,
+      size: content.length
+    };
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Compare file hash with stored hash info
+ * @param {string} filePath - Absolute file path
+ * @param {Object} storedInfo - Stored hash info from manifest
+ * @param {string} storedInfo.hash - Stored hash (format: 'sha256:hexvalue')
+ * @param {number} storedInfo.size - Stored file size in bytes
+ * @returns {'unchanged'|'modified'|'missing'} File status
+ */
+export function compareFileHash(filePath, storedInfo) {
+  if (!existsSync(filePath)) {
+    return 'missing';
+  }
+
+  const current = computeFileHash(filePath);
+  if (!current) {
+    return 'missing';
+  }
+
+  // Quick check: compare size first
+  if (current.size !== storedInfo.size) {
+    return 'modified';
+  }
+
+  // Full check: compare hash
+  if (current.hash !== storedInfo.hash) {
+    return 'modified';
+  }
+
+  return 'unchanged';
+}
+
+/**
+ * Compute hashes for multiple files
+ * @param {string[]} filePaths - Array of absolute file paths
+ * @returns {Object} Map of relative path to hash info
+ */
+export function computeFileHashes(filePaths) {
+  const hashes = {};
+  const now = new Date().toISOString();
+
+  for (const filePath of filePaths) {
+    const result = computeFileHash(filePath);
+    if (result) {
+      hashes[filePath] = {
+        ...result,
+        installedAt: now
+      };
+    }
+  }
+
+  return hashes;
+}
+
+/**
+ * Check if manifest has file hashes (for backward compatibility)
+ * @param {Object} manifest - Manifest object
+ * @returns {boolean} True if manifest has fileHashes
+ */
+export function hasFileHashes(manifest) {
+  return !!(manifest.fileHashes && Object.keys(manifest.fileHashes).length > 0);
+}
+
+/**
+ * Get file status summary from manifest
+ * @param {string} projectPath - Project root path
+ * @param {Object} manifest - Manifest object with fileHashes
+ * @returns {Object} { unchanged: [], modified: [], missing: [], noHash: [] }
+ */
+export function getFileStatusSummary(projectPath, manifest) {
+  const summary = {
+    unchanged: [],
+    modified: [],
+    missing: [],
+    noHash: []
+  };
+
+  if (!hasFileHashes(manifest)) {
+    // Legacy manifest - check existence only
+    const allFiles = [
+      ...manifest.standards.map(s => ({
+        source: s,
+        target: join('.standards', s.split('/').pop())
+      })),
+      ...manifest.extensions.filter(e => typeof e === 'string').map(e => ({
+        source: e,
+        target: join('.standards', e.split('/').pop())
+      })),
+      // `integrations` holds file names in most repos and tool keys in some
+      // (XSPEC-343 R1) — resolve so both shapes yield a real path.
+      ...manifest.integrations.map(i => {
+        const f = resolveIntegrationFile(i) || i;
+        return { source: f, target: f };
+      })
+    ];
+
+    for (const file of allFiles) {
+      const fullPath = join(projectPath, file.target);
+      if (existsSync(fullPath)) {
+        summary.noHash.push(file.target);
+      } else {
+        summary.missing.push(file.target);
+      }
+    }
+
+    return summary;
+  }
+
+  // Check each file with hash
+  for (const [relativePath, hashInfo] of Object.entries(manifest.fileHashes)) {
+    const fullPath = join(projectPath, relativePath);
+    const status = compareFileHash(fullPath, hashInfo);
+
+    switch (status) {
+      case 'unchanged':
+        summary.unchanged.push(relativePath);
+        break;
+      case 'modified':
+        summary.modified.push(relativePath);
+        break;
+      case 'missing':
+        summary.missing.push(relativePath);
+        break;
+    }
+  }
+
+  return summary;
+}
+
+/**
+ * Recursively scan directory for all files
+ * @param {string} dirPath - Directory to scan
+ * @param {string} basePath - Base path for relative path calculation
+ * @returns {string[]} Array of relative paths (always uses forward slashes)
+ */
+function scanDirectory(dirPath, basePath) {
+  const files = [];
+  const items = readdirSync(dirPath, { withFileTypes: true });
+
+  for (const item of items) {
+    const fullPath = join(dirPath, item.name);
+    // `relative()` rather than slice arithmetic. The old form was
+    // `fullPath.slice(basePath.length + 1)`, which assumed basePath carries no
+    // trailing separator. Three agent skill paths do (`.claude/skills/`,
+    // `.opencode/skill/`, `.cursor/skills/`), so every name lost its first
+    // character — `ac-coverage` became `c-coverage`, `.manifest.json` became
+    // `manifest.json`. computeDirectoryHashes then rebuilt an absolute path from
+    // the mangled name, found no file, and dropped the entry: 115 files in, 2
+    // out. `manifest.skillHashes` was therefore never populated, the reconciler
+    // read that as "no hash available for comparison", and every `uds update`
+    // rewrote all 55 skill directories forever. (XSPEC-343 R2)
+    const relativePath = relative(basePath, fullPath).replace(/\\/g, '/');
+
+    if (item.isDirectory()) {
+      files.push(...scanDirectory(fullPath, basePath));
+    } else if (item.isFile()) {
+      files.push(relativePath);
+    }
+  }
+
+  return files;
+}
+
+/**
+ * Scan for untracked files in .standards/ and integration locations
+ * @param {string} projectPath - Project root path
+ * @param {Object} manifest - Manifest object
+ * @returns {string[]} Array of relative paths to untracked files
+ */
+export function scanForUntrackedFiles(projectPath, manifest) {
+  const untracked = [];
+  const trackedPaths = new Set(Object.keys(manifest.fileHashes || {}));
+
+  // 1. Scan .standards/ directory (excluding manifest.json)
+  const standardsDir = join(projectPath, '.standards');
+  if (existsSync(standardsDir)) {
+    const standardsFiles = scanDirectory(standardsDir, projectPath);
+    for (const relPath of standardsFiles) {
+      // Skip manifest.json itself
+      if (relPath === '.standards/manifest.json' ||
+          relPath === '.standards\\manifest.json') {
+        continue;
+      }
+      if (!trackedPaths.has(relPath)) {
+        untracked.push(relPath);
+      }
+    }
+  }
+
+  // 2. Scan for known integration files in project root
+  const knownIntegrations = [
+    '.cursorrules',
+    '.windsurfrules',
+    '.clinerules',
+    '.github/copilot-instructions.md',
+    'CLAUDE.md',
+    'INSTRUCTIONS.md'
+  ];
+
+  for (const intFile of knownIntegrations) {
+    const fullPath = join(projectPath, intFile);
+    if (existsSync(fullPath) && !trackedPaths.has(intFile)) {
+      untracked.push(intFile);
+    }
+  }
+
+  return untracked;
+}
+
+/**
+ * Detect file format based on file path
+ * @param {string} filePath - File path
+ * @returns {'markdown'|'plaintext'} Format type
+ */
+function detectFormat(filePath) {
+  // Plaintext rules files
+  if (filePath.endsWith('.cursorrules') ||
+      filePath.endsWith('.windsurfrules') ||
+      filePath.endsWith('.clinerules')) {
+    return 'plaintext';
+  }
+  return 'markdown';
+}
+
+/**
+ * Extract content between UDS markers from file content
+ * @param {string} content - File content
+ * @param {'markdown'|'plaintext'} format - Format type
+ * @returns {{before: string, blockContent: string, after: string}} Extracted parts
+ */
+function extractBlockContent(content, format) {
+  const markers = UDS_MARKERS[format] || UDS_MARKERS.markdown;
+  const startIdx = content.indexOf(markers.start);
+  const endIdx = content.indexOf(markers.end);
+
+  if (startIdx === -1 || endIdx === -1 || endIdx <= startIdx) {
+    return { before: content, blockContent: '', after: '' };
+  }
+
+  return {
+    before: content.substring(0, startIdx),
+    blockContent: content.substring(startIdx + markers.start.length, endIdx).trim(),
+    after: content.substring(endIdx + markers.end.length)
+  };
+}
+
+/**
+ * Compute hash for UDS marker block content in an integration file
+ * This only hashes the content between UDS markers, not user customizations outside the block
+ * @param {string} filePath - Absolute file path
+ * @returns {Object|null} { blockHash, blockSize, fullHash, fullSize } or null if file doesn't exist or no markers found
+ */
+export function computeIntegrationBlockHash(filePath) {
+  try {
+    // CLAUDE.md / AGENTS.md are always text — no binary check needed here,
+    // unlike `computeFileHash`.
+    const rawContent = readFileSync(filePath, 'utf-8');
+    const content = normalizeLineEndings(rawContent);
+    const format = detectFormat(filePath);
+    const { blockContent } = extractBlockContent(content, format);
+
+    // If no markers found, return null (this file may not have UDS markers)
+    if (!blockContent) {
+      return null;
+    }
+
+    const blockHash = createHash('sha256').update(blockContent).digest('hex');
+    const fullHash = createHash('sha256').update(content).digest('hex');
+
+    return {
+      blockHash: `sha256:${blockHash}`,
+      blockSize: Buffer.byteLength(blockContent, 'utf-8'),
+      fullHash: `sha256:${fullHash}`,
+      fullSize: Buffer.byteLength(content, 'utf-8')
+    };
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Compare integration block hash with stored hash info
+ * @param {string} filePath - Absolute file path
+ * @param {Object} storedInfo - Stored hash info from manifest
+ * @param {string} storedInfo.blockHash - Stored block hash
+ * @param {number} storedInfo.blockSize - Stored block size in bytes
+ * @returns {'unchanged'|'modified'|'missing'|'no_markers'} Block status
+ */
+export function compareIntegrationBlockHash(filePath, storedInfo) {
+  if (!existsSync(filePath)) {
+    return 'missing';
+  }
+
+  const current = computeIntegrationBlockHash(filePath);
+  if (!current) {
+    return 'no_markers';
+  }
+
+  // Compare block hash and size
+  if (current.blockSize !== storedInfo.blockSize) {
+    return 'modified';
+  }
+
+  if (current.blockHash !== storedInfo.blockHash) {
+    return 'modified';
+  }
+
+  return 'unchanged';
+}
+
+/**
+ * Compute hashes for all files in a directory recursively
+ * @param {string} dirPath - Directory to scan
+ * @param {string} baseKey - Base key prefix for hash map entries
+ * @returns {Object} Map of key to { hash, size, installedAt }
+ */
+export function computeDirectoryHashes(dirPath, baseKey = '') {
+  const hashes = {};
+  const now = new Date().toISOString();
+
+  if (!existsSync(dirPath)) {
+    return hashes;
+  }
+
+  const files = scanDirectory(dirPath, dirPath);
+
+  for (const relativePath of files) {
+    const fullPath = join(dirPath, relativePath);
+    const hashInfo = computeFileHash(fullPath);
+
+    if (hashInfo) {
+      // Build key: baseKey/relativePath (using forward slashes for consistency)
+      const key = baseKey ? `${baseKey}/${relativePath}` : relativePath;
+      hashes[key] = {
+        ...hashInfo,
+        installedAt: now
+      };
+    }
+  }
+
+  return hashes;
+}
+
+/**
+ * Compare directory contents against stored hashes
+ * @param {string} dirPath - Directory to check
+ * @param {Object} storedHashes - Map of key to { hash, size }
+ * @param {string} baseKey - Base key prefix used when computing hashes
+ * @returns {Object} { unchanged: [], modified: [], missing: [], added: [] }
+ */
+export function compareDirectoryHashes(dirPath, storedHashes, baseKey = '') {
+  const result = {
+    unchanged: [],
+    modified: [],
+    missing: [],
+    added: []
+  };
+
+  // Get current files
+  const currentHashes = computeDirectoryHashes(dirPath, baseKey);
+  const currentKeys = new Set(Object.keys(currentHashes));
+  const storedKeys = new Set(Object.keys(storedHashes));
+
+  // Check stored files
+  for (const key of storedKeys) {
+    if (!currentKeys.has(key)) {
+      result.missing.push(key);
+    } else {
+      const stored = storedHashes[key];
+      const current = currentHashes[key];
+
+      if (stored.hash === current.hash && stored.size === current.size) {
+        result.unchanged.push(key);
+      } else {
+        result.modified.push(key);
+      }
+    }
+  }
+
+  // Check for added files
+  for (const key of currentKeys) {
+    if (!storedKeys.has(key)) {
+      result.added.push(key);
+    }
+  }
+
+  return result;
+}
+
+/**
+ * Refresh all integrationBlockHashes in manifest by recalculating from disk
+ * Ensures manifest hashes always match actual file content
+ * @param {Object} manifest - Manifest object (mutated in place)
+ * @param {string} projectPath - Project root path
+ * @returns {Object} The updated manifest
+ */
+export function refreshIntegrationBlockHashes(manifest, projectPath) {
+  if (!manifest.integrationBlockHashes || Object.keys(manifest.integrationBlockHashes).length === 0) {
+    return manifest;
+  }
+
+  for (const [relativePath, stored] of Object.entries(manifest.integrationBlockHashes)) {
+    const fullPath = join(projectPath, relativePath);
+    const current = computeIntegrationBlockHash(fullPath);
+    if (current) {
+      manifest.integrationBlockHashes[relativePath] = {
+        ...current,
+        installedAt: stored.installedAt || new Date().toISOString()
+      };
+    }
+  }
+
+  return manifest;
+}

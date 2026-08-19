@@ -1,0 +1,84 @@
+---
+name: atdd-assistant
+source: ../../../../skills/atdd-assistant/SKILL.md
+source_version: 1.0.0
+translation_version: 1.1.0
+last_synced: 2026-08-17
+status: current
+description: |
+  [UDS] 驗收測試驅動開發（ATDD）的參考資料：INVEST 準則、Gherkin 驗收條件格式與 Three Amigos 結構。
+  Use when: 與 Product Owner 一起定義驗收條件、進行規格工作坊、用 INVEST 檢視使用者故事。
+  Not for: 執行 ATDD 生命週期或強制 PO 簽核關卡——該部分已移至採用層（XSPEC-095）；撰寫單元測試——請用 /tdd。
+  Keywords: ATDD, acceptance test, acceptance criteria, INVEST, specification workshop, Three Amigos, 驗收測試驅動開發, 驗收條件, 規格工作坊.
+---
+
+# ATDD 助手
+
+> **語言**: [English](../../../../skills/atdd-assistant/SKILL.md) | 繁體中文
+
+> ⚠️ **狀態：參考用（非可執行流程）** — 5 階段 ATDD 生命週期協調（WORKSHOP→DISTILLATION→DEVELOPMENT→DEMO→DONE、INVEST 驗證、AC→Gherkin 轉換、RED/GREEN 執行、PO sign-off gates）已於 2026-04-28 移至 **adoption layer（XSPEC-095）**。此處保留 INVEST 準則、ATDD 循環圖、Gherkin AC 格式、Three Amigos 結構供參考；需要強制執行的流程請改用你的 adoption layer 工具鏈。
+
+引導驗收測試驅動開發（ATDD）流程，用於定義和驗證使用者故事。
+
+## ATDD 循環
+
+WORKSHOP ──► DISTILLATION ──► DEVELOPMENT ──► DEMO ──► DONE
+
+## 工作流程
+
+### 1. WORKSHOP - 定義驗收條件
+PO 提出使用者故事，團隊提出澄清問題，共同定義驗收條件。
+
+### 2. DISTILLATION - 轉換為測試
+將驗收條件轉換為可執行的測試格式，消除歧義，取得 PO 簽核。
+
+### 3. DEVELOPMENT - 實作
+執行驗收測試（初始應失敗），使用 BDD/TDD 進行實作，迭代直到全部通過。
+
+### 4. DEMO - 向利害關係人展示
+展示通過的驗收測試，示範可運作的功能，取得正式驗收。
+
+### 5. DONE - 完成
+PO 已驗收，程式碼已合併，故事已關閉。
+
+## INVEST 準則
+
+| 準則 | 說明 | Criterion | Description |
+|------|------|-----------|-------------|
+| **I**ndependent | 可獨立開發 | Independent | Can be developed separately |
+| **N**egotiable | 可協商細節 | Negotiable | Details can be discussed |
+| **V**aluable | 提供商業價值 | Valuable | Delivers business value |
+| **E**stimable | 可估算工作量 | Estimable | Can estimate effort |
+| **S**mall | 一個 Sprint 可完成 | Small | Fits in one sprint |
+| **T**estable | 有明確驗收條件 | Testable | Has clear acceptance criteria |
+
+## 使用者故事格式
+
+```
+As a [role],
+I want [feature],
+So that [benefit].
+
+### Acceptance Criteria
+- Given [context], when [action], then [result]
+```
+
+## 使用方式
+
+- `/atdd` - 啟動互動式 ATDD 會話
+- `/atdd "user can reset password"` - 針對特定功能進行 ATDD
+- `/atdd US-123` - 針對現有使用者故事進行 ATDD
+
+## 下一步引導
+
+`/atdd` 完成後，AI 助手應建議：
+
+> **驗收測試已定義。建議下一步：**
+> - 執行 `/sdd` 建立規格文件
+> - 執行 `/bdd` 將 AC 轉為 Gherkin 場景
+> - 執行 `/tdd` 直接實作驗收測試
+
+## 參考
+
+- 詳細指南：[guide.md](./guide.md)
+- 核心規範：[acceptance-test-driven-development.md](../../../../core/acceptance-test-driven-development.md)

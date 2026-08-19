@@ -1,0 +1,89 @@
+[tag=example]
+== Architecture Decision Record Example
+
+|===
+| Date:    h| 2024-06-15
+| Authors: h| Architecture Team (John Doe, Jane Smith)
+| Status:  h| Final
+|===
+
+=== Problem Description and Context
+
+Our e-commerce platform currently uses a monolithic database architecture where all services (user management, product catalog, orders, inventory) share a single PostgreSQL database. This has led to:
+
+* **Scalability bottlenecks**: Different services have varying load patterns but cannot be scaled independently
+* **Performance issues**: Complex queries from the product catalog service impact order processing performance
+* **Deployment coupling**: Database schema changes require coordination across all teams
+* **Single point of failure**: Any database issue affects the entire platform
+
+The system needs to handle:
+* 10M+ active users
+* 1M+ products in catalog
+* Peak loads of 50,000 concurrent users during sales events
+* 99.9% availability SLA requirement
+
+=== Alternative Evaluation (Pugh Matrix)
+
+|===
+| Criterion | Shared Database (Baseline) | Database per Service | Shared + Read Replicas | Event Sourcing + CQRS
+| **Development Complexity** | 0 | -2 | -1 | -3
+| **Operational Complexity** | 0 | -1 | -1 | -2
+| **Scalability** | 0 | +3 | +2 | +3
+| **Performance** | 0 | +2 | +2 | +3
+| **Data Consistency** | 0 | -2 | 0 | -1
+| **Team Independence** | 0 | +3 | +1 | +2
+| **Cost** | 0 | -1 | -1 | -2
+| **Migration Effort** | 0 | -2 | -1 | -3
+| **Total Score** | 0 | **0** | **+1** | **-3**
+|===
+
+**Rejected Alternatives:**
+
+* **Database per Service**: While providing excellent isolation and scalability, the migration effort and operational complexity were deemed too high for our current team size
+* **Event Sourcing + CQRS**: Offers superior performance and scalability but introduces significant complexity that exceeds our team's current expertise
+
+=== Decision
+
+**Selected Solution: Shared Database + Read Replicas**
+
+We will implement a hybrid approach:
+1. Maintain the current shared database for write operations
+2. Add dedicated read replicas for each major service domain
+3. Implement service-specific data access layers
+4. Plan for future migration to database per service
+
+This provides immediate performance improvements with manageable complexity while creating a migration path for future architectural evolution.
+
+=== Consequences
+
+==== Positive Effects
+
+* **Immediate performance improvement**: Read replicas will reduce query contention
+* **Service isolation**: Each service gets dedicated read capacity
+* **Manageable migration**: Low-risk incremental approach
+* **Cost effective**: Minimal infrastructure changes required
+* **Team readiness**: Builds expertise for future database per service migration
+
+==== Risks
+
+* **Data lag**: Read replicas may have slight delay (< 100ms acceptable)
+* **Complexity increase**: Need to manage multiple database connections
+* **Partial solution**: Still maintains some coupling through shared write database
+* **Future migration debt**: Eventually need to migrate to full service isolation
+
+==== Technical Debt
+
+* **Schema coupling**: Write database still requires cross-team coordination
+* **Query optimization**: Need to optimize queries for replica performance
+* **Monitoring complexity**: Additional database instances to monitor
+* **Connection pooling**: May need to adjust connection pool configurations
+
+=== Additional Information
+
+* **Reference**: Database per Service pattern - https://microservices.io/patterns/data/database-per-service.html
+* **Timeline**: Implementation planned for Q3 2024, 8 weeks duration
+* **Success Metrics**: 
+  - Reduce average query response time by 40%
+  - Eliminate read query interference with write operations
+  - Maintain 99.9% availability during implementation
+[tag=example]

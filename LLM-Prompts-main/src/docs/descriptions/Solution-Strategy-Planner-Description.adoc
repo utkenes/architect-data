@@ -1,0 +1,55 @@
+// tag::purpose[]
+Develop comprehensive solution strategies based on quality goals following arc42 Chapter 4 principles
+// end::purpose[]
+
+// tag::detailed[]
+=== Purpose
+The Solution Strategy Planner prompt helps systematically develop comprehensive solution strategies that directly address identified quality goals and scenarios. It creates detailed strategic approaches following arc42 Chapter 4 principles, ensuring that architectural decisions are quality-driven and well-documented.
+
+=== When to Use
+* Developing solution strategies for new software systems
+* Creating arc42 Chapter 4 (Solution Strategy) documentation
+* When quality goals and scenarios are defined but solution approach is unclear
+* Before major architectural decisions that will shape the system
+* When balancing multiple quality attributes with conflicting requirements
+* During architecture reviews to validate strategic decisions
+* When transitioning from requirements to solution design
+* For complex systems requiring comprehensive strategic planning
+
+=== What It Produces
+* **Quality-Driven Strategy**: Solutions directly tied to specific quality goals and scenarios
+* **Technology Strategy**: Comprehensive technology decisions with rationale
+* **Decomposition Strategy**: System structure and component boundaries
+* **Quality Achievement Strategy**: Specific mechanisms for achieving quality goals
+* **Implementation Roadmap**: Phased approach to realizing the strategy
+* **Risk Assessment**: Strategic risks and mitigation approaches
+* **Trade-off Analysis**: Documented decisions and alternatives considered
+
+=== Key Benefits
+* **Quality-Focused**: Ensures every strategic decision supports specific quality goals
+* **Systematic Approach**: 6-step process covers all aspects of solution strategy
+* **Decision Traceability**: Clear rationale linking quality goals to architectural decisions
+* **Implementation Guidance**: Actionable roadmap for realizing the strategy
+* **Risk Management**: Proactive identification and mitigation of strategic risks
+* **Trade-off Documentation**: Explicit documentation of decisions and alternatives
+
+=== Integration with arc42
+This prompt directly supports arc42 Chapter 4 (Solution Strategy) and connects to:
+
+* **Chapter 1 (Introduction and Goals)**: Quality goals provide foundation for strategy
+* **Chapter 3 (System Scope and Context)**: External constraints influence strategic decisions
+* **Chapter 5 (Building Block View)**: Decomposition strategy guides system structure
+* **Chapter 6 (Runtime View)**: Quality achievement mechanisms inform dynamic behavior
+* **Chapter 9 (Architecture Decisions)**: Strategic decisions become formal ADRs
+* **Chapter 11 (Risk and Technical Debt)**: Strategic risks feed into risk management
+
+The solution strategy serves as a bridge between quality requirements and detailed architecture design, ensuring all subsequent architectural work remains aligned with strategic objectives.
+
+=== Special Features
+* **Quality Scenarios Integration**: Strategy directly addresses specific, measurable quality requirements
+* **Multiple Strategy Types**: Technology, decomposition, quality achievement, and implementation strategies
+* **Visual Strategy Models**: PlantUML diagrams showing strategic approaches and relationships
+* **Implementation Planning**: Concrete roadmap with phases, milestones, and validation approaches
+* **Evolution Strategy**: Plans for how architecture will adapt and evolve over time
+* **Governance Integration**: Approaches for ensuring strategy compliance during development
+// end::detailed[]

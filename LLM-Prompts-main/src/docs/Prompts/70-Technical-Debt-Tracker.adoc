@@ -1,0 +1,10 @@
+:jbake-title: Technical Debt Tracker
+
+== Technical Debt Tracker
+
+ifndef::projectRootDir[:projectRootDir: ../../..]
+
+[source, markdown]
+----
+include::{projectRootDir}/prompts/Technical-Debt-Tracker.md[]
+----

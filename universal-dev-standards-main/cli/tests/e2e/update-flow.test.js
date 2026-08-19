@@ -1,0 +1,799 @@
+/**
+ * E2E Tests for uds update command
+ * Tests version updates, integrations-only mode, and skills update detection
+ */
+
+import { describe, it, expect, beforeEach, afterEach, beforeAll, afterAll } from 'vitest';
+import { join, dirname } from 'path';
+import { fileURLToPath } from 'url';
+import { readFile, writeFile, mkdir } from 'fs/promises';
+import {
+  runCommand,
+  runNonInteractive,
+  createTempDir,
+  cleanupTempDir,
+  setupTestDir,
+  fileExists
+} from '../utils/cli-runner.js';
+
+const __dirname = dirname(fileURLToPath(import.meta.url));
+const FIXTURES_DIR = join(__dirname, '../fixtures/update-scenarios');
+
+// Test report accumulator
+const testReport = {
+  timestamp: new Date().toISOString(),
+  scenarios: [],
+  summary: {
+    total: 0,
+    passed: 0,
+    failed: 0
+  }
+};
+
+// Load expected messages
+let expectedMessages = {};
+beforeAll(async () => {
+  const messagesPath = join(FIXTURES_DIR, 'expected-messages.json');
+  const content = await readFile(messagesPath, 'utf8');
+  expectedMessages = JSON.parse(content).messages;
+});
+
+describe('E2E: uds update', () => {
+  let testDir;
+
+  beforeEach(async () => {
+    testDir = await createTempDir();
+  });
+
+  afterEach(async () => {
+    if (testDir) {
+      await cleanupTempDir(testDir);
+    }
+  });
+
+  // ===== Pre-requisite: Not Initialized =====
+  describe('Pre-requisite Checks', () => {
+    it('should show error when not initialized', async () => {
+      await setupTestDir(testDir, { preInitialized: false });
+
+      const result = await runCommand('update', { yes: true }, testDir);
+
+      expect(result.stdout).toContain(expectedMessages.errors.notInitialized);
+      expect(result.stdout).toContain(expectedMessages.errors.runInit);
+
+      recordScenarioResult('Not Initialized Error', {
+        steps: [
+          { step: 1, name: 'Error message', matched: result.stdout.includes('not initialized') },
+          { step: 2, name: 'Hint message', matched: result.stdout.includes('uds init') }
+        ],
+        output: result.stdout
+      });
+    });
+  });
+
+  // ===== Basic Update Output =====
+  describe('Basic Update Output', () => {
+    it('should show header and version info when initialized', async () => {
+      await setupTestDir(testDir, {});
+      await runNonInteractive({}, testDir);
+
+      const result = await runCommand('update', { yes: true, offline: true }, testDir, 10000);
+
+      expect(result.stdout).toContain(expectedMessages.header.title);
+      expect(result.stdout).toContain(expectedMessages.versionInfo.currentVersion);
+
+      recordScenarioResult('Header and Version Display', {
+        steps: [
+          { step: 1, name: 'Title shown', matched: result.stdout.includes('Update') },
+          { step: 2, name: 'Version info', matched: result.stdout.includes('version') }
+        ],
+        output: result.stdout
+      });
+    });
+
+    it('should show up-to-date message when no updates available', async () => {
+      await setupTestDir(testDir, {});
+      await runNonInteractive({}, testDir);
+
+      const result = await runCommand('update', { yes: true, offline: true }, testDir, 10000);
+
+      // Since we just initialized, should be up to date
+      expect(result.stdout).toContain(expectedMessages.versionInfo.upToDate);
+
+      recordScenarioResult('Up to Date Message', {
+        steps: [
+          { step: 1, name: 'Up to date', matched: result.stdout.includes('up to date') }
+        ],
+        output: result.stdout
+      });
+    });
+  });
+
+  // ===== Integrations Only Mode =====
+  describe('Integrations Only Mode', () => {
+    it('should show no AI tools error when none configured', async () => {
+      await setupTestDir(testDir, {});
+      // Initialize without AI tools detection
+      await runNonInteractive({ skillsLocation: 'none' }, testDir);
+
+      // Remove aiTools from manifest
+      const manifestPath = join(testDir, '.standards/manifest.json');
+      const manifest = JSON.parse(await readFile(manifestPath, 'utf8'));
+      manifest.aiTools = [];
+      await writeFile(manifestPath, JSON.stringify(manifest, null, 2));
+
+      const result = await runCommand('update', { integrationsOnly: true }, testDir, 10000);
+
+      expect(result.stdout).toContain(expectedMessages.integrationsOnly.noAiTools);
+
+      recordScenarioResult('Integrations Only - No AI Tools', {
+        steps: [
+          { step: 1, name: 'No AI tools message', matched: result.stdout.includes('No AI tools') }
+        ],
+        output: result.stdout
+      });
+    });
+
+    it('should regenerate integration files with --integrations-only', async () => {
+      await setupTestDir(testDir, {});
+      await writeFile(join(testDir, '.cursorrules'), '# Cursor rules');
+      await runNonInteractive({}, testDir);
+
+      const result = await runCommand('update', { integrationsOnly: true }, testDir, 15000);
+
+      expect(result.stdout).toContain(expectedMessages.integrationsOnly.success);
+
+      recordScenarioResult('Integrations Only - Regenerate', {
+        steps: [
+          { step: 1, name: 'Success message', matched: result.stdout.includes('successfully') }
+        ],
+        output: result.stdout
+      });
+    });
+  });
+
+  // ===== Standards Only Mode =====
+  describe('Standards Only Mode', () => {
+    it('should update only standards with --standards-only', async () => {
+      await setupTestDir(testDir, {});
+      await runNonInteractive({}, testDir);
+
+      const result = await runCommand('update', { standardsOnly: true, yes: true, offline: true }, testDir, 10000);
+
+      // Should show version info and update status
+      expect(result.stdout).toContain(expectedMessages.header.title);
+      // Should be up to date or show update info
+
+      recordScenarioResult('Standards Only Mode', {
+        steps: [
+          { step: 1, name: 'Header shown', matched: result.stdout.includes('Update') }
+        ],
+        output: result.stdout
+      });
+    });
+  });
+
+  // ===== Sync Refs Mode =====
+  describe('Sync Refs Mode', () => {
+    it('should sync integration references with --sync-refs', async () => {
+      await setupTestDir(testDir, {});
+      await writeFile(join(testDir, '.cursorrules'), '# Cursor rules');
+      await runNonInteractive({}, testDir);
+
+      const result = await runCommand('update', { syncRefs: true }, testDir, 15000);
+
+      // Should show sync refs output or error about no configs
+      const hasSyncOutput = result.stdout.includes('Sync') ||
+                            result.stdout.includes('sync') ||
+                            result.stdout.includes('reference') ||
+                            result.stdout.includes('No integration');
+      expect(hasSyncOutput).toBe(true);
+
+      recordScenarioResult('Sync Refs Mode', {
+        steps: [
+          { step: 1, name: 'Sync refs output', matched: hasSyncOutput }
+        ],
+        output: result.stdout
+      });
+    });
+  });
+
+  // ===== Skills Update Mode =====
+  describe('Skills Update Mode', () => {
+    it('should show skills status with --skills', async () => {
+      await setupTestDir(testDir, {});
+      await runNonInteractive({}, testDir);
+
+      const result = await runCommand('update', { skills: true }, testDir, 15000);
+
+      // Should show skills update output or no skills message
+      const hasSkillsOutput = result.stdout.includes('Skills') ||
+                              result.stdout.includes('skills') ||
+                              result.stdout.includes('No Skills');
+      expect(hasSkillsOutput).toBe(true);
+
+      recordScenarioResult('Skills Update Mode', {
+        steps: [
+          { step: 1, name: 'Skills output', matched: hasSkillsOutput }
+        ],
+        output: result.stdout
+      });
+    });
+  });
+
+  // ===== Commands Update Mode =====
+  describe('Commands Update Mode', () => {
+    it('should show commands status with --commands', async () => {
+      await setupTestDir(testDir, {});
+      await runNonInteractive({}, testDir);
+
+      const result = await runCommand('update', { commands: true }, testDir, 15000);
+
+      // Should show commands update output or no commands message
+      const hasCommandsOutput = result.stdout.includes('command') ||
+                                result.stdout.includes('Command') ||
+                                result.stdout.includes('No') ||
+                                result.stdout.includes('slash');
+      expect(hasCommandsOutput).toBe(true);
+
+      recordScenarioResult('Commands Update Mode', {
+        steps: [
+          { step: 1, name: 'Commands output', matched: hasCommandsOutput }
+        ],
+        output: result.stdout
+      });
+    });
+  });
+
+  // ===== Help Output =====
+  describe('Command Help', () => {
+    it('should show help with --help', async () => {
+      const result = await runCommand('update', { help: true }, testDir);
+
+      expect(result.stdout).toContain('update');
+      expect(result.stdout).toContain('--integrations-only');
+      expect(result.stdout).toContain('--standards-only');
+      expect(result.stdout).toContain('--sync-refs');
+      expect(result.stdout).toContain('--skills');
+      expect(result.stdout).toContain('--commands');
+      expect(result.stdout).toContain('--yes');
+
+      recordScenarioResult('Help output', {
+        steps: [
+          { step: 1, name: 'Shows update', matched: result.stdout.includes('update') },
+          { step: 2, name: 'Shows --integrations-only', matched: result.stdout.includes('--integrations-only') },
+          { step: 3, name: 'Shows --standards-only', matched: result.stdout.includes('--standards-only') },
+          { step: 4, name: 'Shows --sync-refs', matched: result.stdout.includes('--sync-refs') },
+          { step: 5, name: 'Shows --skills', matched: result.stdout.includes('--skills') },
+          { step: 6, name: 'Shows --commands', matched: result.stdout.includes('--commands') },
+          { step: 7, name: 'Shows --yes', matched: result.stdout.includes('--yes') }
+        ],
+        output: result.stdout
+      });
+    });
+  });
+
+  // ===== Bug Regression Tests =====
+  describe('Bug Regression Tests', () => {
+    it('should install options standards to correct subdirectory', async () => {
+      // Bug: options/ files were written to .standards/ instead of .standards/options/
+      await setupTestDir(testDir, {});
+      await runNonInteractive({}, testDir);
+
+      const result = await runCommand('update', { yes: true, offline: true }, testDir, 15000);
+
+      const optionsExists = await fileExists(join(testDir, '.standards/options/english.ai.yaml'));
+      expect(optionsExists).toBe(true);
+
+      // Double-check: uds check should not report options missing
+      const checkResult = await runCommand('check', { yes: true }, testDir, 15000);
+      expect(checkResult.stdout).not.toContain('options missing');
+
+      recordScenarioResult('Options subdirectory regression', {
+        steps: [
+          { step: 1, name: 'options/english.ai.yaml exists', matched: optionsExists },
+          { step: 2, name: 'check passes without options warning', matched: !checkResult.stdout.includes('options missing') }
+        ],
+        output: result.stdout
+      });
+    });
+
+    it('should not crash when manifest.extensions contains non-string items', async () => {
+      // Bug: extensions with object items caused .endsWith() TypeError
+      await setupTestDir(testDir, {});
+      await runNonInteractive({}, testDir);
+
+      // Inject non-string extension into manifest
+      const manifestPath = join(testDir, '.standards/manifest.json');
+      const manifest = JSON.parse(await readFile(manifestPath, 'utf8'));
+      if (!manifest.extensions) manifest.extensions = [];
+      manifest.extensions.push({ name: 'custom-domain', type: 'object' });
+      await writeFile(manifestPath, JSON.stringify(manifest, null, 2));
+
+      const result = await runCommand('update', { yes: true, offline: true }, testDir, 15000);
+
+      expect(result.exitCode).not.toBe(-1);
+      expect(result.stderr || '').not.toContain('TypeError');
+
+      recordScenarioResult('Non-string extensions regression', {
+        steps: [
+          { step: 1, name: 'No crash (exitCode != -1)', matched: result.exitCode !== -1 },
+          { step: 2, name: 'No TypeError in stderr', matched: !(result.stderr || '').includes('TypeError') }
+        ],
+        output: result.stdout
+      });
+    });
+
+    it('should not crash with null source standards', async () => {
+      // Bug: basename(null) caused TypeError
+      await setupTestDir(testDir, {});
+      await runNonInteractive({}, testDir);
+
+      const result = await runCommand('update', { yes: true, offline: true }, testDir, 15000);
+
+      expect(result.exitCode).toBe(0);
+      expect(result.stderr || '').not.toContain('TypeError');
+
+      recordScenarioResult('Null source regression', {
+        steps: [
+          { step: 1, name: 'Exit code 0', matched: result.exitCode === 0 },
+          { step: 2, name: 'No TypeError in stderr', matched: !(result.stderr || '').includes('TypeError') }
+        ],
+        output: result.stdout
+      });
+    });
+
+    it('should preserve user custom content after integrations-only update', async () => {
+      // Bug: update overwrote user content outside UDS marker blocks
+      await setupTestDir(testDir, {});
+      await writeFile(join(testDir, '.cursorrules'), '# Cursor rules');
+      await runNonInteractive({}, testDir);
+
+      // Read generated .cursorrules and append user content after UDS block
+      const cursorrules = await readFile(join(testDir, '.cursorrules'), 'utf8');
+      const userContent = '\n# USER_CUSTOM_CONTENT_E2E_TEST\n';
+      await writeFile(join(testDir, '.cursorrules'), cursorrules + userContent);
+
+      // Run integrations-only update
+      const result = await runCommand('update', { integrationsOnly: true }, testDir, 15000);
+
+      // Verify user content is preserved
+      const updatedContent = await readFile(join(testDir, '.cursorrules'), 'utf8');
+      const preserved = updatedContent.includes('USER_CUSTOM_CONTENT_E2E_TEST');
+      expect(preserved).toBe(true);
+
+      recordScenarioResult('User content preservation regression', {
+        steps: [
+          { step: 1, name: 'User custom content preserved', matched: preserved }
+        ],
+        output: result.stdout
+      });
+    });
+
+    it('should display options/ subdirectory in file list output', async () => {
+      // Bug: update showed .standards/unit-testing.ai.yaml instead of .standards/options/unit-testing.ai.yaml
+      await setupTestDir(testDir, {});
+      await runNonInteractive({}, testDir);
+
+      // Set manifest to older version so update shows file list
+      const manifestPath = join(testDir, '.standards/manifest.json');
+      const manifest = JSON.parse(await readFile(manifestPath, 'utf8'));
+      manifest.upstream.version = '0.0.1';
+      await writeFile(manifestPath, JSON.stringify(manifest, null, 2));
+
+      const result = await runCommand('update', { yes: true, offline: true }, testDir, 15000);
+
+      // Options standards should show with options/ prefix in the output
+      const showsOptionsPath = result.stdout.includes('.standards/options/');
+      expect(showsOptionsPath).toBe(true);
+
+      // Should NOT show options files without the options/ prefix
+      // e.g., should not show ".standards/english.ai.yaml" (without options/)
+      const lines = result.stdout.split('\n');
+      const optionsFileWithoutPrefix = lines.some(line =>
+        line.includes('.standards/english.ai.yaml') && !line.includes('.standards/options/english.ai.yaml')
+      );
+      expect(optionsFileWithoutPrefix).toBe(false);
+
+      recordScenarioResult('Options display path regression', {
+        steps: [
+          { step: 1, name: 'Shows .standards/options/ path', matched: showsOptionsPath },
+          { step: 2, name: 'No incorrect flat path', matched: !optionsFileWithoutPrefix }
+        ],
+        output: result.stdout
+      });
+    });
+
+    it('should clean up stale commandHashes after commands update', async () => {
+      // Bug: Object.assign only added new entries, never removed renamed/deleted commands
+      await setupTestDir(testDir, {});
+      await runNonInteractive({}, testDir);
+
+      // Set up commands installation in manifest so --commands mode works
+      const manifestPath = join(testDir, '.standards/manifest.json');
+      const manifest = JSON.parse(await readFile(manifestPath, 'utf8'));
+      if (!manifest.commands) manifest.commands = {};
+      manifest.commands.installed = true;
+      manifest.commands.installations = [{ agent: 'gemini-cli', level: 'project' }];
+      if (!manifest.commandHashes) manifest.commandHashes = {};
+      // Inject a stale commandHash entry
+      manifest.commandHashes['gemini-cli/stale-removed-command.toml'] = {
+        hash: 'fake-hash-12345',
+        size: 100,
+        installedAt: '2025-01-01T00:00:00Z'
+      };
+      await writeFile(manifestPath, JSON.stringify(manifest, null, 2));
+
+      // Run update --commands to trigger commandHashes refresh
+      const result = await runCommand('update', { commands: true }, testDir, 15000);
+
+      // Read manifest again - stale entry should be removed
+      const updatedManifest = JSON.parse(await readFile(manifestPath, 'utf8'));
+      const staleRemoved = !updatedManifest.commandHashes?.['gemini-cli/stale-removed-command.toml'];
+      expect(staleRemoved).toBe(true);
+
+      recordScenarioResult('Stale commandHashes cleanup regression', {
+        steps: [
+          { step: 1, name: 'Stale entry removed from commandHashes', matched: staleRemoved }
+        ],
+        output: result.stdout
+      });
+    });
+
+    it('should auto-restore missing files after update with --yes', async () => {
+      // Regression: uds update did not restore missing .ai.yaml files
+      // Users had to run uds check and manually restore each file
+      await setupTestDir(testDir, {});
+      await runNonInteractive({}, testDir);
+
+      // Read manifest to find installed standards
+      const manifestPath = join(testDir, '.standards/manifest.json');
+      const manifest = JSON.parse(await readFile(manifestPath, 'utf8'));
+      const standardFiles = (manifest.standards || []).map(s => {
+        const fileName = s.split('/').pop();
+        return s.includes('options/')
+          ? join('.standards', 'options', fileName)
+          : join('.standards', fileName);
+      });
+
+      // Delete a few standard files to simulate missing files
+      const filesToDelete = standardFiles.slice(0, 3);
+      for (const relPath of filesToDelete) {
+        const fullPath = join(testDir, relPath);
+        if (await fileExists(fullPath)) {
+          const { unlink } = await import('fs/promises');
+          await unlink(fullPath);
+        }
+      }
+
+      // Verify files are actually deleted
+      for (const relPath of filesToDelete) {
+        const exists = await fileExists(join(testDir, relPath));
+        expect(exists).toBe(false);
+      }
+
+      // Set manifest to older version to trigger update
+      manifest.upstream.version = '0.0.1';
+      await writeFile(manifestPath, JSON.stringify(manifest, null, 2));
+
+      // Run update --yes → should auto-detect and restore missing files
+      const result = await runCommand('update', { yes: true, offline: true }, testDir, 15000);
+
+      // Verify missing files were restored
+      let allRestored = true;
+      for (const relPath of filesToDelete) {
+        const exists = await fileExists(join(testDir, relPath));
+        if (!exists) allRestored = false;
+      }
+      expect(allRestored).toBe(true);
+
+      // Update completed successfully
+      expect(result.exitCode).toBe(0);
+
+      // Verify CLAUDE.md includes all installed standards (post-restore integration regen)
+      const claudeExists = await fileExists(join(testDir, 'CLAUDE.md'));
+      let claudeIncludesAll = true;
+      if (claudeExists) {
+        const claudeContent = await readFile(join(testDir, 'CLAUDE.md'), 'utf8');
+        const updatedManifest = JSON.parse(await readFile(manifestPath, 'utf8'));
+        const installedCount = (updatedManifest.standards || []).filter(s => s.endsWith('.ai.yaml')).length;
+        const yamlEntries = (claudeContent.match(/\.ai\.yaml/g) || []).length;
+        claudeIncludesAll = yamlEntries >= installedCount;
+      }
+
+      recordScenarioResult('Auto-restore missing files regression', {
+        steps: [
+          { step: 1, name: 'All deleted files restored', matched: allRestored },
+          { step: 2, name: 'Update completed successfully', matched: result.exitCode === 0 },
+          { step: 3, name: 'CLAUDE.md includes all standards', matched: claudeIncludesAll }
+        ],
+        output: result.stdout
+      });
+    });
+
+    it('should update CLAUDE.md standards index after installing new standards', async () => {
+      // Regression: CLAUDE.md showed stale standards count after update
+      await setupTestDir(testDir, {});
+      await writeFile(join(testDir, 'CLAUDE.md'), '# Project\n');
+      await runNonInteractive({}, testDir);
+
+      // Run update to ensure integrations are synced
+      const result = await runCommand('update', { yes: true, offline: true }, testDir, 15000);
+
+      // Read manifest to get installed standards count (only .ai.yaml files, not .md templates)
+      const manifestPath = join(testDir, '.standards/manifest.json');
+      const manifest = JSON.parse(await readFile(manifestPath, 'utf8'));
+      const installedCount = (manifest.standards || []).filter(s => s.endsWith('.ai.yaml')).length;
+
+      // If CLAUDE.md exists and has standards section, verify count matches
+      const claudeExists = await fileExists(join(testDir, 'CLAUDE.md'));
+      if (claudeExists && installedCount > 0) {
+        const claudeContent = await readFile(join(testDir, 'CLAUDE.md'), 'utf8');
+        // Count .ai.yaml entries in CLAUDE.md
+        const yamlEntries = (claudeContent.match(/\.ai\.yaml/g) || []).length;
+        // Should have at least as many entries as installed .ai.yaml standards
+        // (some standards may have multiple mentions; .md templates are not listed)
+        expect(yamlEntries).toBeGreaterThanOrEqual(installedCount);
+      }
+
+      recordScenarioResult('CLAUDE.md standards index update regression', {
+        steps: [
+          { step: 1, name: 'CLAUDE.md exists', matched: claudeExists },
+          { step: 2, name: 'Update completed', matched: result.exitCode === 0 }
+        ],
+        output: result.stdout
+      });
+    });
+
+    it('should migrate test_levels from 2 to 4 when upstream.version < 5.0.0', async () => {
+      // Pre-v5 projects had 2-level default; update should auto-migrate to 4 levels
+      await setupTestDir(testDir, {});
+      await runNonInteractive({}, testDir);
+
+      // Simulate a pre-v5 manifest with old 2-level default
+      const manifestPath = join(testDir, '.standards/manifest.json');
+      const manifest = JSON.parse(await readFile(manifestPath, 'utf8'));
+      manifest.upstream.version = '4.2.0'; // Pre-v5 → triggers migration
+      manifest.options.test_levels = ['unit-testing', 'integration-testing'];
+      await writeFile(manifestPath, JSON.stringify(manifest, null, 2));
+
+      const result = await runCommand('update', { yes: true, offline: true }, testDir, 15000);
+
+      // Verify migration message shown
+      const hasMigrationMsg = result.stdout.includes('test_levels') ||
+                              result.stdout.includes('Test levels') ||
+                              result.stdout.includes('2 → 4') ||
+                              result.stdout.includes('system-testing');
+      expect(hasMigrationMsg).toBe(true);
+
+      // Verify manifest updated to 4 levels
+      const updatedManifest = JSON.parse(await readFile(manifestPath, 'utf8'));
+      expect(updatedManifest.options.test_levels).toEqual([
+        'unit-testing', 'integration-testing', 'system-testing', 'e2e-testing'
+      ]);
+
+      recordScenarioResult('Test levels migration pre-v5', {
+        steps: [
+          { step: 1, name: 'Migration message shown', matched: hasMigrationMsg },
+          { step: 2, name: 'test_levels upgraded to 4', matched: updatedManifest.options.test_levels.length === 4 }
+        ],
+        output: result.stdout
+      });
+    });
+
+    it('should also migrate test_levels for 5.0.0-rc (pre-release < 5.0.0 stable)', async () => {
+      // 5.0.0-rc.x is still < 5.0.0 in semver, so should also be migrated
+      await setupTestDir(testDir, {});
+      await runNonInteractive({}, testDir);
+
+      const manifestPath = join(testDir, '.standards/manifest.json');
+      const manifest = JSON.parse(await readFile(manifestPath, 'utf8'));
+      manifest.upstream.version = '5.0.0-rc.1'; // pre-release < 5.0.0 → triggers migration
+      manifest.options.test_levels = ['unit-testing', 'integration-testing'];
+      await writeFile(manifestPath, JSON.stringify(manifest, null, 2));
+
+      const result = await runCommand('update', { yes: true, offline: true }, testDir, 15000);
+
+      // Verify manifest migrated to 4 levels
+      const updatedManifest = JSON.parse(await readFile(manifestPath, 'utf8'));
+      expect(updatedManifest.options.test_levels).toEqual([
+        'unit-testing', 'integration-testing', 'system-testing', 'e2e-testing'
+      ]);
+
+      recordScenarioResult('Test levels migration for rc pre-release', {
+        steps: [
+          { step: 1, name: 'test_levels upgraded to 4', matched: updatedManifest.options.test_levels.length === 4 }
+        ],
+        output: result.stdout
+      });
+    });
+
+    it('should NOT migrate test_levels when already 4 levels', async () => {
+      // Projects already at 4 levels should not be touched
+      await setupTestDir(testDir, {});
+      await runNonInteractive({}, testDir);
+
+      const manifestPath = join(testDir, '.standards/manifest.json');
+      const manifest = JSON.parse(await readFile(manifestPath, 'utf8'));
+      manifest.upstream.version = '4.2.0'; // pre-v5
+      manifest.options.test_levels = ['unit-testing', 'integration-testing', 'system-testing', 'e2e-testing'];
+      await writeFile(manifestPath, JSON.stringify(manifest, null, 2));
+
+      const result = await runCommand('update', { yes: true, offline: true }, testDir, 15000);
+
+      // Verify test_levels unchanged (already 4)
+      const updatedManifest = JSON.parse(await readFile(manifestPath, 'utf8'));
+      expect(updatedManifest.options.test_levels).toEqual([
+        'unit-testing', 'integration-testing', 'system-testing', 'e2e-testing'
+      ]);
+
+      // No migration message shown
+      const noMigrationMsg = !result.stdout.includes('2 → 4');
+      expect(noMigrationMsg).toBe(true);
+
+      recordScenarioResult('Test levels no migration when already 4', {
+        steps: [
+          { step: 1, name: 'test_levels stays at 4', matched: updatedManifest.options.test_levels.length === 4 },
+          { step: 2, name: 'No migration message', matched: noMigrationMsg }
+        ],
+        output: result.stdout
+      });
+    });
+
+    it('should not show hash mismatch after update then check', async () => {
+      // Bug: missing refreshIntegrationBlockHashes() caused false hash mismatch warnings
+      await setupTestDir(testDir, {});
+      await writeFile(join(testDir, '.cursorrules'), '# Cursor rules');
+      await runNonInteractive({}, testDir);
+
+      // Run update
+      await runCommand('update', { yes: true, offline: true }, testDir, 15000);
+
+      // Run check
+      const checkResult = await runCommand('check', { yes: true }, testDir, 15000);
+
+      const noHashMismatch = !checkResult.stdout.includes('hash mismatch');
+      expect(noHashMismatch).toBe(true);
+
+      recordScenarioResult('Hash mismatch regression', {
+        steps: [
+          { step: 1, name: 'No hash mismatch warning', matched: noHashMismatch }
+        ],
+        output: checkResult.stdout
+      });
+    });
+  });
+
+  // ===== UI Language Flag Tests =====
+  describe('--ui-lang Flag', () => {
+    it('should show English UI when --ui-lang en is set', async () => {
+      await setupTestDir(testDir, {});
+      await runNonInteractive({}, testDir);
+
+      // Run update with --ui-lang en (global option)
+      const result = await runCommand('update', { yes: true, offline: true }, testDir, 15000, { uiLang: 'en' });
+
+      // Should show English UI
+      expect(result.stdout).toContain('Update');
+      expect(result.stdout).toContain('version');
+      expect(result.stdout).not.toContain('更新');
+      expect(result.stdout).not.toContain('版本');
+
+      recordScenarioResult('--ui-lang en shows English', {
+        steps: [
+          { step: 1, name: 'English Update', matched: result.stdout.includes('Update') },
+          { step: 2, name: 'English version', matched: result.stdout.includes('version') },
+          { step: 3, name: 'No Chinese', matched: !result.stdout.includes('版本') }
+        ],
+        output: result.stdout
+      });
+    });
+
+    it('should show Traditional Chinese UI when --ui-lang zh-tw is set', async () => {
+      await setupTestDir(testDir, {});
+      await runNonInteractive({}, testDir);
+
+      // Run update with --ui-lang zh-tw (global option)
+      const result = await runCommand('update', { yes: true, offline: true }, testDir, 15000, { uiLang: 'zh-tw' });
+
+      // Should show Chinese UI
+      expect(result.stdout).toContain('更新');
+      expect(result.stdout).toContain('版本');
+
+      recordScenarioResult('--ui-lang zh-tw shows Chinese', {
+        steps: [
+          { step: 1, name: 'Chinese Update', matched: result.stdout.includes('更新') },
+          { step: 2, name: 'Chinese version', matched: result.stdout.includes('版本') }
+        ],
+        output: result.stdout
+      });
+    });
+  });
+});
+
+// ===== Report Generation =====
+
+function recordScenarioResult(name, data) {
+  testReport.summary.total++;
+  const allPassed = data.steps.every(s => s.matched);
+
+  if (allPassed) {
+    testReport.summary.passed++;
+  } else {
+    testReport.summary.failed++;
+  }
+
+  testReport.scenarios.push({
+    name,
+    status: allPassed ? 'passed' : 'failed',
+    steps: data.steps,
+    output: data.output || ''
+  });
+}
+
+export { testReport };
+
+afterAll(async () => {
+  // Write JSON report
+  const reportsDir = join(__dirname, '../reports');
+  await mkdir(reportsDir, { recursive: true });
+
+  const jsonReportPath = join(reportsDir, 'update-test-report.json');
+  await writeFile(jsonReportPath, JSON.stringify(testReport, null, 2));
+
+  // Write Markdown report
+  const mdReport = generateMarkdownReport(testReport);
+  const mdReportPath = join(reportsDir, 'update-test-report.md');
+  await writeFile(mdReportPath, mdReport);
+
+  console.log(`\n📋 Update test report written to:`);
+  console.log(`   - ${jsonReportPath}`);
+  console.log(`   - ${mdReportPath}`);
+});
+
+function generateMarkdownReport(report) {
+  const lines = [
+    '# UDS Update E2E Test Report',
+    '',
+    `**Generated**: ${report.timestamp}`,
+    '',
+    '## Summary',
+    '',
+    '| Metric | Result |',
+    '|--------|--------|',
+    `| Total Scenarios | ${report.summary.total} |`,
+    `| Passed | ${report.summary.passed} |`,
+    `| Failed | ${report.summary.failed} |`,
+    '',
+    '## Scenario Results',
+    ''
+  ];
+
+  for (const scenario of report.scenarios) {
+    const icon = scenario.status === 'passed' ? '✅' : '❌';
+    lines.push(`### ${icon} ${scenario.name}`);
+    lines.push('');
+    lines.push('| Step | Name | Result |');
+    lines.push('|------|------|--------|');
+
+    for (const step of scenario.steps) {
+      const stepIcon = step.matched ? '✅' : '❌';
+      lines.push(`| ${step.step} | ${step.name} | ${stepIcon} |`);
+    }
+
+    lines.push('');
+
+    if (scenario.output) {
+      lines.push('<details>');
+      lines.push('<summary><strong>Output</strong></summary>');
+      lines.push('');
+      lines.push('```');
+      lines.push(scenario.output.trim().substring(0, 2000));
+      lines.push('```');
+      lines.push('</details>');
+      lines.push('');
+    }
+  }
+
+  return lines.join('\n');
+}

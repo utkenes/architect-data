@@ -1,0 +1,172 @@
+# Data Migration Testing Standards - AI Optimized
+# Source: core/data-migration-testing.md
+
+id: data-migration-testing
+meta:
+  version: "1.1.0"
+  updated: "2026-06-27"
+  source: core/data-migration-testing.md
+  description: Database migration up/down/idempotency testing standards for schema changes, plus encoding-conversion and aggregate-invariant testing for cross-encoding/cross-engine migrations
+
+requirements:
+  REQ-1:
+    id: REQ-DMT-001
+    title: Up Migration Test
+    rule: >
+      Every schema migration MUST have an automated test that applies it to a clean
+      baseline schema and verifies the expected post-state (table names, columns,
+      indexes, constraints).
+    rationale: >
+      Unverified migrations silently corrupt production schema; up tests catch
+      incompatible changes before deployment.
+
+  REQ-2:
+    id: REQ-DMT-002
+    title: Down Migration (Rollback) Test
+    rule: >
+      Every migration that has a down/rollback function MUST have a test that
+      applies up, then down, and verifies the schema returns to its exact pre-state.
+      Zero data loss is the acceptance criterion.
+    rationale: >
+      Rollback is only reliable if it is tested; untested rollbacks fail at the worst
+      possible moment — during a production incident.
+
+  REQ-3:
+    id: REQ-DMT-003
+    title: Idempotency Test
+    rule: >
+      Migration runners MUST be tested to ensure applying the same migration twice
+      does not fail or cause side effects (e.g., duplicate columns, duplicate indexes).
+    rationale: >
+      CI retries and operator mistakes can trigger double-apply; idempotent migrations
+      prevent partial state corruption.
+
+  REQ-4:
+    id: REQ-DMT-004
+    title: Data Preservation Test
+    rule: >
+      Migrations that ALTER or DROP columns MUST include a test that seeds representative
+      data before the migration and verifies data integrity or expected transformation
+      after the migration.
+    rationale: >
+      Schema correctness does not imply data correctness; a column rename can silently
+      null-out existing data if the migration omits a data transform step.
+
+  REQ-5:
+    id: REQ-DMT-005
+    title: Migration History Integrity
+    rule: >
+      The migration runner's applied-migrations table/ledger MUST be validated:
+      each test run uses an isolated in-memory or temporary database so migrations
+      do not interfere with each other or with production state.
+    rationale: >
+      Shared migration state between tests causes non-deterministic failures that are
+      extremely difficult to diagnose.
+
+  REQ-6:
+    id: REQ-DMT-006
+    title: Encoding Conversion Test
+    rule: >
+      Migrations that cross encodings or DB engines (e.g. UTF-8 -> UTF-16/NVARCHAR,
+      VARCHAR -> NVARCHAR, or an implicit collation change) MUST include a test that
+      asserts equality at the BYTE / codepoint / normalization level — not display
+      level. Cover NFC vs NFD normalization, multi-byte boundaries, and CJK / emoji /
+      combining marks (supplementary-plane codepoints).
+    rationale: >
+      Two different byte or normalization sequences can decode to glyphs that look
+      identical, so a display-level (toBe) assertion passes while the stored bytes —
+      and downstream LIKE / unique-key / collation behavior — are silently corrupted.
+
+  REQ-7:
+    id: REQ-DMT-007
+    title: Aggregate Invariant Test
+    rule: >
+      Migrations of business-critical data MUST capture aggregate invariants
+      (COUNT(*), SUM(column), COUNT(DISTINCT key), checksum) grouped by a business
+      dimension BEFORE the migration and assert they are unchanged AFTER. Same oracle
+      as post-cutover production reconciliation, run at migration-test time.
+    rationale: >
+      Row-by-row sampling proves individual rows survived but not that the distribution
+      survived; a single wrong SUM/COUNT/DISTINCT flags drift that any sample missing
+      the affected rows would not catch.
+
+test_structure:
+  isolation: "Each migration test MUST run against an isolated in-memory or temp DB"
+  baseline: "Start from the schema state immediately before the migration under test"
+  assertions:
+    up: "Assert table/column/index existence and types"
+    down: "Assert schema returns to pre-migration state"
+    idempotency: "Apply migration twice; second apply must succeed without error"
+    data: "Seed rows before migration; assert row count and values after"
+    encoding: "Assert byte/codepoint/normalization identity (Buffer compare + spread-to-codepoints + normalize), NOT display-level toBe; cover NFC/NFD, multi-byte boundaries, CJK/emoji/combining marks"
+    aggregate: "Capture COUNT/SUM/COUNT(DISTINCT)/checksum grouped by business dimension before; assert deep-equal after"
+
+cross_dialect_risks:
+  description: "SQLite -> SQL Server semantic disagreements; derive-list input for encoding/aggregate tests and the non-HTTP implicit-rule scan"
+  rows:
+    - point: Type system
+      sqlite: Dynamic typing (per-value affinity)
+      sqlserver: Static / strong typing
+      verify: Declare per-column type; scan for out-of-range / mixed-type values
+    - point: Boolean
+      sqlite: Stored as 0/1 integer
+      sqlserver: BIT
+      verify: 0/1 <-> BIT mapping; NULL boolean handling
+    - point: Date/time
+      sqlite: TEXT / REAL / INTEGER
+      sqlserver: datetime2 / datetimeoffset
+      verify: Format parse, time-zone, precision truncation
+    - point: Auto-increment PK
+      sqlite: AUTOINCREMENT
+      sqlserver: IDENTITY
+      verify: Existing id continuity; correct seed/reseed
+    - point: Case / collation
+      sqlite: LIKE case-insensitive by default / NOCASE
+      sqlserver: Determined by column collation
+      verify: Align collation; check unique-key folding collisions
+    - point: NULL ordering
+      sqlite: NULLs sort first (smallest)
+      sqlserver: Depends on configuration
+      verify: ORDER BY result-order invariant
+    - point: Float precision
+      sqlite: REAL
+      sqlserver: float / decimal
+      verify: Move money/exact values to decimal to avoid rounding error
+    - point: String concat
+      sqlite: "||"
+      sqlserver: "+ / CONCAT"
+      verify: Rewrite queries; reconcile NULL-concat semantics
+    - point: Pagination
+      sqlite: LIMIT / OFFSET
+      sqlserver: OFFSET..FETCH / TOP
+      verify: Rewrite + stable sort key for deterministic pages
+
+tooling_guidance:
+  sqlite: "Use ':memory:' DSN; apply migrations via ORM migrate() or raw SQL"
+  postgres: "Use pgmock or test containers; run migrate up/down in a transaction"
+  drizzle_orm: >
+    Call db.run(sql`...`) with raw DDL, or use drizzle-kit's migrate() function
+    against a fresh :memory: SQLite database for each test file.
+
+anti_patterns:
+  - description: >
+      Testing migrations against a shared development database — causes cross-test
+      pollution and non-repeatable results.
+  - description: >
+      Skipping down migration tests because "we never rollback" — rollbacks happen
+      during incidents; the worst time to discover they are broken.
+  - description: >
+      Writing migration tests after the fact without seeding data — misses the
+      data preservation class of bugs entirely.
+  - description: >
+      Asserting string equality only on the decoded value — display-level equality
+      passes even when bytes, normalization form, or codepoints were corrupted across
+      an encoding/engine change.
+  - description: >
+      Validating a cross-engine migration with row sampling alone — distribution-level
+      drift (a wrong SUM/COUNT/DISTINCT) escapes any sample that misses the affected rows.
+
+related_standards:
+  - testing
+  - database-standards
+  - verification-evidence

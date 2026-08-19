@@ -1,0 +1,168 @@
+# Claude Code Custom Commands
+
+> **Note**: Since Claude Code v2.1.3+, Skills and Commands are merged.
+> SKILL.md files now include all command metadata (`allowed-tools`, `argument-hint`).
+> This directory is maintained for backward compatibility with AI agents that
+> use separate command directories (OpenCode, Copilot, Roo Code, Gemini CLI).
+> For new commands, create a SKILL.md in `skills/<name>/` instead.
+
+Custom slash commands for Universal Development Standards.
+
+> **Workflow Guide**: For a comprehensive overview of how methodology commands work together, see **[Command Family Overview](./COMMAND-FAMILY-OVERVIEW.md)**.
+>
+> **工作流程指南**：關於方法論指令如何協同運作的完整說明，請參閱 **[指令家族總覽](./COMMAND-FAMILY-OVERVIEW.md)**。
+
+## Available Commands | 可用命令
+
+### Standards Management | 標準管理
+
+Commands for managing Universal Development Standards in your project.
+
+| Command | Description | 說明 |
+|---------|-------------|------|
+| [`/init`](./init.md) | Initialize standards in project | 初始化專案標準 |
+| [`/update`](./update.md) | Update standards to latest version | 更新標準至最新版本 |
+| [`/check`](./check.md) | Verify adoption status | 檢查採用狀態 |
+| [`/config`](./config.md) | Configure standards settings | 配置標準設定 |
+
+### Development Workflow | 開發工作流程
+
+Commands for development workflow automation.
+
+| Command | Description | 說明 |
+|---------|-------------|------|
+| [`/brainstorm`](./brainstorm.md) | Structured AI-assisted brainstorming | AI 輔助腦力激盪 |
+| [`/commit`](./commit.md) | Generate conventional commit messages | 產生 commit message |
+| [`/code-review`](./code-review.md) | Perform systematic code review | 執行程式碼審查 |
+| [`/release`](./release.md) | Guide through release process | 引導發布流程 |
+| [`/changelog`](./changelog.md) | Update CHANGELOG.md | 更新 CHANGELOG |
+| [`/requirement`](./requirement.md) | Write user stories and requirements | 撰寫需求文件 |
+| [`/sdd`](./sdd.md) | Create specification documents | 建立規格文件 |
+| [`/sdd-retro`](./sdd-retro.md) | Create retroactive specs for untracked commits | 為未追蹤 commits 建立追溯 spec |
+| [`/docs`](./docs.md) | Create/update documentation | 建立/更新文件 |
+| [`/coverage`](./coverage.md) | Analyze test coverage | 分析測試覆蓋率 |
+| [`/ac-coverage`](./ac-coverage.md) | Generate AC traceability matrix and coverage report | AC 追蹤矩陣與覆蓋率報告 |
+| [`/refactor`](./refactor.md) | Guide refactoring decisions and strategy selection | 重構決策與策略選擇 |
+| [`/pr`](./pr.md) | Guide PR creation, review and merge | PR 建立、審查與合併 |
+| [`/checkin`](./checkin.md) | Pre-commit quality gates verification | 提交前品質閘門驗證 |
+| [`/incident`](./incident.md) | Guide incident response and post-mortem | 事故回應與事後檢討 |
+| [`/metrics`](./metrics.md) | Track development metrics and project health | 追蹤開發指標與專案健康 |
+| [`/migrate`](./migrate.md) | Guide code migration and framework upgrades | 程式碼遷移與框架升級 |
+| [`/audit`](./audit.md) | UDS health check and feedback system | UDS 健康檢查與回饋 |
+| [`/docgen`](./docgen.md) | Generate usage documentation from project sources | 從專案原始碼產生使用文件 |
+| [`/discover`](./discover.md) | Assess project health, architecture, and risks | 評估專案健康度、架構與風險 |
+| [`/api-design`](./api-design.md) | Guide API design (REST, GraphQL, gRPC) | API 設計引導 |
+| [`/ci-cd`](./ci-cd.md) | Guide CI/CD pipeline design and optimization | CI/CD 管線設計與優化 |
+| [`/database`](./database.md) | Guide database design and migration | 資料庫設計與遷移 |
+| [`/security`](./security.md) | Guide security review (OWASP) | 安全審查（OWASP） |
+| [`/scan`](./scan.md) | Automated security scanning | 自動化安全掃描 |
+| [`/durable`](./durable.md) | Guide workflow failure recovery | 工作流程故障恢復 |
+| [`/dev-workflow`](./dev-workflow.md) | Map development phases to UDS commands | 開發階段對應 UDS 指令 |
+| [`/guide`](./guide.md) | Access UDS guides and references | 存取 UDS 指南與參考 |
+| [`/reverse`](./reverse.md) | Reverse engineer code to Specs, BDD, or TDD | 反向工程成規格、BDD 或 TDD |
+| [`/derive`](./derive.md) | Derive BDD/TDD/ATDD from specifications | 從規格推演 BDD/TDD/ATDD |
+| [`/reverse-sdd`](./reverse-sdd.md) | Reverse engineer code to SDD spec | 反向工程成 SDD 規格 |
+| [`/reverse-bdd`](./reverse-bdd.md) | Transform SDD AC to BDD scenarios | SDD AC 轉換為 BDD 場景 |
+| [`/reverse-tdd`](./reverse-tdd.md) | Analyze BDD-TDD coverage | BDD-TDD 覆蓋率分析 |
+| [`/derive-bdd`](./derive-bdd.md) | Derive BDD scenarios from approved spec | 從規格推演 BDD 場景 |
+| [`/derive-tdd`](./derive-tdd.md) | Derive TDD test skeletons from spec | 從規格推演 TDD 骨架 |
+| [`/derive-atdd`](./derive-atdd.md) | (Optional) Derive ATDD acceptance tests | （可選）推演 ATDD 測試 |
+| [`/derive-all`](./derive-all.md) | Derive all test structures from spec | 從規格推演完整測試結構 |
+
+### Methodology | 方法論
+
+Commands for development methodology workflows.
+
+| Command | Description | 說明 |
+|---------|-------------|------|
+| [`/methodology`](./methodology.md) | Manage active methodology | 管理開發方法論 |
+| [`/tdd`](./tdd.md) | Test-Driven Development workflow | TDD 開發流程 |
+| [`/bdd`](./bdd.md) | Behavior-Driven Development workflow | BDD 開發流程 |
+| [`/atdd`](./atdd.md) | Acceptance Test-Driven Development workflow | ATDD 驗收流程 |
+
+## Command → Skill / Standard Mapping | 指令→技能/標準對照表
+
+| Command | Skill | Core Standard | Category |
+|---------|-------|---------------|----------|
+| `/init` | — | — | Standards Management |
+| `/update` | — | — | Standards Management |
+| `/check` | — | — | Standards Management |
+| `/config` | — | — | Standards Management |
+| `/commit` | commit-standards | `commit-message-guide.md` | Development Workflow |
+| `/code-review` | code-review | `code-review-checklist.md` | Development Workflow |
+| `/checkin` | — | `checkin-standards.md` | Development Workflow |
+| `/release` | release-standards | `versioning.md` | Development Workflow |
+| `/changelog` | — | `changelog-standards.md` | Development Workflow |
+| `/requirement` | — | `requirement-engineering.md` | Development Workflow |
+| `/sdd` | spec-driven-development | `spec-driven-development.md` | Development Workflow |
+| `/sdd-retro` | — | `spec-driven-development.md` | Development Workflow |
+| `/brainstorm` | — | — | Development Workflow |
+| `/docs` | documentation | `documentation-writing-standards.md` | Development Workflow |
+| `/docgen` | — | `documentation-writing-standards.md` | Development Workflow |
+| `/coverage` | testing-guide | `testing-standards.md` | Development Workflow |
+| `/ac-coverage` | — | `acceptance-criteria-traceability.md` | Development Workflow |
+| `/refactor` | refactoring | `refactoring-standards.md` | Development Workflow |
+| `/discover` | — | — | Development Workflow |
+| `/dev-workflow` | — | — | Development Workflow |
+| `/guide` | — | — | Development Workflow |
+| `/api-design` | api-design-assistant | `api-design-standards.md` | Development Workflow |
+| `/ci-cd` | ci-cd-assistant | — | Development Workflow |
+| `/database` | database-assistant | `database-standards.md` | Development Workflow |
+| `/incident` | incident-response-assistant | — | Development Workflow |
+| `/metrics` | metrics-dashboard-assistant | — | Development Workflow |
+| `/migrate` | migration-assistant | — | Development Workflow |
+| `/pr` | pr-automation-assistant | — | Development Workflow |
+| `/security` | security-assistant | `security-standards.md` | Development Workflow |
+| `/scan` | security-scan-assistant | — | Development Workflow |
+| `/audit` | audit-assistant | — | Development Workflow |
+| `/durable` | durable-execution-assistant | — | Development Workflow |
+| `/derive` | — | `forward-derivation-standards.md` | Methodology |
+| `/derive-bdd` | — | `behavior-driven-development.md` | Methodology |
+| `/derive-tdd` | — | `test-driven-development.md` | Methodology |
+| `/derive-atdd` | — | `acceptance-test-driven-development.md` | Methodology |
+| `/derive-all` | — | — | Methodology |
+| `/reverse` | — | `reverse-engineering-standards.md` | Methodology |
+| `/reverse-sdd` | — | `reverse-engineering-standards.md` | Methodology |
+| `/reverse-bdd` | — | `reverse-engineering-standards.md` | Methodology |
+| `/reverse-tdd` | — | `reverse-engineering-standards.md` | Methodology |
+| `/methodology` | — | — | Methodology |
+| `/tdd` | — | `test-driven-development.md` | Methodology |
+| `/bdd` | — | `behavior-driven-development.md` | Methodology |
+| `/atdd` | — | `acceptance-test-driven-development.md` | Methodology |
+
+## Commands vs Skills | 命令與技能
+
+| Aspect | Commands | Skills |
+|--------|----------|--------|
+| **Trigger** | Manual (`/command`) | Automatic (context-based) |
+| **Location** | `commands/` | `skills/` or root |
+| **Use Case** | Explicit action | Background assistance |
+
+## Adding Custom Commands | 新增自訂命令
+
+Create a `.md` file in the `commands/` directory:
+
+```markdown
+---
+description: Brief description of the command
+allowed-tools: Read, Write, Bash(git:*)
+argument-hint: "[optional arguments]"
+---
+
+# Command Name
+
+Instructions for Claude...
+```
+
+## Installation | 安裝
+
+Commands are automatically available after installing the plugin:
+
+```bash
+/plugin marketplace add AsiaOstrich/universal-dev-standards
+/plugin install universal-dev-standards@asia-ostrich
+```
+
+## License | 授權
+
+Dual-licensed: CC BY 4.0 (documentation) + MIT (code)

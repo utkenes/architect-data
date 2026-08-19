@@ -1,0 +1,415 @@
+/**
+ * sdd-analyze.ts — implements XSPEC-262 Phase 1 MVP (R1/R2/R3)
+ *
+ * `/sdd analyze` — cross-artifact consistency check, the EXECUTABLE face of the
+ * acceptance-criteria-traceability standard + forward-derivation single-spine
+ * principle (which were definition-only). Mirrors GitHub Spec Kit /speckit.analyze.
+ *
+ * Single-spine validation (XSPEC-260): every test is a projection of the AC spine.
+ *   - orphan test  = projection references a spine node that does not exist
+ *                    (test has `@AC AC-999` but no spec defines AC-999)
+ *   - uncovered    = spine node has no projection (AC has no @AC reference)
+ *   - not_implemented = AC marked so in its .ac.yaml (excluded from denominator)
+ *
+ * Complements (does NOT replace) ac-coverage: ac-coverage = per-spec detailed
+ * matrix; sdd analyze = cross-spec/batch consistency + orphan detection.
+ *
+ * Run:  tsx scripts/sdd-analyze.ts [--specs <dir>] [--tests <dir>] [--json]
+ * CI:   non-zero exit when orphans > 0 OR not_implemented > 0 (BLOCKING gate,
+ *       per acceptance-criteria-traceability §CI Gate).
+ */
+
+import fs from "node:fs";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
+
+/** realpathSync but returns the input unchanged if the path doesn't exist. */
+function tryRealpath(p: string): string {
+  try {
+    return fs.realpathSync(p);
+  } catch {
+    return p;
+  }
+}
+
+export type ACStatus = "covered" | "partial" | "uncovered" | "not_implemented";
+
+export interface SpecAC {
+  id: string; // e.g. "AC-1" or "AC-050-001"
+  specId: string; // owning spec id / filename
+  notImplemented: boolean; // from .ac.yaml status
+  partial: boolean; // from .ac.yaml status
+}
+
+export interface TestRef {
+  acId: string;
+  file: string;
+}
+
+export interface OrphanTest {
+  acId: string;
+  file: string;
+}
+
+export interface ACResult {
+  id: string;
+  specId: string;
+  status: ACStatus;
+  tests: string[];
+}
+
+export interface CrossSpecConflict {
+  acId: string;
+  specs: string[]; // distinct spec ids defining the same AC id
+}
+
+export interface AnalysisResult {
+  acs: ACResult[];
+  orphans: OrphanTest[];
+  notImplemented: string[];
+  total: number;
+  coveragePct: number;
+  // Phase 2 — spec↔.feature sync + cross-spec conflicts
+  crossSpecConflicts: CrossSpecConflict[];
+  featureOrphans: OrphanTest[]; // .feature @AC tag referencing a non-existent AC
+  acsWithoutScenario: string[]; // AC with no .feature scenario (report-only)
+  // Phase 3 — user-guide ↔ E2E drift (T-NNN single-spine, XSPEC-260 R5 / XSPEC-257)
+  userGuideDrift: TNNNRef[]; // user-guide T-NNN with no matching journey/E2E test id
+  blocking: boolean;
+  blockingReasons: string[];
+}
+
+// ── Extraction (aligned with ac-coverage @AC / @SPEC conventions) ─────────────
+
+const AC_ID = /\bAC-(?:\d+-)?\d+\b/g;
+
+/** Extract AC ids defined in a spec markdown (dedup, in order of first mention). */
+export function extractSpecACs(content: string): string[] {
+  const seen = new Set<string>();
+  const out: string[] = [];
+  for (const m of content.matchAll(AC_ID)) {
+    if (!seen.has(m[0])) {
+      seen.add(m[0]);
+      out.push(m[0]);
+    }
+  }
+  return out;
+}
+
+/** Extract `@AC AC-NNN` references from a test file. */
+export function extractTestRefs(content: string, file: string): TestRef[] {
+  const out: TestRef[] = [];
+  for (const m of content.matchAll(/@AC\s+(AC-(?:\d+-)?\d+)/g)) {
+    out.push({ acId: m[1], file });
+  }
+  return out;
+}
+
+/** Extract Gherkin `@AC-NNN` tags from a .feature file (hyphenated, not spaced). */
+export function extractFeatureRefs(content: string, file: string): TestRef[] {
+  const out: TestRef[] = [];
+  for (const m of content.matchAll(/@(AC-(?:\d+-)?\d+)\b/g)) {
+    out.push({ acId: m[1], file });
+  }
+  return out;
+}
+
+export interface TNNNRef {
+  id: string; // e.g. "T-001" or "T-01a"
+  file: string;
+}
+
+/** Extract `T-NNN` ids (journey/E2E step ids; user-guide outline steps). */
+export function extractTNNN(content: string, file: string): TNNNRef[] {
+  const seen = new Set<string>();
+  const out: TNNNRef[] = [];
+  for (const m of content.matchAll(/\bT-\d+[a-z]?\b/g)) {
+    const key = m[0] + " " + file;
+    if (!seen.has(key)) {
+      seen.add(key);
+      out.push({ id: m[0], file });
+    }
+  }
+  return out;
+}
+
+/** Read optional `<spec>.ac.yaml` sibling for not_implemented / partial status. */
+export function readAcYamlStatus(acYamlContent: string): Record<string, ACStatus> {
+  const map: Record<string, ACStatus> = {};
+  // lightweight line scan (avoid a YAML dep): `- id: AC-1` ... `status: not_implemented`
+  let currentId: string | null = null;
+  for (const line of acYamlContent.split("\n")) {
+    const idM = line.match(/^\s*-?\s*id:\s*(AC-(?:\d+-)?\d+)/);
+    if (idM) {
+      currentId = idM[1];
+      continue;
+    }
+    const stM = line.match(/^\s*status:\s*(covered|partial|uncovered|not_implemented)/);
+    if (stM && currentId) {
+      map[currentId] = stM[1] as ACStatus;
+    }
+  }
+  return map;
+}
+
+// ── Core analysis (pure) ──────────────────────────────────────────────────────
+
+export function analyzeConsistency(
+  specACs: SpecAC[],
+  testRefs: TestRef[],
+  featureRefs: TestRef[] = [],
+  userGuideTNNN: TNNNRef[] = [],
+  testTNNN: TNNNRef[] = []
+): AnalysisResult {
+  const specIds = new Set(specACs.map((a) => a.id));
+  const refsByAc = new Map<string, string[]>();
+  for (const r of testRefs) {
+    if (!refsByAc.has(r.acId)) refsByAc.set(r.acId, []);
+    refsByAc.get(r.acId)!.push(r.file);
+  }
+
+  // Orphan tests: reference an AC that no spec defines.
+  const orphans: OrphanTest[] = testRefs
+    .filter((r) => !specIds.has(r.acId))
+    .map((r) => ({ acId: r.acId, file: r.file }));
+
+  const acs: ACResult[] = specACs.map((a) => {
+    const tests = refsByAc.get(a.id) ?? [];
+    let status: ACStatus;
+    if (a.notImplemented) status = "not_implemented";
+    else if (a.partial) status = "partial";
+    else status = tests.length > 0 ? "covered" : "uncovered";
+    return { id: a.id, specId: a.specId, status, tests };
+  });
+
+  const notImplemented = acs.filter((a) => a.status === "not_implemented").map((a) => a.id);
+  const covered = acs.filter((a) => a.status === "covered").length;
+  const partial = acs.filter((a) => a.status === "partial").length;
+  const denom = acs.length - notImplemented.length;
+  const coveragePct = denom > 0 ? Math.round(((covered + partial * 0.5) / denom) * 1000) / 10 : 100;
+
+  // Phase 2 — cross-spec conflicts: same AC id defined in >1 distinct spec.
+  const specsByAc = new Map<string, Set<string>>();
+  for (const a of specACs) {
+    if (!specsByAc.has(a.id)) specsByAc.set(a.id, new Set());
+    specsByAc.get(a.id)!.add(a.specId);
+  }
+  const crossSpecConflicts: CrossSpecConflict[] = [];
+  for (const [acId, specs] of specsByAc) {
+    if (specs.size > 1) crossSpecConflicts.push({ acId, specs: [...specs].sort() });
+  }
+
+  // Phase 2 — spec↔.feature sync.
+  const featureAcSet = new Set(featureRefs.map((r) => r.acId));
+  const featureOrphans: OrphanTest[] = featureRefs
+    .filter((r) => !specIds.has(r.acId))
+    .map((r) => ({ acId: r.acId, file: r.file }));
+  // Only flag missing scenarios when the project actually uses BDD (.feature present).
+  const acsWithoutScenario =
+    featureRefs.length > 0 ? [...specIds].filter((id) => !featureAcSet.has(id)) : [];
+
+  // Phase 3 — user-guide ↔ E2E drift: each user-guide T-NNN must match a real
+  // journey/E2E test id (XSPEC-260 single-spine / XSPEC-257 outline↔E2E).
+  const testTNNNSet = new Set(testTNNN.map((t) => t.id));
+  const userGuideDrift: TNNNRef[] = userGuideTNNN.filter((u) => !testTNNNSet.has(u.id));
+
+  const blockingReasons: string[] = [];
+  if (orphans.length > 0) blockingReasons.push(`${orphans.length} orphan test reference(s)`);
+  if (notImplemented.length > 0)
+    blockingReasons.push(`${notImplemented.length} not_implemented AC(s)`);
+  if (crossSpecConflicts.length > 0)
+    blockingReasons.push(`${crossSpecConflicts.length} cross-spec AC id conflict(s)`);
+  if (featureOrphans.length > 0)
+    blockingReasons.push(`${featureOrphans.length} orphan .feature reference(s)`);
+  if (userGuideDrift.length > 0)
+    blockingReasons.push(`${userGuideDrift.length} user-guide↔E2E drift (T-NNN)`);
+
+  return {
+    acs,
+    orphans,
+    notImplemented,
+    total: acs.length,
+    coveragePct,
+    crossSpecConflicts,
+    featureOrphans,
+    acsWithoutScenario,
+    userGuideDrift,
+    blocking: blockingReasons.length > 0,
+    blockingReasons,
+  };
+}
+
+// ── Report ────────────────────────────────────────────────────────────────────
+
+export function formatReport(r: AnalysisResult): string {
+  const lines: string[] = [];
+  lines.push("# /sdd analyze — Cross-Artifact Consistency");
+  lines.push("");
+  lines.push(`AC total: ${r.total} | Coverage: ${r.coveragePct}% (not_implemented excluded)`);
+  lines.push("");
+  if (r.orphans.length) {
+    lines.push(`## ❗ Orphan tests (${r.orphans.length}) — BLOCKING`);
+    for (const o of r.orphans) lines.push(`  - \`${o.acId}\` referenced by ${o.file} — no such AC`);
+    lines.push("");
+  }
+  if (r.notImplemented.length) {
+    lines.push(`## 🚫 not_implemented (${r.notImplemented.length}) — BLOCKING before UAT`);
+    for (const id of r.notImplemented) lines.push(`  - ${id}`);
+    lines.push("");
+  }
+  if (r.crossSpecConflicts.length) {
+    lines.push(`## ⚠️ Cross-spec AC id conflicts (${r.crossSpecConflicts.length}) — BLOCKING`);
+    for (const c of r.crossSpecConflicts)
+      lines.push(`  - \`${c.acId}\` defined in: ${c.specs.join(", ")}`);
+    lines.push("");
+  }
+  if (r.featureOrphans.length) {
+    lines.push(`## ❗ Orphan .feature refs (${r.featureOrphans.length}) — BLOCKING`);
+    for (const o of r.featureOrphans) lines.push(`  - \`${o.acId}\` in ${o.file} — no such AC`);
+    lines.push("");
+  }
+  if (r.acsWithoutScenario.length) {
+    lines.push(`## 📝 AC without BDD scenario (${r.acsWithoutScenario.length}) — report`);
+    for (const id of r.acsWithoutScenario) lines.push(`  - ${id}`);
+    lines.push("");
+  }
+  if (r.userGuideDrift.length) {
+    lines.push(`## 🌀 User-guide↔E2E drift (${r.userGuideDrift.length}) — BLOCKING`);
+    for (const d of r.userGuideDrift)
+      lines.push(`  - \`${d.id}\` in ${d.file} — no matching journey/E2E test id`);
+    lines.push("");
+  }
+  const uncovered = r.acs.filter((a) => a.status === "uncovered");
+  if (uncovered.length) {
+    lines.push(`## ❌ Uncovered AC (${uncovered.length})`);
+    for (const a of uncovered) lines.push(`  - ${a.id} (${a.specId})`);
+    lines.push("");
+  }
+  lines.push(r.blocking ? `Status: BLOCKED — ${r.blockingReasons.join("; ")}` : "Status: OK");
+  return lines.join("\n");
+}
+
+// ── File walking + main ───────────────────────────────────────────────────────
+
+function walk(dir: string, test: (f: string) => boolean): string[] {
+  if (!fs.existsSync(dir)) return [];
+  const out: string[] = [];
+  for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+    const full = path.join(dir, entry.name);
+    if (entry.isDirectory()) {
+      if (["node_modules", ".git", "dist", "coverage"].includes(entry.name)) continue;
+      out.push(...walk(full, test));
+    } else if (test(entry.name)) {
+      out.push(full);
+    }
+  }
+  return out;
+}
+
+function collectFromDisk(
+  specsDir: string,
+  testsDir: string,
+  userGuideDir = ""
+): {
+  specACs: SpecAC[];
+  testRefs: TestRef[];
+  featureRefs: TestRef[];
+  testTNNN: TNNNRef[];
+  userGuideTNNN: TNNNRef[];
+} {
+  const specACs: SpecAC[] = [];
+  for (const specFile of walk(specsDir, (f) => f.endsWith(".md"))) {
+    const content = fs.readFileSync(specFile, "utf8");
+    const specId = path.basename(specFile, ".md");
+    const acYamlPath = specFile.replace(/\.md$/, ".ac.yaml");
+    const statusMap = fs.existsSync(acYamlPath)
+      ? readAcYamlStatus(fs.readFileSync(acYamlPath, "utf8"))
+      : {};
+    for (const id of extractSpecACs(content)) {
+      const st = statusMap[id];
+      specACs.push({
+        id,
+        specId,
+        notImplemented: st === "not_implemented",
+        partial: st === "partial",
+      });
+    }
+  }
+  const testRefs: TestRef[] = [];
+  for (const testFile of walk(testsDir, (f) => /\.(test|spec)\.[tj]sx?$/.test(f))) {
+    testRefs.push(
+      ...extractTestRefs(fs.readFileSync(testFile, "utf8"), path.relative(testsDir, testFile))
+    );
+  }
+  // Phase 2: .feature files may live under specs/ or tests/
+  const featureRefs: TestRef[] = [];
+  for (const dir of new Set([specsDir, testsDir])) {
+    for (const ff of walk(dir, (f) => f.endsWith(".feature"))) {
+      featureRefs.push(...extractFeatureRefs(fs.readFileSync(ff, "utf8"), path.relative(dir, ff)));
+    }
+  }
+  // Phase 3: T-NNN drift — test ids (journey/E2E) vs user-guide outline T-NNN.
+  const testTNNN: TNNNRef[] = [];
+  for (const testFile of walk(testsDir, (f) => /\.(test|spec)\.[tj]sx?$/.test(f))) {
+    testTNNN.push(
+      ...extractTNNN(fs.readFileSync(testFile, "utf8"), path.relative(testsDir, testFile))
+    );
+  }
+  const userGuideTNNN: TNNNRef[] = [];
+  if (userGuideDir && fs.existsSync(userGuideDir)) {
+    for (const ug of walk(userGuideDir, (f) => f.endsWith(".md"))) {
+      userGuideTNNN.push(
+        ...extractTNNN(fs.readFileSync(ug, "utf8"), path.relative(userGuideDir, ug))
+      );
+    }
+  }
+  return { specACs, testRefs, featureRefs, testTNNN, userGuideTNNN };
+}
+
+function main(argv: string[]): void {
+  const getArg = (flag: string, def: string) => {
+    const i = argv.indexOf(flag);
+    return i >= 0 && argv[i + 1] ? argv[i + 1] : def;
+  };
+  const root = path.join(path.dirname(fileURLToPath(import.meta.url)), "..");
+  const specsDir = path.resolve(root, getArg("--specs", "specs"));
+  const testsDir = path.resolve(root, getArg("--tests", "tests"));
+  const ugArg = getArg("--userguide", "");
+  const userGuideDir = ugArg ? path.resolve(root, ugArg) : "";
+  const asJson = argv.includes("--json");
+
+  const { specACs, testRefs, featureRefs, testTNNN, userGuideTNNN } = collectFromDisk(
+    specsDir,
+    testsDir,
+    userGuideDir
+  );
+  const result = analyzeConsistency(specACs, testRefs, featureRefs, userGuideTNNN, testTNNN);
+
+  if (asJson) {
+    console.log(JSON.stringify(result, null, 2));
+  } else {
+    console.log(formatReport(result));
+  }
+  // Prefer exitCode over process.exit(): letting Node exit naturally once the
+  // event loop drains guarantees any pending stdout writes flush first, which
+  // process.exit() does not guarantee on every platform/stdio combination.
+  process.exitCode = result.blocking ? 1 : 0;
+}
+
+// Run only when executed directly (keeps exports pure-testable).
+//
+// realpathSync both sides before comparing: Node's ESM loader resolves
+// import.meta.url through symlinks, but path.resolve(process.argv[1]) is a
+// pure string operation that does NOT resolve symlinks. dev-platform's
+// sub-projects (including this repo) are commonly consumed through a
+// symlink (e.g. dev-platform/universal-dev-standards -> ../universal-dev-standards);
+// invoking this script with an absolute path built from that symlinked
+// location (as bats' `run_analyze` does via `$(cd ... && pwd)`) made the two
+// sides compare unequal, so `main()` silently never ran — exit 0, no output,
+// no error, and no test failure reason more specific than "empty output".
+if (
+  process.argv[1] &&
+  tryRealpath(fileURLToPath(import.meta.url)) === tryRealpath(path.resolve(process.argv[1]))
+) {
+  main(process.argv.slice(2));
+}

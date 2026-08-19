@@ -1,0 +1,40 @@
+// tag::purpose[]
+Systematically identify and analyze project stakeholders with communication planning
+// end::purpose[]
+
+// tag::detailed[]
+=== Purpose
+The Stakeholder Analysis prompt helps systematically identify, analyze, and document all relevant stakeholders for a software system. It creates a comprehensive stakeholder register that supports effective architecture communication and decision-making throughout the system lifecycle.
+
+=== When to Use
+* Starting a new software architecture project
+* When architecture communication is challenging or ineffective  
+* Before major architecture decisions that affect multiple parties
+* When stakeholder requirements seem unclear or conflicting
+* During architecture reviews or governance processes
+* When planning architecture documentation and communication strategies
+
+=== What It Produces
+* **Comprehensive Stakeholder Register**: Detailed analysis of all relevant stakeholders
+* **Influence-Interest Matrix**: Visual classification showing stakeholder power dynamics
+* **Communication Strategy**: Tailored communication approaches for each stakeholder group
+* **Architecture Views Mapping**: Clear mapping of which stakeholders need which architectural perspectives
+* **Stakeholder Ecosystem Diagram**: Visual representation of stakeholder relationships
+
+=== Key Benefits
+* **Systematic Approach**: Ensures no important stakeholders are overlooked
+* **Communication Planning**: Creates targeted communication strategies for different audiences
+* **Risk Mitigation**: Identifies potential conflicts and resistance early
+* **Decision Support**: Clarifies who needs to be involved in architecture decisions
+* **Documentation Guidance**: Determines what architecture views and detail levels are needed
+
+=== Integration with arc42
+This prompt particularly supports:
+
+* **Chapter 1 (Introduction)**: Understanding business context and stakeholder landscape
+* **Chapter 2 (Constraints)**: Identifying organizational and stakeholder-driven constraints  
+* **Chapter 12 (Glossary)**: Defining stakeholder roles and responsibilities
+* Architecture communication planning across all chapters
+
+The stakeholder analysis serves as a foundation for effective architecture documentation by ensuring all relevant perspectives are considered and appropriately addressed.
+// end::detailed[]

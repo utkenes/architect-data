@@ -1,0 +1,14 @@
+*.pdf
+*.tex
+venv-docs
+.DS_Store
+*/.DS_Store
+figures-pdf/
+private/
+local/
+scripts/
+_build/
+*~
+__pycache__/
+
+

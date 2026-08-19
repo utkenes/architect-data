@@ -1,0 +1,10 @@
+:jbake-title: Deployment View Creator
+
+== Deployment View Creator
+
+ifndef::projectRootDir[:projectRootDir: ../../..]
+
+[source, markdown]
+----
+include::{projectRootDir}/prompts/Deployment-View-Creator.md[]
+----

@@ -1,0 +1,116 @@
+#!/bin/sh
+
+# Universal Development Standards - Pre-commit Hook
+# This hook runs before each commit to ensure code quality
+
+# Get repository root
+REPO_ROOT="$(git rev-parse --show-toplevel)"
+
+# Every .ai.yaml must parse (XSPEC-367 R1).
+#
+# Unconditional on purpose. Four invalid files reached npm in 6.3.4 because no
+# check read the whole set, and a glob narrow enough to skip this one is the
+# same mistake in a different place. It costs well under a second for 423 files
+# across three locations. Exit 2 means the check could not run — that is not a
+# pass, and it is reported separately.
+echo "[Pre-commit] Checking .ai.yaml parses..."
+if ! node "$REPO_ROOT/scripts/check-ai-yaml-parses.mjs"; then
+    echo ""
+    echo "An agent reading an unparseable standard gets an exception, not empty content."
+    echo "If a downstream catches it, the silence is indistinguishable from"
+    echo "\"this standard has no rules\"."
+    echo ""
+    exit 1
+fi
+
+# Check if any core/ or ai/standards/ files are staged
+STAGED_CORE=$(git diff --cached --name-only | grep -E "^core/.*\.md$" || true)
+STAGED_AI=$(git diff --cached --name-only | grep -E "^ai/standards/.*\.ai\.yaml$" || true)
+
+if [ -n "$STAGED_CORE" ] || [ -n "$STAGED_AI" ]; then
+    echo "[Pre-commit] Checking standards sync..."
+    if [ -f "$REPO_ROOT/scripts/check-standards-sync.sh" ]; then
+        "$REPO_ROOT/scripts/check-standards-sync.sh"
+        if [ $? -ne 0 ]; then
+            echo ""
+            echo "When adding/modifying core/*.md or ai/standards/*.ai.yaml, you MUST also:"
+            echo "  1. Create/update ai/standards/*.ai.yaml for each core/*.md"
+            echo "  2. Update cli/standards-registry.json with source.ai reference"
+            echo "  3. Create/update locales/zh-TW/core/*.md"
+            echo "  4. Create/update locales/zh-CN/core/*.md"
+            echo ""
+            exit 1
+        fi
+    fi
+fi
+
+# Check if any CLI or docs files are staged
+STAGED_CLI=$(git diff --cached --name-only | grep -E "^cli/bin/.*\.js$" || true)
+STAGED_DOCS=$(git diff --cached --name-only | grep -E "^docs/CLI-INIT-OPTIONS\.md$" || true)
+
+if [ -n "$STAGED_CLI" ] || [ -n "$STAGED_DOCS" ]; then
+    echo "[Pre-commit] Checking CLI-docs sync..."
+    if [ -f "$REPO_ROOT/scripts/check-cli-docs-sync.sh" ]; then
+        "$REPO_ROOT/scripts/check-cli-docs-sync.sh"
+        if [ $? -ne 0 ]; then
+            echo ""
+            echo "When adding/modifying CLI options in cli/bin/*.js, you MUST also:"
+            echo "  1. Update docs/CLI-INIT-OPTIONS.md"
+            echo "  2. Update locales/zh-TW/docs/CLI-INIT-OPTIONS.md"
+            echo "  3. Update locales/zh-CN/docs/CLI-INIT-OPTIONS.md"
+            echo ""
+            exit 1
+        fi
+    fi
+fi
+
+# Workflow compliance check (WARNING only, never blocks)
+if [ -f "$REPO_ROOT/scripts/check-workflow-compliance.sh" ]; then
+    "$REPO_ROOT/scripts/check-workflow-compliance.sh"
+fi
+
+# Generated docs index check (XSPEC-211 intent, XSPEC-355 rewiring)
+# Originally installed by scripts/setup-hooks.sh into .git/hooks/pre-commit — which
+# core.hooksPath (cli/.husky/_) overrides, so it never ran. The CI fallback
+# (docs-check.yml) only triggers on pull_request, and this repo commits direct to
+# main. This is the only path that actually executes.
+STAGED_INDEX_SRC=$(git diff --cached --name-only | grep -E "^(uds-manifest\.json|skills/.*\.md|cli/standards-registry\.json)$" || true)
+
+if [ -n "$STAGED_INDEX_SRC" ]; then
+    echo "[Pre-commit] Checking generated docs index..."
+    if ! npm run docs:check-index --prefix "$REPO_ROOT" --silent; then
+        echo ""
+        echo "docs/user/SKILLS-INDEX.md or COMMANDS-INDEX.md is stale."
+        echo "  Run: npm run docs:generate-index"
+        echo ""
+        exit 1
+    fi
+fi
+
+# Integration liveness + cross-registry consistency (XSPEC-355 OQ5/OQ6)
+# The same field lived in three registries with two values for 5.5 months, and a
+# discontinued tool kept passing every check because its tier required almost nothing.
+# Both are cheap to detect and expensive to notice by hand.
+STAGED_INTEGRATION_SRC=$(git diff --cached --name-only | grep -E "^(integrations/REGISTRY\.json|cli/standards-registry\.json|cli/src/config/ai-agent-paths\.js|scripts/check-ai-agent-sync\.sh|README\.md|locales/zh-(TW|CN)/README\.md)$" || true)
+
+if [ -n "$STAGED_INTEGRATION_SRC" ]; then
+    echo "[Pre-commit] Checking integration liveness and registry consistency..."
+    if ! npm run check:liveness --prefix "$REPO_ROOT" --silent; then
+        echo ""
+        echo "Integration registries disagree, or a tool's status is misprojected."
+        echo "  Resolve the divergence, or register it in KNOWN_DRIFT in"
+        echo "  scripts/check-integration-liveness.ts with a reason and a tracking reference."
+        echo ""
+        exit 1
+    fi
+fi
+
+# Navigate to cli directory for npm commands
+cd "$REPO_ROOT/cli"
+
+# Run lint-staged for JavaScript files
+npx lint-staged
+
+# Run unit tests only (excludes E2E tests which take 59+ minutes)
+# E2E tests should be run in CI/CD or manually before PRs
+npm run test:unit

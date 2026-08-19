@@ -1,0 +1,295 @@
+# Mutation Testing Standards - AI Optimized
+# Source: core/mutation-testing.md
+
+id: mutation-testing
+meta:
+  version: "1.1.0"
+  updated: "2026-08-14"
+  source: core/mutation-testing.md
+  description: >
+    Mutation testing methodology to evaluate test suite effectiveness.
+    Answers "do my tests actually catch bugs?" beyond line coverage.
+  changelog:
+    - version: "1.1.0"
+      date: "2026-08-14"
+      change: >
+        Added attribution scope (kill is credited to the first failing test,
+        not to any one level), one-sided-invariant pairing requirement, and
+        equivalent-mutant classification requirement.
+
+# ─────────────────────────────────────────────────────────
+# Core Concepts
+# ─────────────────────────────────────────────────────────
+core_concepts:
+  definition: >
+    Mutation testing automatically injects small bugs (mutations) into source code,
+    then runs the test suite to see if tests detect (kill) the bug.
+    A test suite that kills most mutations is effective; one that misses them is hollow.
+
+  key_terms:
+    - term: Mutant
+      definition: A copy of source code with one small artificial bug injected
+    - term: Killed mutant
+      definition: Test suite detected the bug (test failed)
+    - term: Survived mutant
+      definition: Test suite missed the bug (all tests still pass) — indicates weak tests
+    - term: Mutation Score
+      formula: "Killed / (Killed + Survived) × 100%"
+      interpretation: Higher is better; 0% = tests prove nothing; 100% = very thorough
+
+  common_mutation_operators:
+    - category: Arithmetic operators
+      examples: ["+ → -", "* → /", "++ → --"]
+    - category: Conditional boundaries
+      examples: ["> → >=", "< → <=", "=== → !=="]
+    - category: Statement deletion
+      examples: ["Remove return statement", "Remove function call"]
+    - category: Boolean literal
+      examples: ["true → false", "false → true"]
+
+# ─────────────────────────────────────────────────────────
+# Attribution: kill is credited to the first failing test
+# ─────────────────────────────────────────────────────────
+attribution:
+  description: >
+    "Killed" means some test in the run failed against the mutant — most
+    tools do not record which test killed it, and none records which test
+    level. A 7/7 kill score therefore verifies the whole suite that ran
+    against the mutant, not any single test, and not any single test level
+    (unit vs. integration vs. property).
+  consequence: >
+    "The property suite verifies X" is not a claim an aggregate mutation run
+    supports. To support it, re-run mutation testing with only the property
+    suite active. If the isolated run kills fewer mutants than the aggregate
+    run, the gap is exactly what unit/integration tests were quietly covering.
+  isolated_rerun_example: "npx stryker run --mutate 'src/module/**' -- --project=property"
+  rule: >
+    High-risk modules (the same set the 80% threshold applies to —
+    auth/license/payment/security) must re-run mutants against the property
+    suite in isolation before any claim of "property-verified" is made.
+
+# ─────────────────────────────────────────────────────────
+# One-sided invariants miss fail-closed defects
+# ─────────────────────────────────────────────────────────
+one_sided_invariants:
+  description: >
+    A property like "output never exceeds the limit" is one-sided: it cannot
+    detect a mutant that makes the code fail closed (reject everything,
+    including valid input), because a fail-closed mutant never produces an
+    over-limit output. The mutation score looks unaffected while an entire
+    class of defect (denial of service, wrongly rejected requests) is
+    invisible to the suite.
+  fix: >
+    Pair every one-sided invariant with its opposite boundary — "never
+    exceeds the limit" needs a companion property such as "accepts everything
+    at or below the limit" — so both over-permissive and over-restrictive
+    mutants have a path to detection.
+
+# ─────────────────────────────────────────────────────────
+# Equivalent mutants are not survivors to chase
+# ─────────────────────────────────────────────────────────
+equivalent_mutants:
+  description: >
+    A surviving mutant is not automatically a test gap. Some mutants are
+    semantically equivalent to the original — no input can distinguish their
+    behavior — and no test can kill them, regardless of how it's written.
+    Forcing a kill with an assertion that exists only to move the score
+    (e.g. toBeDefined() on an incidental value) produces a hollow test
+    without closing any real gap.
+  required_classification:
+    - outcome: genuine_gap
+      action: Write a test that exercises the distinguishing behavior.
+    - outcome: equivalent
+      action: >
+        Record as "equivalent, because <reason>", stating the input(s)
+        checked to reach that conclusion.
+  note: >
+    An unclassified survivor is not the same as a classified-equivalent one.
+    Only a classified-equivalent mutant may be excluded from the score's
+    denominator.
+
+# ─────────────────────────────────────────────────────────
+# Tools
+# ─────────────────────────────────────────────────────────
+tools:
+  typescript_javascript:
+    - name: Stryker Mutator
+      packages: ["@stryker-mutator/core", "@stryker-mutator/vitest-runner"]
+      config_file: stryker.config.json
+      command: "npx stryker run"
+      strengths: [Deep vitest/jest integration, incremental mode, HTML reports]
+      note: Use incremental mode to speed up re-runs (--incremental flag)
+
+  python:
+    - name: mutmut
+      command: "mutmut run"
+      config: setup.cfg or pyproject.toml
+    - name: Cosmic Ray
+      command: "cosmic-ray init config.toml && cosmic-ray exec config.toml"
+
+  java:
+    - name: PIT (Pitest)
+      command: "mvn org.pitest:pitest-maven:mutationCoverage"
+      strengths: [Industry standard for Java, excellent IDE integration]
+
+# ─────────────────────────────────────────────────────────
+# Thresholds
+# ─────────────────────────────────────────────────────────
+thresholds:
+  description: Minimum acceptable mutation scores by module criticality
+
+  critical_modules:
+    description: Auth, payment, license validation, security controls
+    minimum_score: 80
+    enforcement: Block release if below threshold
+    examples: [auth/*, license/*, payment/*, security/*]
+
+  standard_modules:
+    description: Core business logic
+    minimum_score: 70
+    enforcement: Warning in CI; must be resolved before next release
+
+  ai_generated_tests:
+    description: Tests produced by AI tools (including this assistant)
+    minimum_score: 50
+    enforcement: Required review before accepting AI-generated test files
+    rationale: AI tends to generate hollow tests; mutation score reveals this
+
+  overall_project:
+    minimum_score: 60
+    enforcement: Advisory (track trend; alert on regression > 5%)
+
+# ─────────────────────────────────────────────────────────
+# Stryker Quick Start (TypeScript/Vitest)
+# ─────────────────────────────────────────────────────────
+stryker_quickstart:
+  install: "npm install --save-dev @stryker-mutator/core @stryker-mutator/vitest-runner"
+
+  minimal_config: |
+    {
+      "testRunner": "vitest",
+      "coverageAnalysis": "perTest",
+      "mutate": [
+        "src/license/**/*.ts",
+        "src/enterprise/quota/**/*.ts",
+        "src/runner/pipeline-runner.ts",
+        "!src/**/*.test.ts"
+      ],
+      "vitest": {
+        "configFile": "vitest.config.ts"
+      },
+      "thresholds": {
+        "high": 80,
+        "low": 60,
+        "break": 50
+      },
+      "reporters": ["progress", "html", "json"],
+      "htmlReporter": {
+        "fileName": "reports/mutation/index.html"
+      }
+    }
+
+  incremental_mode: "npx stryker run --incremental"
+  full_run: "npx stryker run"
+
+# ─────────────────────────────────────────────────────────
+# When to Run
+# ─────────────────────────────────────────────────────────
+execution_timing:
+  - trigger: On-demand local run
+    command: "npm run test:mutation"
+    frequency: Before committing changes to critical modules
+    note: Mutation testing is slow (minutes to hours); do NOT run in every commit hook
+
+  - trigger: Pre-release quality gate
+    command: "npm run test:mutation -- --breakAt 60"
+    frequency: Before every release
+    enforcement: Break if overall score < 60%
+
+  - trigger: Critical module change
+    command: "npx stryker run --mutate 'src/license/**'"
+    frequency: Any change to auth/license/payment/security code
+    enforcement: Must maintain ≥ 80% on changed module
+
+  - trigger: AI-generated tests acceptance
+    command: "npx stryker run --mutate [module under test]"
+    frequency: Before accepting AI-generated test PRs
+    enforcement: Score < 50% → reject; require human-written tests
+
+# ─────────────────────────────────────────────────────────
+# Rules
+# ─────────────────────────────────────────────────────────
+rules:
+  - id: mutation-pre-release
+    trigger: preparing a release
+    instruction: Run mutation testing; overall score must be ≥ 60% to proceed
+    priority: required
+
+  - id: mutation-critical-modules
+    trigger: modifying auth, license, payment, or security code
+    instruction: Run module-scoped mutation testing; maintain ≥ 80% mutation score
+    priority: required
+
+  - id: mutation-ai-generated
+    trigger: accepting AI-generated test files
+    instruction: >
+      Run mutation testing on the module under test.
+      Score < 50% → reject tests; require human-authored replacements.
+    priority: required
+
+  - id: do-not-run-in-every-commit
+    trigger: planning CI pipeline
+    instruction: Do NOT add mutation testing to commit hooks or every-PR CI; it is too slow
+    priority: required
+    note: Reserve for pre-release gate and on-demand runs
+
+  - id: mutation-property-isolation-required
+    trigger: claiming a property-based test suite verifies specific behavior, based on an aggregate mutation run
+    instruction: >
+      Re-run mutation testing with only the property suite active before making
+      the claim. An aggregate kill score (property + unit + integration
+      together) verifies the whole suite, not the property suite alone.
+      Required for high-risk modules (auth/license/payment/security) before
+      any "property-verified" claim.
+    priority: required
+
+  - id: mutation-one-sided-invariant-pairing
+    trigger: writing or reviewing a property/invariant used as a mutation-testing target
+    instruction: >
+      A one-sided invariant (e.g. "never exceeds the limit") cannot detect a
+      fail-closed mutant. Pair it with an opposite-boundary property (e.g.
+      "accepts everything at or below the limit") so both over-permissive and
+      over-restrictive mutants have a path to detection.
+    priority: required
+
+  - id: mutation-equivalent-classification-required
+    trigger: reviewing a surviving mutant
+    instruction: >
+      Classify every reviewed survivor as either a genuine gap (write a test
+      exercising the distinguishing behavior) or "equivalent, because
+      <reason>" (record the input(s) checked). Do not force a kill with an
+      assertion that exists only to move the score. Only a
+      classified-equivalent mutant may be excluded from the denominator.
+    priority: required
+
+anti_patterns:
+  - Treating 100% line coverage as sufficient (lines covered ≠ mutations killed)
+  - Adding mutation testing to pre-commit hooks (makes commits 10-60 minutes long)
+  - Accepting AI-generated tests without mutation score validation
+  - Killing mutations by adding trivial assertions (expect(x).toBeDefined())
+  - Targeting only happy paths in mutation testing (branches and boundaries are key)
+  - Claiming "the property suite verifies X" from an aggregate (not isolated) mutation run
+  - Using only a one-sided invariant for a property that has a fail-closed failure mode
+  - Forcing a kill on a semantically equivalent mutant instead of classifying it "equivalent, because <reason>"
+
+quick_reference:
+  mutation_testing_checklist: |
+    □ Stryker configured for critical modules (license/*, auth/*, quota/*)
+    □ test:mutation script in package.json
+    □ Thresholds set: critical ≥ 80%, overall ≥ 60%, break at 50%
+    □ Pre-release: run full mutation suite before tagging version
+    □ AI-generated tests: validate with mutation score before accepting
+    □ NOT in commit hooks (too slow)
+    □ High-risk modules: property suite re-run in isolation before "property-verified" claims
+    □ One-sided invariants paired with their opposite boundary
+    □ Every reviewed survivor classified: genuine gap, or "equivalent, because <reason>"

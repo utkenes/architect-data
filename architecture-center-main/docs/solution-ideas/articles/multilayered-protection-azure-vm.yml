@@ -1,0 +1,27 @@
+### YamlMime:Architecture
+metadata:
+  title: Multilayered protection for Azure virtual machines
+  description: Protect access to Azure VMs through a multilayer approach, using Azure and Entra ID security services. These recommendations align with security principles and best practices, such as defense in depth, least privilege, and zero trust.
+  author: husamhilal
+  ms.author: huhilal
+  ms.date: 8/18/2026
+  ms.topic: solution-idea
+  ms.subservice: solution-idea
+  ai-usage: ai-assisted
+azureCategories:
+  - security
+  - identity
+  - management-and-governance
+  - compute
+  - networking
+products:
+  - azure-bastion
+  - azure-rbac
+  - defender-for-cloud
+  - azure-key-vault
+  - entra-id
+name: Multilayered protection for Azure virtual machine access
+summary: Apply the defense in depth strategy by challenging users with multiple lines of defense before they can access your Azure VMs. Ensure that users are legitimate, have legal intentions, and communicate securely. Grant users access only when needed.
+thumbnailUrl: /azure/architecture/browse/thumbs/multilayered-protection-azure-vm-architecture-diagram-thumbnail.png
+content: |
+  [!include[](multilayered-protection-azure-vm-content.md)]

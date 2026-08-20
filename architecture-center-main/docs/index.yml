@@ -1,0 +1,345 @@
+### YamlMime:Hub
+metadata:
+  title: Azure Architecture Center
+  description: The Azure Architecture Center provides guidance for designing and building solutions on Azure by using established patterns and practices.
+  ms.topic: hub-page
+  ms.date: 06/04/2026
+  ms.collection: collection
+  ms.author: pnp
+  author: claytonsiemens77
+  google-site-verification: b-xRLveOzJ9oSOh37wgRTRB2lMOoFY8HiHf9_0DIawE
+
+title: Azure Architecture Center
+summary: Design solutions on Azure by using established patterns and practices. Azure Architecture Center is a catalog of solution ideas, example workloads, reference architectures, technology decision guides, and architecture guides for Azure workloads.
+brand: azure
+
+# Ref: https://learn.microsoft.com/help/platform/navigation-how-create-hub-page#hub-page-template
+
+highlightedContent:
+  items:
+    - title: Browse Azure architectures
+      itemType: architecture
+      url: ./browse/index.yml
+    - title: Build by using application architecture fundamentals
+      itemType: concept
+      url: ./guide/index.md
+    - title: Make technology choices
+      itemType: reference
+      url: ./guide/technology-choices/technology-choices-overview.md
+    - title: Learn cloud design patterns
+      itemType: concept
+      url: ./patterns/index.md
+    - title: See what's new and updated
+      url: ./changelog.md
+      itemType: whats-new
+
+productDirectory:
+  title: Architect workloads on Azure
+  summary: Explore best practices and patterns for building workloads on Microsoft Azure.
+  items:
+    - title: Design for the cloud
+      imageSrc: /media/common/i_design.svg
+      links:
+        - url: ./guide/architecture-styles/index.md
+          text: Learn fundamental architecture styles
+        - url: ./best-practices/index-best-practices.md
+          text: Use best practices in cloud applications
+        - url: ./antipatterns/index.md
+          text: Avoid performance antipatterns
+        - url: ./guide/responsible-innovation/index.md
+          text: Use responsible engineering practices
+        - url: ./patterns/index.md
+          text: Use cloud design patterns
+    - title: Choose the right technology
+      imageSrc: /media/common/i_overview.svg
+      links:
+        - url: ./guide/technology-choices/compute-decision-tree.md
+          text: Choose a compute service
+        - url: ./guide/choose-azure-container-service.md
+          text: Choose a container service
+        - url: ./data-guide/technology-choices/understand-data-store-models.md
+          text: Choose a data store
+        - url: ./data-guide/technology-choices/ai-services.md
+          text: Choose AI services
+        - url: ./guide/technology-choices/messaging.md
+          text: Choose a messaging service
+    - title: Implement an Azure landing zone
+      imageSrc: /media/common/i_architecture.svg
+      links:
+        - url: ./landing-zones/landing-zone-deploy.md
+          text: Deploy a platform landing zone
+        - url: ./landing-zones/subscription-vending.md
+          text: Automate through subscription vending
+        - url: ./landing-zones/landing-zone-deploy.md#application-landing-zone-architectures
+          text: Application landing zone solutions
+    - title: Specialized scenarios
+      imageSrc: /media/common/i_best-practices.svg
+      links:
+        - url: ./guide/startups/startup-architecture.md
+          text: Architecture for startups
+        - url: ./guide/saas-multitenant-solution-architecture/index.md
+          text: Architecture for SaaS and multitenant applications
+        - url: ./guide/compute/high-performance-computing.md
+          text: High-performance computing (HPC) workloads
+        - url: ./aws-professional/index.md
+          text: Azure for AWS professionals
+        - url: ./gcp-professional/services.md
+          text: Azure for Google Cloud professionals
+
+
+conceptualContent:
+  title: Technology areas
+  summary: Explore architectures and guides by technology area.
+  items:
+    - title: Popular articles
+      links:
+      - text: Microsoft Foundry chat baseline architecture
+        url: ./ai-ml/architecture/baseline-microsoft-foundry-chat.yml
+        itemType: architecture
+      - text: Develop and optimize a RAG implementation
+        url: ./ai-ml/guide/rag/rag-solution-design-and-evaluation-guide.md
+        itemType: concept
+      - text: AI agent orchestration patterns
+        url: ./ai-ml/guide/ai-agent-design-patterns.md
+        itemType: concept
+      - text: Cloud design patterns
+        url: ./patterns/index.md
+        itemType: concept
+      - text: Hub-spoke network topology
+        url: ./networking/architecture/hub-spoke.yml
+        itemType: architecture
+      - text: AKS production baseline
+        url: ./reference-architectures/containers/aks/baseline-aks.yml
+        itemType: reference
+      - text: Choose your Azure compute service
+        url: ./guide/technology-choices/compute-decision-tree.md
+        itemType: reference
+
+    - title: AI + Machine Learning
+      links:
+      - text: AI architecture design
+        itemType: overview
+        url: ./ai-ml/ai-get-started.md
+      - text: Microsoft Foundry chat baseline architecture
+        url: ./ai-ml/architecture/baseline-microsoft-foundry-chat.yml
+        itemType: architecture
+      - text: Build a generative AI gateway
+        url: ./ai-ml/guide/azure-openai-gateway-guide.md
+        itemType: how-to-guide
+      - text: AI agent orchestration patterns
+        url: ./ai-ml/guide/ai-agent-design-patterns.md
+        itemType: concept
+      - text: Develop and optimize a RAG implementation
+        url: ./ai-ml/guide/rag/rag-solution-design-and-evaluation-guide.md
+        itemType: how-to-guide
+      - text: Use MLOps
+        url: ./ai-ml/guide/machine-learning-operations-v2.md
+        itemType: concept
+      - text: Use GenAIOps
+        url: ./ai-ml/guide/genaiops-for-mlops.md
+        itemType: concept
+
+    - title: Analytics
+      links:
+        - text: Analytics architecture design
+          itemType: overview
+          url: ./analytics/analytics-get-started.md
+        - text: Choose a data analytics technology
+          itemType: quickstart
+          url: ./data-guide/technology-choices/analysis-visualizations-reporting.md
+        - text: Choose a Microsoft Fabric deployment pattern
+          itemType: quickstart
+          url: ./data-guide/technology-choices/fabric-deployment-patterns.md
+        - text: Analytics end-to-end with Microsoft Fabric
+          itemType: architecture
+          url: ./example-scenario/dataplate2e/data-platform-end-to-end.yml
+        - text: Enterprise BI with Microsoft Fabric
+          itemType: architecture
+          url: ./example-scenario/analytics/enterprise-bi-microsoft-fabric.yml
+        - text: Near real-time lakehouse data processing
+          itemType: architecture
+          url: ./example-scenario/data/real-time-lakehouse-data-processing.yml
+        - text: Stream processing with Azure Databricks
+          itemType: architecture
+          url: ./reference-architectures/data/stream-processing-databricks.yml
+
+    - title: Compute
+      links:
+        - text: Choose an Azure compute service
+          itemType: quickstart
+          url: ./guide/technology-choices/compute-decision-tree.md
+        - text: Run a Linux VM on Azure
+          itemType: get-started
+          url: ./reference-architectures/n-tier/linux-vm.yml
+        - text: Run a Windows VM on Azure
+          itemType: get-started
+          url: ./reference-architectures/n-tier/windows-vm.yml
+        - text: Azure VM baseline architecture
+          itemType: architecture
+          url: ./virtual-machines/baseline.yml
+        - text: Understand multi-region compute balancing
+          itemType: concept
+          url: ./high-availability/traffic-manager-application-gateway.yml
+        - text: Build workloads on spot virtual machines
+          itemType: concept
+          url: ./guide/spot/spot-eviction.yml
+
+    - title: Containers
+      links:
+        - text: Choose a container service
+          itemType: quickstart
+          url: ./guide/choose-azure-container-service.md
+        - text: Design for Azure Kubernetes Service
+          itemType: overview
+          url: ./reference-architectures/containers/aks-start-here.md
+        - text: Azure Kubernetes Service baseline cluster
+          itemType: architecture
+          url: ./reference-architectures/containers/aks/baseline-aks.yml
+        - text: Plan Day-2 operations on AKS
+          itemType: concept
+          url: ./operator-guides/aks/day-2-operations-guide.md
+        - text: Deploy microservices with Azure Container Apps
+          itemType: architecture
+          url: ./example-scenario/serverless/microservices-with-container-apps.yml
+        - text: Deploy microservices with Azure Container Apps and Dapr
+          itemType: architecture
+          url: ./example-scenario/serverless/microservices-with-container-apps-dapr.yml
+
+    - title: Databases
+      links:
+        - url: ./databases/database-get-started.md
+          itemType: overview
+          text: Databases architecture design
+        - url: ./databases/idea/topic-migrate-oracle-azure.yml
+          itemType: concept
+          text: Migrate an Oracle database to Azure
+        - url: ./databases/architecture/dataops-mdw.yml
+          itemType: concept
+          text: DataOps for a modern data warehouse
+        - url: ./databases/architecture/azure-data-factory-on-azure-landing-zones-index.yml
+          itemType: architecture
+          text: Design a medallion lakehouse
+        - url: ./databases/idea/combine-relational-nosql.yml
+          itemType: concept
+          text: Polyglot persistence with relational and NoSQL
+    - title: Hybrid + multicloud
+      links:
+        - text: Hybrid architecture design
+          itemType: overview
+          url: ./hybrid/hybrid-start-here.md
+        - text: Azure hybrid options
+          itemType: quickstart
+          url: ./guide/technology-choices/hybrid-considerations.yml
+        - text: Connect a cross-premises network to Azure
+          itemType: architecture
+          url: ./reference-architectures/hybrid-networking/hybrid-connectivity-options.md
+        - text: Azure Local baseline architecture
+          itemType: architecture
+          url: ./hybrid/azure-local-baseline.yml
+        - text: Hybrid Kubernetes clusters
+          itemType: concept
+          url: ./hybrid/arc-hybrid-kubernetes.yml
+        - text: Hybrid file services
+          itemType: concept
+          url: ./hybrid/hybrid-file-services.yml
+
+    - title: Identity
+      links:
+        - text: Identity architecture design
+          itemType: overview
+          url: ./identity/identity-get-started.md
+        - text: Identity in multitenant architectures
+          url: ./guide/multitenant/considerations/identity.md
+          itemType: concept
+        - text: Extend AD DS to Azure
+          itemType: architecture
+          url: ./example-scenario/identity/adds-extend-domain.yml
+
+    - title: Networking
+      links:
+        - text: Choose a hybrid network architecture
+          itemType: quickstart
+          url: reference-architectures/hybrid-networking/hybrid-connectivity-options.md
+        - text: Hub-spoke topology
+          itemType: architecture
+          url: ./networking/architecture/hub-spoke.yml
+        - text: ExpressRoute with VPN failover
+          itemType: architecture
+          url: reference-architectures/hybrid-networking/expressroute-vpn-failover.md
+        - text: Implement a secure hybrid network
+          itemType: architecture
+          url: ./reference-architectures/dmz/secure-vnet-dmz.yml
+        - text: Highly available network virtual appliances
+          itemType: concept
+          url: ./networking/guide/network-virtual-appliance-high-availability.md
+
+    - title: Security
+      links:
+        - text: Security architecture design
+          itemType: overview
+          url: ./security/security-get-started.md
+        - text: Azure security in AWS
+          itemType: concept
+          url: ./guide/aws/aws-azure-security-solutions.md
+        - text: Azure Firewall and Application Gateway
+          itemType: concept
+          url: ./example-scenario/gateway/application-gateway-before-azure-firewall.md
+        - text: Securely managed web applications
+          itemType: architecture
+          url: ./example-scenario/apps/fully-managed-secure-apps.yml
+
+    - title: Storage
+      links:
+        - text: Storage architecture design
+          itemType: overview
+          url: ./storage/storage-get-started.md
+        - text: Choose an Azure storage service
+          itemType: quickstart
+          url: ./guide/technology-choices/storage-options.md
+        - text: Azure enterprise cloud file share
+          itemType: architecture
+          url: ./hybrid/azure-files-private.yml
+        - text: Azure file shares in a hybrid environment
+          itemType: architecture
+          url: ./hybrid/azure-file-share.yml
+        - text: Enterprise file shares with disaster recovery
+          itemType: architecture
+          url: ./example-scenario/file-storage/enterprise-file-shares-disaster-recovery.yml
+
+    - title: Web apps
+      links:
+        - text: Basic web application
+          itemType: architecture
+          url: ./web-apps/app-service/architectures/basic-web-app.yml
+        - text: Baseline zone-redundant web application
+          itemType: architecture
+          url: ./web-apps/app-service/architectures/baseline-zone-redundant.yml
+        - text: Protect APIs with Application Gateway and API Management
+          itemType: concept
+          url: ./web-apps/api-management/architectures/protect-apis.yml
+        - text: Serverless event processing
+          itemType: concept
+          url: ./serverless/event-hubs-functions/event-hubs-functions.md
+        - text: Write-through caching for web applications
+          itemType: architecture
+          url: ./databases/architecture/write-through-caching-azure-sql-managed-redis.yml
+
+tools:
+  title: Cloud adoption and workload design
+  summary: Build a strong cloud adoption strategy and a consistent approach to workload design.
+  items:
+    - title: Cloud Adoption Framework for Azure
+      imageSrc: /media/common/i_architecture.svg
+      url: /azure/cloud-adoption-framework
+    - title: Azure Migration Hub
+      imageSrc: /media/common/i_get-started.svg
+      url: /azure/migration/
+    - title: Azure Well-Architected Framework pillars
+      imageSrc: ./_images/i-best-practices.png
+      url: /azure/well-architected/pillars
+    - title: Well-architected workloads
+      imageSrc: ./_images/cloud-design-patterns.svg
+      url: /azure/well-architected/workloads
+    - title: Well-architected service guides
+      imageSrc: /media/common/i_reference.svg
+      url: /azure/well-architected/service-guides/

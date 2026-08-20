@@ -1,0 +1,22 @@
+# This Source Code Form is subject to the terms of the Mozilla Public
+# License, v. 2.0. If a copy of the MPL was not distributed with this
+# file, You can obtain one at http://mozilla.org/MPL/2.0/.
+---
+loader: taskgraph.loader.transform:loader
+
+transforms:
+    - taskgraph.transforms.fetch:transforms
+    - taskgraph.transforms.run:transforms
+    - taskgraph.transforms.task:transforms
+
+task-defaults:
+    docker-image: {in-tree: linux}
+
+tasks:
+    nss-artifact:
+        description: fetches the built NSS artifacts from NSS CI
+        fetch:
+            type: static-url
+            url: https://firefox-ci-tc.services.mozilla.com/api/queue/v1/task/Q7OmGi9mQouRs_Zc3zyRPg/runs/0/artifacts/public/dist.tar.bz2
+            sha256: e4952f4fe293cb6ac09db9e9d6194f30006e6003fd922b3b648b129333dd18f2
+            size: 25302208

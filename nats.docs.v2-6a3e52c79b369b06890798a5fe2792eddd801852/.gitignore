@@ -1,0 +1,43 @@
+node_modules/
+
+# Generated files
+.docusaurus
+build/
+
+# Fetched code examples (regenerated during build from GitHub)
+# All languages EXCEPT CLI are fetched from their respective repos during build
+static/examples/snippets/*
+!static/examples/snippets/cli/
+
+# IMPORTANT: Only CLI examples are committed to git
+# All other languages (Go, Rust, JavaScript, Python, Java, C#, etc.) are fetched during build
+# CLI examples live in: static/examples/snippets/cli/
+# When adding CLI examples, just use: git add static/examples/snippets/cli/your-example.sh
+
+# Old example location
+
+# IDE directories
+.idea/
+.vscode/
+
+# Scratch output from scripts/generate-version.js
+tmp/
+*.staging
+
+# Generated JSON schemas are committed to git
+# They are generated from nats-server and should be regenerated when nats-server updates
+# Uncomment the line below if you want to regenerate them locally:
+# src/schemas/
+
+# Environment
+.env
+.env.*
+
+# Internal Synadia brand doc — kept locally, not distributed
+style-guide.pdf
+
+# Beads / Dolt files (added by bd init)
+.dolt/
+*.db
+.beads-credential-key
+.beads/proxieddb/

@@ -1,0 +1,314 @@
+---
+types:
+  cluster:
+    type: object
+    disabled: true
+    properties:
+      name:
+        reloadable: reloadable
+        type: string
+        description: |-
+          Name of the cluster.
+
+      host:
+        reloadable: not-reloadable
+        type: host
+        description: |-
+          Host for cluster route connections.
+
+      port:
+        reloadable: not-reloadable
+        type: integer
+        description: |-
+          Port for cluster route connections.
+        default: 6222
+
+      listen:
+        reloadable: not-reloadable
+        reloadable_note: |-
+          Only a listen string whose host is unchanged AND whose port is `-1`
+          survives reload.
+        type: listen
+
+      tls:
+        properties:
+          ca_file:
+            reloadable: reloadable
+            reloadable_note: |-
+              Applies to route connections created after the reload.
+          cipher_suites:
+            reloadable: reloadable
+            reloadable_note: |-
+              Applies to route connections created after the reload.
+          curve_preferences:
+            reloadable: reloadable
+            reloadable_note: |-
+              Applies to route connections created after the reload.
+          insecure:
+            reloadable: reloadable
+            reloadable_note: |-
+              Applies to route connections created after the reload.
+          key_file:
+            reloadable: reloadable
+            reloadable_note: |-
+              Applies to route connections created after the reload.
+          pinned_certs:
+            reloadable: reloadable
+            reloadable_note: |-
+              One of the few settings in this domain that also acts on
+              EXISTING connections — routes whose cert no longer matches
+              are disconnected.
+          timeout:
+            reloadable: reloadable
+            reloadable_note: |-
+              Read at handshake time, so it applies to every route
+              connection established after the reload. Contrast with
+              gateway.tls.timeout, which hard-fails the reload.
+          verify:
+            reloadable: noop
+            reloadable_note: |-
+              Setting verify:false changes nothing; client cert
+              verification is always required for routes.
+          verify_and_map:
+            reloadable: reloadable
+            reloadable_note: |-
+              Evaluated when a route authorizes, i.e. for connections
+              established after the reload.
+        reloadable: reloadable
+        reloadable_note: |-
+          New TLS settings apply to route connections established after the
+          reload; existing routes keep the old TLS session.
+        type: tls
+        description: |-
+          TLS configuration for securing cluster connections.
+          `verify` is always enabled and `cert_file` is used for
+          both client and server for mutual TLS.
+
+      advertise:
+        reloadable: reloadable
+        type: string
+        description: |-
+          Advertised cluster `<host>:<port>`. Useful for cluster setups since
+          behind NAT. When using TLS this is important to set to control the
+          hostname that clients will use when discovering the route so TLS
+          hostname verification does not fail.
+        aliases:
+          - cluster_advertise
+
+      no_advertise:
+        reloadable: reloadable
+        type: boolean
+        description: |-
+          If true, the server will not send or gossip its client URLs to other servers in the cluster, nor
+          will it tell its clients about other servers' client URLs.
+
+      routes:
+        reloadable_note: |-
+          Routes are diffed on reload: added ones are solicited and removed
+          ones torn down. The cluster listener is not restarted.
+        reloadable: reloadable
+        type: array(string)
+        description: |-
+          A list of server URLs to cluster with. Self-routes are ignored. Should authentication via token or username/password
+          be required, specify them as part of the URL.
+        examples:
+          - label: Simple Route URLs
+            value: |
+              routes: [
+                nats-route://localhost:6222,
+                nats-route://localhost:6223,
+                nats-route://localhost:6224,
+              ]
+
+      connect_retries:
+        reloadable: reloadable
+        reloadable_note: |-
+          Applies to route connection attempts started after the reload; an
+          in-progress retry loop keeps the old value.
+        type: integer
+        default: 0
+        description: |-
+          After how many failed connect attempts to give up establishing a connection to a *discovered* route. Default is 0, do not retry.
+          When enabled, attempts will be made once a second. This, does not apply to explicitly configured routes.
+
+      authorization:
+        properties:
+          default_permissions:
+            properties:
+              allow_responses:
+                reloadable: noop
+                reloadable_note: |-
+                  Silently discarded — no warning, no error, no
+                  runtime effect.
+                properties:
+                  expires:
+                    reloadable: noop
+                  max:
+                    reloadable: noop
+              publish:
+                reloadable: reloadable
+                properties:
+                  allow:
+                    reloadable: reloadable
+                  deny:
+                    reloadable: reloadable
+              subscribe:
+                reloadable: reloadable
+                properties:
+                  allow:
+                    reloadable: reloadable
+                  deny:
+                    reloadable: reloadable
+          password:
+            reloadable: reloadable
+          timeout:
+            reloadable: reloadable
+            reloadable_note: |-
+              Takes effect only for route connections created after the
+              reload.
+          username:
+            reloadable: reloadable
+          users:
+            # opts.go:1942 — "Cluster authorization does not allow multiple
+            # users". Setting it stops the server from starting.
+            omit: true
+        reloadable: reloadable
+        reloadable_note: |-
+          Only username/password/timeout/default_permissions are legal under
+          cluster authorization.
+        type: network-authorization
+        description: |-
+          Authorization map for configuring cluster routes. When a single username/password is used, it defines the authentication mechanism
+          this server expects, and how this server will authenticate itself when establishing a connection to a discovered route. This will
+          not be used for routes explicitly listed in routes and therefore have to be provided as part of the URL. With this authentication
+          mode, either use the same credentials throughout the system or list every route explicitly on every server.
+
+          If the `tls` configuration map specifies `verify_and_map` only, provide the expected username. Here different certificates can be
+          used, but they have to map to the same `username`. The authorization map also allows for timeout which is honored but users and
+          token configuration are not supported and will prevent the server from starting. The `permissions` block is ignored.
+
+      permissions:
+        reloadable: reloadable
+        type: permissions
+        description: |-
+          Subject permissions applied to routes, limiting what this cluster
+          will export to and import from its peers.
+
+      ping_interval:
+        reloadable: reloadable
+        type: duration
+        default: 2m
+        description: |-
+          How often the server pings an idle route.
+
+      ping_max:
+        reloadable: reloadable
+        type: integer
+        default: 2
+        description: |-
+          Unanswered pings before the route is closed.
+
+      connect_backoff:
+        version: "2.12"
+        reloadable: reloadable
+        type: boolean
+        default: false
+        description: |-
+          Back off between route reconnect attempts instead of retrying at a
+          fixed interval.
+
+      write_deadline:
+        version: "2.12"
+        reloadable: reloadable
+        type: duration
+        default: 10s
+        description: |-
+          How long a route write may block before the connection is treated
+          as stalled.
+
+      write_timeout:
+        version: "2.12"
+        reloadable: reloadable
+        type: string
+        choices:
+          - default
+          - close
+          - retry
+        default: default
+        description: |-
+          What to do when a route misses its `write_deadline`.
+
+      pool_size:
+        reloadable: reloadable
+        type: integer
+        default: 3
+        description: |-
+          The size of the connection pool used to distribute load across non-pinned
+          accounts.
+
+      accounts:
+        reloadable: reloadable
+        reloadable_note: |-
+          Reload fails if a newly added pinned account cannot be resolved by
+          s.LookupAccount.
+        type: array(string)
+        description: |-
+          A list of accounts to *pin*, each of which will have their own dedicated
+          route connection between servers. Note, this is not take up a connection
+          from the pool.
+
+      compression:
+        reloadable: reloadable
+        types:
+          - compression-mode
+          - compression-map
+        description: |-
+          Defines the type compression mode to use between routes.
+
+          If set to `on`, it will use the `s2_fast` compression.
+
+  compression-mode:
+    type: string
+    choices:
+      - disabled
+      - off
+      - enabled
+      - on
+      - accept
+      - s2_fast
+      - s2_better
+      - s2_best
+      - s2_auto
+    default: accept
+    description: |-
+      The compression mode dictates if and how compression is applied for a
+      connection.
+
+      The value of `accept` indicates it will inherit the mode of the server
+      it is connecting to. If both have `accept`, no compression will be used.
+
+      The `s2_fast`, `s2_better`, and `s2_best` modes indicate the level of S2
+      compression used.
+
+      `s2_auto` will dynamically change the compression level based on RTT thresholds.
+
+  compression-map:
+    type: object
+    properties:
+      mode:
+        reloadable: reloadable
+        type: compression-mode
+      rtt_thresholds:
+        reloadable: reloadable
+        type: array(duration)
+        default: [10ms, 50ms, 100ms]
+        description: |-
+          Applies only when the `s2_auto` mode is used and defines the round-trip time (RTT)
+          thresholds for compression level changes.
+
+          By default, no compression is used unless the RTT hits the first threshold
+          (e.g. 10ms), then `s2_fast`. The next threshold would switch to `s2_better`,
+          and then finally `s2_best` is the last threshold is reached.
+
+          Note, the compression level is dynamic so if the RTT decreases, the compression
+          level will decrease accordingly.

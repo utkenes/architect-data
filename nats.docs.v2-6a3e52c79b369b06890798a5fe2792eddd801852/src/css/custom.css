@@ -1,0 +1,296 @@
+/**
+ * Any CSS included here will be global. The classic template
+ * bundles Infima by default. Infima is a CSS framework designed to
+ * work well for content-centric websites.
+ */
+
+/* NATS Brand Colors */
+:root {
+  --ifm-color-primary: #3884ff;
+  --ifm-color-primary-dark: #1a6ff7;
+  --ifm-color-primary-darker: #0d62f0;
+  --ifm-color-primary-darkest: #0a4fc5;
+  --ifm-color-primary-light: #5699ff;
+  --ifm-color-primary-lighter: #6fa9ff;
+  --ifm-color-primary-lightest: #9fc5ff;
+  --ifm-code-font-size: 95%;
+  --ifm-font-family-base: system-ui, -apple-system, Segoe UI, Roboto, Ubuntu, Cantarell, Noto Sans, sans-serif;
+  --docusaurus-highlighted-code-line-bg: rgba(56, 132, 255, 0.1);
+  
+  /* NATS Brand Accent Colors */
+  --nats-accent-blue: #3884ff;
+  --nats-accent-dark: #1d1d1d;
+  --nats-accent-gray: #6c757d;
+  --nats-success: #27c940;
+  --nats-warning: #ffb347;
+  --nats-error: #ff5252;
+}
+
+/* Dark mode with NATS branding */
+[data-theme='dark'] {
+  --ifm-color-primary: #5699ff;
+  --ifm-color-primary-dark: #3884ff;
+  --ifm-color-primary-darker: #2b79ff;
+  --ifm-color-primary-darkest: #0d62f0;
+  --ifm-color-primary-light: #74aaff;
+  --ifm-color-primary-lighter: #83b3ff;
+  --ifm-color-primary-lightest: #b0d0ff;
+  --docusaurus-highlighted-code-line-bg: rgba(56, 132, 255, 0.2);
+  --ifm-background-color: #1a1a1a;
+}
+
+/* Custom NATS Styles */
+.hero {
+  background: linear-gradient(135deg, #27AAE1 0%, #375C93 50%, #34A574 100%);
+}
+
+.hero--primary {
+  --ifm-hero-text-color: #ffffff;
+}
+
+/* Feature cards styling */
+.feature {
+  padding: 2rem;
+  border-radius: 8px;
+  transition: transform 0.2s, box-shadow 0.2s;
+}
+
+.feature:hover {
+  transform: translateY(-4px);
+  box-shadow: 0 12px 24px rgba(56, 132, 255, 0.15);
+}
+
+/* Code blocks enhancement */
+pre code {
+  border-radius: 4px;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  text-rendering: optimizeLegibility;
+  text-shadow: none !important; /* Remove any text shadows */
+}
+
+/* Better font rendering for dark mode */
+[data-theme='dark'] pre code {
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  text-shadow: none !important;
+}
+
+/* Navbar enhancements */
+.navbar__title {
+  font-weight: 700;
+  font-size: 1.25rem;
+}
+
+.navbar__logo {
+  height: 2rem;
+  margin-right: 0.5rem;
+}
+
+/* Footer styling */
+.footer {
+  background-color: var(--ifm-color-primary-darkest);
+}
+
+.footer--dark {
+  --ifm-footer-background-color: #1a1a1a;
+}
+
+/* Button styles */
+.button--primary {
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+/* Documentation specific styles */
+.markdown h1 {
+  font-size: 2.5rem;
+  font-weight: 700;
+  color: var(--nats-accent-blue);
+}
+
+.markdown h2 {
+  font-size: 2rem;
+  font-weight: 600;
+  margin-top: 2rem;
+}
+
+.markdown h3 {
+  font-size: 1.5rem;
+  font-weight: 600;
+  margin-top: 1.5rem;
+}
+
+/* Cards and boxes */
+.card {
+  border: 1px solid var(--ifm-color-emphasis-200);
+  border-radius: 8px;
+  padding: 1.5rem;
+  margin-bottom: 1rem;
+  transition: all 0.2s;
+}
+
+.card:hover {
+  border-color: var(--nats-accent-blue);
+  box-shadow: 0 4px 12px rgba(56, 132, 255, 0.1);
+}
+
+/* Alert/Admonition customization */
+.admonition {
+  border-left-width: 4px;
+}
+
+.admonition-note {
+  border-left-color: var(--nats-accent-blue);
+}
+
+.admonition-tip {
+  border-left-color: var(--nats-success);
+}
+
+.admonition-warning {
+  border-left-color: var(--nats-warning);
+}
+
+.admonition-danger {
+  border-left-color: var(--nats-error);
+}
+
+/* Navigation Icons */
+.navbar__item svg {
+  color: var(--ifm-navbar-link-color);
+  transition: all 0.2s ease;
+  opacity: 0.8;
+}
+
+.navbar__item:hover svg {
+  color: var(--ifm-navbar-link-hover-color);
+  opacity: 1;
+  transform: translateY(-1px);
+}
+
+.navbar__link {
+  transition: all 0.2s ease;
+}
+
+.navbar__link:hover {
+  text-decoration: none;
+}
+
+[data-theme='light'] .navbar__item svg {
+  color: #6c757d;
+}
+
+[data-theme='light'] .navbar__item:hover svg {
+  color: var(--ifm-color-primary);
+}
+
+[data-theme='dark'] .navbar__item svg {
+  color: #a0a0a0;
+}
+
+[data-theme='dark'] .navbar__item:hover svg {
+  color: var(--ifm-color-primary-light);
+}
+
+/* Bash comment colors - make comments gray in both themes */
+/* Works for both Docusaurus native tabs and custom JavaScript tabs */
+.language-bash .token.comment,
+pre[class*="language-bash"] .token.comment {
+  color: #6b7280 !important; /* Gray for comments in light mode */
+}
+
+[data-theme='dark'] .language-bash .token.comment,
+[data-theme='dark'] pre[class*="language-bash"] .token.comment {
+  color: #9ca3af !important; /* Gray for comments in dark mode */
+}
+
+/* Light mode syntax highlighting for dynamic code blocks */
+/* Override Prism CDN default to match Docusaurus oneLight theme */
+/* Only apply to custom tabs, not Docusaurus native tabs */
+.nats-tab-panel code[class*="language-"],
+.nats-tab-panel pre[class*="language-"] {
+  background: hsl(230, 1%, 98%);
+}
+
+/* Dark mode syntax highlighting for dynamic code blocks */
+/* Prism CDN loads light theme - these overrides provide dark mode colors */
+/* Only apply to custom tabs, not Docusaurus native tabs */
+[data-theme='dark'] .nats-tab-panel code[class*="language-"],
+[data-theme='dark'] .nats-tab-panel pre[class*="language-"] {
+  color: #d4d4d4;
+  background: hsl(220, 13%, 18%);
+  text-shadow: none;
+}
+
+[data-theme='dark'] .nats-tab-panel .token.comment,
+[data-theme='dark'] .nats-tab-panel .token.prolog,
+[data-theme='dark'] .nats-tab-panel .token.doctype,
+[data-theme='dark'] .nats-tab-panel .token.cdata {
+  color: #6a9955;
+}
+
+[data-theme='dark'] .nats-tab-panel .token.punctuation {
+  color: #d4d4d4;
+}
+
+[data-theme='dark'] .nats-tab-panel .token.property,
+[data-theme='dark'] .nats-tab-panel .token.tag,
+[data-theme='dark'] .nats-tab-panel .token.boolean,
+[data-theme='dark'] .nats-tab-panel .token.number,
+[data-theme='dark'] .nats-tab-panel .token.constant,
+[data-theme='dark'] .nats-tab-panel .token.symbol,
+[data-theme='dark'] .nats-tab-panel .token.deleted {
+  color: #b5cea8;
+}
+
+[data-theme='dark'] .nats-tab-panel .token.selector,
+[data-theme='dark'] .nats-tab-panel .token.attr-name,
+[data-theme='dark'] .nats-tab-panel .token.string,
+[data-theme='dark'] .nats-tab-panel .token.char,
+[data-theme='dark'] .nats-tab-panel .token.builtin,
+[data-theme='dark'] .nats-tab-panel .token.inserted {
+  color: #ce9178;
+}
+
+[data-theme='dark'] .nats-tab-panel .token.operator,
+[data-theme='dark'] .nats-tab-panel .token.entity,
+[data-theme='dark'] .nats-tab-panel .token.url,
+[data-theme='dark'] .nats-tab-panel .language-css .token.string,
+[data-theme='dark'] .nats-tab-panel .style .token.string {
+  color: #d4d4d4;
+}
+
+[data-theme='dark'] .nats-tab-panel .token.atrule,
+[data-theme='dark'] .nats-tab-panel .token.attr-value,
+[data-theme='dark'] .nats-tab-panel .token.keyword {
+  color: #569cd6;
+}
+
+[data-theme='dark'] .nats-tab-panel .token.function,
+[data-theme='dark'] .nats-tab-panel .token.class-name {
+  color: #dcdcaa;
+}
+
+[data-theme='dark'] .nats-tab-panel .token.regex,
+[data-theme='dark'] .nats-tab-panel .token.important,
+[data-theme='dark'] .nats-tab-panel .token.variable {
+  color: #d16969;
+}
+/* Topology concept page images */
+.topology-image {
+  display: block;
+  margin: 2.5rem auto;
+  max-width: 100%;
+  height: auto;
+}
+
+
+/* Security concept page images */
+.security-image {
+  display: block;
+  margin: 2.5rem auto;
+  max-width: 70%;
+  height: auto;
+}

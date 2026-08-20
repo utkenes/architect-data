@@ -1,0 +1,382 @@
+<h1>Midterm</h1>
+
+<h2>MapReduce</h2>
+
+<p>Computation model, remember:</p>
+
+<ul>
+<li>input file is split <code>M</code> ways, </li>
+<li>each split is sent to a <code>Map</code>,</li>
+<li>each <code>Map()</code> returns a list of key-value pairs
+<ul>
+<li>map1 outputs {(k1, v1), (k2, v2)}</li>
+<li>map2 outputs {(k1, v3), (k3, v4)}</li>
+</ul></li>
+<li>key value pairs from <code>Map</code> calls are merged</li>
+<li>reduce is called on each key and its values
+<ul>
+<li>reduce1 input is {(k1, {v1,v3})}</li>
+<li>reduce2 input is {(k2, {v2})}</li>
+<li>reduce3 input is {(k3, {v4})}</li>
+</ul></li>
+<li>can you have a reduce job start before all maps are finished?
+<ul>
+<li>seems like it (see <a href="https://ercoppa.github.io/HadoopInternals/AnatomyMapReduceJob.html">here</a>)</li>
+<li>actually seems like not (see <a href="https://stackoverflow.com/questions/11672676/when-do-reduce-tasks-start-in-hadoop">here</a>)</li>
+<li>the reduce for key <code>k</code> can work on an iterator for 
+the list of values associated with <code>k</code>
+<ul>
+<li>instead of receiving the full list</li>
+</ul></li>
+<li>as more map calls finish the iterator will have more 
+values to return for that key</li>
+</ul></li>
+</ul>
+
+<h2>RPCs</h2>
+
+<ul>
+<li><em>at least once:</em> send RPC req., wait for reply, retry if no reply
+<ul>
+<li>RPC calls are repeated <code>=&gt;</code> needs side-effect free RPCs to work correctly</li>
+<li>ordering can be messed up: <code>send(req1); send(req2); ack(req2); Nack(req1);
+resend(req1); ack(req1)</code>
+<ul>
+<li><code>req1</code> was sent before <code>req2</code> but was executed after <code>req2</code></li>
+</ul></li>
+</ul></li>
+<li><em>at most once:</em> send RPC req. with XID, server executes RPC, remembers it by
+its XID, never executes it again if it receives it again (just replies with 
+remembered result)
+<ul>
+<li>no retries</li>
+<li>discarding XIDs at the server side can be tricky</li>
+</ul></li>
+<li><em>exactly once:</em> at most once, + retries, + fault tolerance (to ensure no
+corruption and hence <em>exactly once</em> semantics)</li>
+</ul>
+
+<h2>Primary-backup replication</h2>
+
+<p>Strategies: </p>
+
+<ul>
+<li>state-transfer (transfer new state to backup, ala Remus)</li>
+<li>replicated state machine (transfer ops to backups, ala Lab 2/3) </li>
+</ul>
+
+<p>P/B replication</p>
+
+<ul>
+<li>Clients ask viewserver who primary is when they start up</li>
+<li>Clients find out about view changes using <code>ErrWrongServer</code> replies
+to their RPC
+<ul>
+<li>They then query view server for new view</li>
+</ul></li>
+</ul>
+
+<p>View changes:</p>
+
+<ul>
+<li>If primary is dead...
+<ul>
+<li>If there's a backup...
+<ul>
+<li>Promote backup!</li>
+</ul></li>
+<li>If there's no backup
+<ul>
+<li>Stall until primary comes back up</li>
+<li><strong>DO NOT</strong> accept an idle as a backup and then make backup primary</li>
+</ul></li>
+</ul></li>
+<li>If backup is dead...
+<ul>
+<li>If there's an idle
+<ul>
+<li>Make it a backup!</li>
+</ul></li>
+<li>If there's no idle
+<ul>
+<li>That's fine, we can work without a backup!</li>
+</ul></li>
+</ul></li>
+<li>cannot change view until primary ACKs current view
+<ul>
+<li>primary ACK tells view server that primary copied the data on the backup
+<ul>
+<li>this way the view server knows that promoting the backup to primary
+is safe and can thus change the view</li>
+</ul></li>
+</ul></li>
+</ul>
+
+<p>Views</p>
+
+<ul>
+<li>more than two servers at a time might think they are backups</li>
+<li><code>P:S1, B:S2 and VS</code>
+<ul>
+<li><code>P:S1</code> cannot reach <code>VS</code> anymore</li>
+<li><code>VS</code> promotes <code>S2</code> to primary</li>
+<li>Thus, both think they are primaries</li>
+<li>What happens when <code>S1</code> receives a <code>Get</code> RPC from a client?
+<ul>
+<li>It still thinks it's primary!</li>
+<li><code>=&gt;</code> primary must forward <strong>all</strong> requests to backup</li>
+<li>this way primary finds out if it's not primary anymore</li>
+</ul></li>
+</ul></li>
+</ul>
+
+<p>Problem</p>
+
+<ul>
+<li>view server fails => clients cannot make progress
+<ul>
+<li>Only if they need to contact the viewserver?</li>
+</ul></li>
+<li>primary fails before backup had a chance to get the full DB => cannot make
+progress (or will break consistency)</li>
+</ul>
+
+<h2>Remus</h2>
+
+<ul>
+<li>replicates entire machine state (RAM, disk, CPU registers, etc.)</li>
+<li>primary receives a client request, does some work</li>
+<li>primary is paused</li>
+<li>primary sends state change to backup</li>
+<li>primary <strong>waits</strong> for backup to acknowledge having received everything</li>
+<li>primary does not reply to clients until backup has received new state</li>
+<li>backup tells primary it's done copying</li>
+<li>primary resumes and replies to client </li>
+</ul>
+
+<h2>Flat data center storage</h2>
+
+<p>Blob ID + tract # are mapped to a tract entry. In FDS, there are <code>O(n^2)</code> tract entries. 3 servers per entry. All possible combinations. Why?</p>
+
+<ul>
+<li>Why <code>O(n^2)</code>? We want replication => need 2 servers per TLT entry
+<ul>
+<li>simple, but slow recovery: <code>n</code> entries, TLT entry <code>i</code>: server <code>i</code>, sever <code>i+1</code>
+<ul>
+<li>when a server <code>i</code> fails, only 2 others have its data
+<ul>
+<li><code>i-1</code> and <code>i+1</code></li>
+</ul></li>
+</ul></li>
+<li>better: have <code>O(n^2)</code> entries so that every pair occurs in the TLT
+<ul>
+<li>when a disk <code>i</code> fails, it occurs in <code>n-1</code> pairs 
+with <code>n-1</code> other servers
+<ul>
+<li>can use this to copy data from <code>n-1</code> disks at the same time</li>
+<li>disk <code>i</code> is replaced by <strong>multiple</strong> other disk</li>
+<li>so we can read and write multiple disks at the same time while
+restoring</li>
+</ul></li>
+<li>the problem: if a 2nd disk fails at the same time, then we lose data
+<ul>
+<li>because there will be no way to get the data for the pair
+formed by these two failed disks</li>
+</ul></li>
+</ul></li>
+<li>even better: <code>O(n^2)</code> entries, all pairs of servers, and 
+for every pair, if doing k-level replication (<code>k &gt; 2</code>), we add
+k-2 randomly picked servers to each entry's pair</li>
+</ul></li>
+</ul>
+
+<p>But how are tracts mapped on disk? </p>
+
+<ul>
+<li>For now assume a dictionary/btree structure. </li>
+<li>When replacing a failed server, how is data transfer done? 
+<ul>
+<li>Is it just copied from the other servers in the TLT entry?
+<ul>
+<li>Yes!</li>
+</ul></li>
+<li>How is a replacement picked? 
+<ul>
+<li>Randomly</li>
+<li>Multiple replacements are picked, for each entry where the failed disk
+appeared</li>
+</ul></li>
+<li>Is the replacement server moved from its old TLT entry to the new one, or
+is it also left in the old TLT entry as well?
+<ul>
+<li>Figure 2 from paper suggests it is left in the old TLT entry as well</li>
+</ul></li>
+</ul></li>
+</ul>
+
+<h2>Paxos</h2>
+
+<p><strong>TODO:</strong> Try to understand why <code>np</code>/<code>na</code> are needed and what happened if one of
+them was not used.</p>
+
+<p>Once a value was <em>chosen</em> (<code>&lt;=&gt;</code> a majority of nodes accepted that value), then
+no other different value can be re-chosen. Why?</p>
+
+<ul>
+<li>any new proposer's <code>Prepare</code> will need a majority of <code>PREPARE_OK</code>'s to 
+move forward</li>
+<li>any majority of peers will contain at least <em>one guy</em> who has accepted the
+chosen value
+<ul>
+<li>again value was chosen <code>=&gt;</code> a majority accepted it <code>=&gt;</code> any other majority
+will contain at least one guy who accepted that value (properties of
+majority)</li>
+</ul></li>
+<li>as a result, at least one of the <code>PREPARE_OK</code> replies will include an <code>na/va</code>
+pair with the chosen value</li>
+<li>thus, the proposer can only propose the chosen value</li>
+</ul>
+
+<h2>Raft</h2>
+
+<p>See <a href="raft.png">specification here</a></p>
+
+<ul>
+<li>Agree on leader (majority needs to vote for leader)</li>
+<li>Leader tells everyone what the log entries are</li>
+<li><code>=&gt;</code> no dueling proposers</li>
+</ul>
+
+<p>A log is an array that maps an index to a command + term. First index is 1.
+Indices increase by one.</p>
+
+<p>commitIndex versus lastApplied? lastApplied keeps track of up to what point
+committed log entries have been applied to the FSM. When commitIndex exceeds
+lastApplied, it's time to apply some entries.</p>
+
+<p>AppendEntries is only called by leader? Only leader sends heartbeats? Yes. Yes.</p>
+
+<p>How do these guys keep synchronized clocks?</p>
+
+<p><strong>Most subtle Raft concept:</strong> If a log entry is replicated on a majority of
+servers, that <strong>does NOT</strong> mean it's committed. Only if "S replicates an entry 
+from <em>its current term</em> on a majority of the servers, then that entry and all
+entries before it are committed"</p>
+
+<h2>Go's memory model</h2>
+
+<p>The actual Go memory model is as follows:
+A read r of a variable v is allowed to observe a write w to v if both of the following hold:</p>
+
+<ol>
+<li>r does not happen before w.</li>
+<li>There is no other write w to v that happens after w but before r.</li>
+</ol>
+
+<p>To guarantee that a read r of a variable v observes a particular write w to v, ensure that w is the
+only write r is allowed to observe. That is, r is guaranteed to observe w if both of the following
+hold:</p>
+
+<ol>
+<li>w happens before r.</li>
+<li>Any other write to the shared variable v either happens before w or after r.</li>
+</ol>
+
+<p>This pair of conditions is stronger than the first pair; it requires that there are no other writes
+happening concurrently with w or r.</p>
+
+<p>Within a single goroutine, there is no concurrency, so the two definitions are equivalent: a read r
+observes the value written by the most recent write w to v. When multiple goroutines access a
+shared variable v, they must use synchronization events to establish happens-before conditions
+that ensure reads observe the desired writes.</p>
+
+<h2>Harp</h2>
+
+<ul>
+<li><code>2n+1</code> servers, <code>1</code> primary, <code>n</code> backups, <code>n</code> witnesses
+<ul>
+<li>need a majority of <code>n+1</code> servers <code>=&gt;</code></li>
+<li>tolerate up to <code>n</code> failures (see <a href="../l08-harp.html">notes</a> for why <code>2n+1</code>
+is required)</li>
+</ul></li>
+</ul>
+
+<p>Operation:</p>
+
+<ul>
+<li>primary gets NFS request</li>
+<li>primary forwards each request to all <code>n</code> backups</li>
+<li>after all backups reply, primary can execute op and apply to FS</li>
+<li>in a later request, primary piggybacks an ACK to tell backups the op committed</li>
+<li><strong>Note:</strong> witnesses do not ordinarily hear about ops or store state
+<ul>
+<li><code>b</code> failures out of <code>b+1</code> machines which do keep state <code>=&gt;</code> still have <code>1</code>
+machine w/ state</li>
+</ul></li>
+</ul>
+
+<p>Why have witnesses?</p>
+
+<ul>
+<li>Remember: need <code>2n+1</code> machines to break partitions
+<ul>
+<li>What machines do we use to break those partitions? The witnesses!</li>
+</ul></li>
+<li>If <code>m</code> backups are down, primary talks to <code>m</code> promoted witnesses to get a 
+majority for each op (as it would with <code>n</code> live backups)</li>
+<li>the witnesses record the ops in a log when they are promoted</li>
+</ul>
+
+<p>What happens on crash of a backup?</p>
+
+<ul>
+<li>If a backup crashes after it writes an op to disk, but before replying to
+primary <code>=&gt;</code> no way to (easily) tell if backup executed the op when it
+comes back up
+<ul>
+<li>This implies we need the ops in the log entries to be <em>side-effect free</em>
+so we can reapply them</li>
+</ul></li>
+</ul>
+
+<p>On a primary crash, when primary comes back up, witnesses are used to replay ops
+to it and bring it up to speed.</p>
+
+<p>If all backups crash, then can promote all witnesses and continue</p>
+
+<p><strong>TODO:</strong> Harp, understand how primary forwards ops to backups and/or witnesses.
+what happens when some of them fail, etc.</p>
+
+<h2>TreadMarks</h2>
+
+<p><strong>TODO:</strong> Write amplification vs. false sharing</p>
+
+<p><strong>TODO:</strong> TreadMarks: lazy release consistency (different than ERC) + causal consistency</p>
+
+<p><strong>TODO:</strong> Causal consistency: Does it ensure previous writes that did NOT 
+contribute to current write are also made visible?</p>
+
+<ul>
+<li>Q1 2009, Question 11 seems to suggest yes.</li>
+</ul>
+
+<p><strong>TODO:</strong> Vector timestamps and causal consistency</p>
+
+<p><strong>TODO:</strong> Sequential consistency is going to be on the exam!</p>
+
+<h2>Ficus</h2>
+
+<h1>Final</h1>
+
+<blockquote>
+  <p>The 6.824 final exam will be on Monday May 18th at 9:00am in Johnson
+Track. The exam will last two hours. You should know all of the course
+material, but the exam will focus on lectures and papers starting at
+Lecture 12 (Bayou), as well as Lab 4. We won't ask detailed questions
+about Spanner or Akamai/Hubspot.</p>
+
+<p>During the lab you can look at class notes, papers, and lab material.
+You may read them on your laptop, but you won't be allowed to use any
+network. Bring a copy of each paper, either on paper or on your
+laptop.</p>
+</blockquote>
